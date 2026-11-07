@@ -2,6 +2,7 @@ package discover
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -241,6 +242,34 @@ func TestGitHubDetails(t *testing.T) {
 	}}, "", "")
 	if _, err := d3.Get(ctx, ref); err == nil {
 		t.Error("no error for a missing repository")
+	}
+}
+
+// Stars and archived are left out where a package has none, as json/v2,
+// which the bindings use, sends a zero tagged omitempty.
+func TestDetailsJSONOmitsZero(t *testing.T) {
+	for _, tc := range []struct {
+		det  PackageDetails
+		want []string
+		not  []string
+	}{
+		{PackageDetails{Summary: "A browser"}, nil, []string{`"stars"`, `"archived"`}},
+		{PackageDetails{Stars: 42, Archived: true}, []string{`"stars":42`, `"archived":true`}, nil},
+	} {
+		b, err := json.Marshal(tc.det)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(string(b), w) {
+				t.Errorf("%s lacks %s", b, w)
+			}
+		}
+		for _, n := range tc.not {
+			if strings.Contains(string(b), n) {
+				t.Errorf("%s has %s", b, n)
+			}
+		}
 	}
 }
 

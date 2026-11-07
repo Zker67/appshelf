@@ -63,8 +63,8 @@ type PackageDetails struct {
 	Tags         []string `json:"tags,omitempty"`
 	Version      string   `json:"version,omitempty"` // the version the source has
 	// Of a GitHub repository.
-	Stars    int          `json:"stars,omitempty"`
-	Archived bool         `json:"archived,omitempty"`
+	Stars    int          `json:"stars,omitzero"`
+	Archived bool         `json:"archived,omitzero"`
 	Release  *ReleaseInfo `json:"release,omitempty"`
 }
 

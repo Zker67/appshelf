@@ -263,8 +263,8 @@ type SearchHit struct {
 	Name     string `json:"name"`
 	Version  string `json:"version,omitempty"`
 	Summary  string `json:"summary,omitempty"`
-	Stars    int    `json:"stars,omitempty"`
-	Archived bool   `json:"archived,omitempty"`
+	Stars    int    `json:"stars,omitzero"`
+	Archived bool   `json:"archived,omitzero"`
 	Icon     string `json:"icon"`
 	// InShelf is the ID of the catalog's app with this source.
 	InShelf string `json:"inShelf,omitempty"`

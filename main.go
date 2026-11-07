@@ -176,17 +176,33 @@ func main() {
 // packagedApps lists the Start menu's app packages by family name, for
 // their icons: their AppUserModelID is <family>!<app>.
 func packagedApps() (map[string]string, error) {
-	apps, err := mygo.Shell.InstalledApps()
-	if err != nil {
-		return nil, err
-	}
+	apps, shellErr := mygo.Shell.InstalledApps()
 	out := map[string]string{}
+	nameCounts := map[string]int{}
 	for _, a := range apps {
+		key := icons.ApplicationIconKey(a.Name)
+		nameCounts[key]++
+		if key != "name:" && nameCounts[key] == 1 {
+			out[key] = a.Path
+		} else {
+			out[key] = ""
+		}
 		if family, _, ok := strings.Cut(a.ID, "!"); ok {
 			if _, seen := out[family]; !seen {
 				out[family] = a.Path
 			}
 		}
+	}
+	// Non-launchable packages have no Start menu item, but often ship a logo.
+	logos, logoErr := icons.PackageLogos(context.Background())
+	if logoErr == nil {
+		for family, path := range logos {
+			// Reading a PNG also avoids dispatching shell drawing to the UI thread.
+			out[family] = path
+		}
+	}
+	if shellErr != nil && logoErr != nil {
+		return nil, shellErr
 	}
 	return out, nil
 }

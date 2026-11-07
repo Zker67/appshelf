@@ -25,7 +25,7 @@ AppShelf 只允许运行一个实例；再次启动时，已经打开的窗口�
 | scoop | scoop 来源，可选 | scoop 软件显示“不可用：未安装 scoop”，不影响其他来源 |
 | 网络访问 `api.github.com` | GitHub 来源的最新 release 和下载 | 是否已装照常显示（检测只看本机注册表），但读不到最新 release：不能检查更新，安装会失败并说明原因 |
 
-AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`），不需要 `pwsh`。
+AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`），不需要 `pwsh`。每个子进程会补齐该宿主的用户、系统和内置模块搜索目录，并保留自定义路径，避免从 PowerShell 7 启动时读不到已安装的模块；不修改父进程或系统环境。
 
 ## 配置
 
@@ -115,8 +115,8 @@ go tool mygo build              # 先构建前端，再输出到 build/windows-a
 
 | 现象 | 处理 |
 |---|---|
-| winget 软件全部显示“无法确认”，“设置 → 安装来源”提示缺少模块 | 在“设置 → 安装来源”点“安装模块”，或手动执行 `Install-Module Microsoft.WinGet.Client -Scope CurrentUser` |
+| 只剩“本机”类型且无法显示可更新，或 winget 提示缺少模块 | 先使用 0.2.1 或更新版本重新启动，修复继承 PowerShell 7 模块路径的问题；若确实没有安装模块，再在“设置 → 安装来源”点“安装模块”，或手动执行 `Install-Module Microsoft.WinGet.Client -Scope CurrentUser` |
 | GitHub 软件附注“GitHub 请求额度已用完” | 设置 `GH_TOKEN` 后重新启动 AppShelf，或等待提示里的恢复时间 |
 | 某一项安装失败 | 任务面板里点“日志”查看安装命令和完整输出；安装程序需要管理员权限时会弹出 UAC，取消 UAC 会记为“已取消管理员授权” |
 | 启动时提示清单文件无法读取 | 原文件已改名为 `catalog.json.broken-<时间>`，修好后可以从“我的清单”左下角的“导入”导回 |
-| 图标显示成首字母 | 图标库里没有、本机程序也没有图标时就是这样；网络恢复后图标会补上，失败过的地址 24 小时后再试 |
+| 图标显示成首字母 | 图标库里没有、本机程序也没有图标时就是这样；网络恢复后图标会补上，优先使用本机图标；临时下载失败 2 分钟后可重试，可在“本机已装”点刷新重新请求；没有开始菜单入口的软件包会读取自身的 Logo |

@@ -5,7 +5,7 @@
 //
 // Paths, relative to the scheme's root:
 //
-//	/w/<winget ID>      a winget package: the database, else the program installed
+//	/w/<winget ID>      a winget package: the program installed, else the database
 //	/s/<scoop name>     a scoop app: the database
 //	/g/<owner>/<repo>   a GitHub repository: the database, else the owner's avatar
 //	/i/<entry key>      an installed program (internal/inventory): as its kind
@@ -19,7 +19,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -44,8 +43,8 @@ type Options struct {
 	// pixels (mygo.Shell.FileIcon); nil means no icons of installed
 	// programs.
 	FileIcon func(path string, size int) ([]byte, error)
-	// PackagedApps lists the Start menu's app packages: their family name
-	// → their shell item, for FileIcon. Nil means none.
+	// PackagedApps maps package families to their local PNG logo or shell
+	// item for FileIcon. Nil means none.
 	PackagedApps func() (map[string]string, error)
 }
 
@@ -59,12 +58,14 @@ type Service struct {
 	db    *database
 	fetch *fetcher
 
-	mu       sync.Mutex
-	byKey    map[string]inventory.Entry // the inventory's entries, by key
-	byWinget map[string]string          // winget ID, lower case → the DisplayIcon of its program
-	packages map[string]string          // package family, lower case → shell item
-	pkgAt    time.Time
-	local    map[string]image // icons drawn from programs, by file
+	mu        sync.Mutex
+	byKey     map[string]inventory.Entry // the inventory's entries, by key
+	byWinget  map[string]inventory.Entry // winget ID, lower case → installed program
+	packages  map[string]string          // package family, lower case → shell item
+	pkgAt     time.Time
+	local     map[string]localImage
+	localBusy map[string]*localCall
+	pkgBusy   chan struct{}
 }
 
 type image struct {
@@ -88,12 +89,13 @@ func New(opt Options) *Service {
 		}
 	}
 	return &Service{
-		opt:      opt,
-		db:       newDatabase(opt.Client, opt.DatabaseURL, opt.Dir),
-		fetch:    newFetcher(opt.Client, filepath.Join(opt.Dir, "img")),
-		byKey:    map[string]inventory.Entry{},
-		byWinget: map[string]string{},
-		local:    map[string]image{},
+		opt:       opt,
+		db:        newDatabase(opt.Client, opt.DatabaseURL, opt.Dir),
+		fetch:     newFetcher(opt.Client, filepath.Join(opt.Dir, "img")),
+		byKey:     map[string]inventory.Entry{},
+		byWinget:  map[string]inventory.Entry{},
+		local:     map[string]localImage{},
+		localBusy: map[string]*localCall{},
 	}
 }
 
@@ -101,23 +103,22 @@ func New(opt Options) *Service {
 // installed programs.
 func (s *Service) SetInventory(entries []inventory.Entry) {
 	byKey := make(map[string]inventory.Entry, len(entries))
-	byWinget := map[string]string{}
+	byWinget := map[string]inventory.Entry{}
 	for _, e := range entries {
 		byKey[e.Key] = e
-		if e.Kind == inventory.Winget && e.Icon != "" {
-			byWinget[strings.ToLower(e.WingetID)] = e.Icon
+		if e.Kind == inventory.Winget {
+			byWinget[strings.ToLower(e.WingetID)] = e
 		}
 	}
 	s.mu.Lock()
 	s.byKey, s.byWinget = byKey, byWinget
-	s.pkgAt = time.Time{} // list the packages again when asked
 	s.mu.Unlock()
 }
 
-// Warm loads the database in the background, so that the first icons do
-// not wait for it.
+// Warm starts the shared remote and package lookups before the list needs them.
 func (s *Service) Warm() {
 	go s.db.icons(context.Background())
+	go s.packaged(context.Background(), "__warm__")
 }
 
 // ErrNoIcon means there is no icon for the path.
@@ -142,17 +143,18 @@ func (s *Service) Icon(ctx context.Context, segments []string) ([]byte, string, 
 }
 
 func (s *Service) winget(ctx context.Context, id string) ([]byte, string, error) {
-	data, ctype, err := s.remote(ctx, WingetIconID(id), "")
-	if err == nil {
+	s.mu.Lock()
+	e := s.byWinget[strings.ToLower(id)]
+	s.mu.Unlock()
+	if data, ctype, err := s.installedFile(e); err == nil {
 		return data, ctype, nil
 	}
-	s.mu.Lock()
-	icon := s.byWinget[strings.ToLower(id)]
-	s.mu.Unlock()
-	if icon != "" {
-		return s.fromFile(icon)
+	if e.Name != "" {
+		if data, ctype, err := s.packaged(ctx, ApplicationIconKey(e.Name)); err == nil {
+			return data, ctype, nil
+		}
 	}
-	return nil, "", err
+	return s.remote(ctx, WingetIconID(id), "")
 }
 
 func (s *Service) entry(ctx context.Context, key string) ([]byte, string, error) {
@@ -162,16 +164,25 @@ func (s *Service) entry(ctx context.Context, key string) ([]byte, string, error)
 	if !ok {
 		return nil, "", ErrNoIcon
 	}
+	if data, ctype, err := s.installedFile(e); err == nil {
+		return data, ctype, nil
+	}
+	if e.Kind != inventory.Store && e.Name != "" {
+		if data, ctype, err := s.packaged(ctx, ApplicationIconKey(e.Name)); err == nil {
+			return data, ctype, nil
+		}
+	}
 	switch e.Kind {
 	case inventory.Winget:
-		return s.winget(ctx, e.WingetID)
+		return s.remote(ctx, WingetIconID(e.WingetID), "")
 	case inventory.Scoop:
 		return s.remote(ctx, ScoopIconID(e.ScoopName), "")
 	case inventory.Store:
-		return s.packaged(e.PackageFamily)
-	}
-	if e.Icon != "" {
-		return s.fromFile(e.Icon)
+		return s.packaged(ctx, e.PackageFamily)
+	case inventory.Local:
+		if id := registryWingetID(e.Key); id != "" {
+			return s.remote(ctx, WingetIconID(id), "")
+		}
 	}
 	return nil, "", ErrNoIcon
 }
@@ -191,105 +202,6 @@ func (s *Service) remote(ctx context.Context, key, fallback string) ([]byte, str
 		return s.fetch.get(ctx, fallback)
 	}
 	return nil, "", ErrNoIcon
-}
-
-// fromFile draws the icon of a registry DisplayIcon.
-func (s *Service) fromFile(displayIcon string) ([]byte, string, error) {
-	path := IconFile(displayIcon)
-	if path == "" {
-		return nil, "", ErrNoIcon
-	}
-	s.mu.Lock()
-	img, ok := s.local[path]
-	s.mu.Unlock()
-	if ok {
-		if img.data == nil {
-			return nil, "", ErrNoIcon
-		}
-		return img.data, img.ctype, nil
-	}
-	img = s.draw(path)
-	s.mu.Lock()
-	if len(s.local) > 2000 {
-		s.local = map[string]image{}
-	}
-	s.local[path] = img
-	s.mu.Unlock()
-	if img.data == nil {
-		return nil, "", ErrNoIcon
-	}
-	return img.data, img.ctype, nil
-}
-
-func (s *Service) draw(path string) image {
-	fi, err := os.Stat(path)
-	if err != nil || fi.IsDir() {
-		return image{}
-	}
-	if strings.EqualFold(filepath.Ext(path), ".png") {
-		if fi.Size() > maxIconSize {
-			return image{}
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return image{}
-		}
-		return image{data, "image/png"}
-	}
-	if s.opt.FileIcon == nil {
-		return image{}
-	}
-	data, err := s.opt.FileIcon(path, localSize)
-	if err != nil || len(data) == 0 {
-		return image{}
-	}
-	return image{data, "image/png"}
-}
-
-// packaged draws the icon of an app package from the Start menu.
-func (s *Service) packaged(family string) ([]byte, string, error) {
-	if family == "" || s.opt.PackagedApps == nil || s.opt.FileIcon == nil {
-		return nil, "", ErrNoIcon
-	}
-	s.mu.Lock()
-	if s.packages == nil || time.Since(s.pkgAt) > 10*time.Minute {
-		s.mu.Unlock()
-		pkgs, err := s.opt.PackagedApps()
-		if err != nil {
-			return nil, "", ErrNoIcon
-		}
-		lower := make(map[string]string, len(pkgs))
-		for k, v := range pkgs {
-			lower[strings.ToLower(k)] = v
-		}
-		s.mu.Lock()
-		s.packages, s.pkgAt = lower, time.Now()
-	}
-	item := s.packages[strings.ToLower(family)]
-	s.mu.Unlock()
-	if item == "" {
-		return nil, "", ErrNoIcon
-	}
-	return s.fromItem(item)
-}
-
-func (s *Service) fromItem(item string) ([]byte, string, error) {
-	s.mu.Lock()
-	img, ok := s.local[item]
-	s.mu.Unlock()
-	if !ok {
-		img = image{}
-		if data, err := s.opt.FileIcon(item, localSize); err == nil && len(data) > 0 {
-			img = image{data, "image/png"}
-		}
-		s.mu.Lock()
-		s.local[item] = img
-		s.mu.Unlock()
-	}
-	if img.data == nil {
-		return nil, "", ErrNoIcon
-	}
-	return img.data, img.ctype, nil
 }
 
 // IconFile returns the file of a registry DisplayIcon, which may be quoted

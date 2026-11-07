@@ -155,7 +155,7 @@ func (d *database) download() {
 // fetchDatabase returns the database downloaded, or nil when the file kept
 // is current.
 func (d *database) fetchDatabase() (map[string]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.url, nil)
 	if err != nil {
@@ -171,7 +171,7 @@ func (d *database) fetchDatabase() (map[string]string, error) {
 	}
 	// The client's timeout is for icons: the database is bigger.
 	client := *d.client
-	client.Timeout = 60 * time.Second
+	client.Timeout = 10 * time.Second
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

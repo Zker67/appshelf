@@ -17,7 +17,7 @@ AppShelf 是个人软件商城：在一份可导入导出的软件清单里，�
 
 ## 文档入口
 
-- [下载与版本说明](https://github.com/Zker67/appshelf/releases/tag/v0.2.0) · [更新日志](./CHANGELOG.md)
+- [下载与版本说明](https://github.com/Zker67/appshelf/releases/tag/v0.2.1) · [更新日志](./CHANGELOG.md)
 - [项目文档](./docs/README.md) · [前端](./frontend/README.md) · [Go 业务代码](./internal/README.md)
 - [计划与验收](./plans/README.md) · [外部参考](./references/README.md) · [AI 项目规则](./.agents/README.md)
 
@@ -130,3 +130,5 @@ appshelf/
 [基本实现计划](./plans/2026-11-07-basic-implementation/00-overview.md) 的 7 个阶段已经实现并发布 v0.1.0，实施情况见 [实施报告](./plans/2026-11-07-basic-implementation/09-implementation-report.md)。
 
 [Web 前端、本机已装与发现软件](./plans/2026-11-07-web-ui-and-discovery/00-overview.md) 已实现为 [0.2.0](https://github.com/Zker67/appshelf/releases/tag/v0.2.0)（用户验收与真实安装测试待完成）：界面改为 Web 前端，新增“发现”和“本机已装”页，实施情况见 [实施报告](./plans/2026-11-07-web-ui-and-discovery/09-implementation-report.md)。
+
+[0.2.1 图标优化](./plans/2026-11-07-installed-icons/00-overview.md) 改为本机图标优先，补齐多种系统图标来源并优化缓存和重试；验证范围和回退限制见计划。

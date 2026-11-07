@@ -25,7 +25,7 @@ const (
 	// maxIconSize bounds an icon downloaded or read.
 	maxIconSize = 2 << 20
 	// failTTL is how long a URL that failed is not asked again.
-	failTTL = 24 * time.Hour
+	failTTL = 2 * time.Minute
 	// maxDownloads is how many icons download at once.
 	maxDownloads = 6
 )
@@ -60,7 +60,7 @@ func extOf(ctype string) string {
 }
 
 // fetcher downloads icons into a cache directory, one file per URL, and
-// remembers the URLs that failed for a day.
+// briefly remembers URLs that failed, without pinning temporary outages all day.
 type fetcher struct {
 	client *http.Client
 	dir    string
@@ -136,10 +136,14 @@ func (f *fetcher) download(raw string) ([]byte, string, error) {
 	if err := checkURL(u); err != nil {
 		return nil, "", err
 	}
-	f.sem <- struct{}{}
-	defer func() { <-f.sem }()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
+	select {
+	case f.sem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, "", ctx.Err()
+	}
+	defer func() { <-f.sem }()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, "", err

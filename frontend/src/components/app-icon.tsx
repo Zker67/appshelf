@@ -19,9 +19,25 @@ export function AppIcon({
   className?: string;
 }) {
   const { data: about } = useAbout();
-  const src = iconURL(about?.iconBase, path);
+  const baseSrc = iconURL(about?.iconBase, path);
+  const [attempt, setAttempt] = useState(0);
+  const src =
+    baseSrc && attempt > 0
+      ? `${baseSrc}${baseSrc.includes("?") ? "&" : "?"}retry=${attempt}`
+      : baseSrc;
   const [state, setState] = useState<"loading" | "ok" | "failed">(src ? "loading" : "failed");
-  useEffect(() => setState(src ? "loading" : "failed"), [src]);
+  useEffect(() => {
+    setAttempt(0);
+    setState(baseSrc ? "loading" : "failed");
+  }, [baseSrc]);
+  useEffect(() => {
+    if (state !== "failed" || !baseSrc || attempt >= 3) return;
+    const timer = setTimeout(() => {
+      setAttempt((value) => value + 1);
+      setState("loading");
+    }, [2000, 10000, 120000][attempt]);
+    return () => clearTimeout(timer);
+  }, [state, baseSrc, attempt]);
   const h = hue(name);
   return (
     <div
@@ -43,6 +59,7 @@ export function AppIcon({
         <>
           {state === "loading" && <div className="absolute inset-0 rounded-[26%] bg-muted" />}
           <img
+            key={src}
             src={src}
             alt=""
             loading="lazy"

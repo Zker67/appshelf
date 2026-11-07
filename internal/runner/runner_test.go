@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -66,5 +67,40 @@ func TestPowerShell(t *testing.T) {
 func TestRunMissingProgram(t *testing.T) {
 	if _, err := Run(context.Background(), "appshelf-no-such-program", nil, Options{}); err == nil {
 		t.Error("a missing program ran")
+	}
+}
+
+func TestPowerShellRestoresWindowsModulePaths(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows PowerShell")
+	}
+	inherited := t.TempDir()
+	t.Setenv("PSModulePath", inherited)
+	var out struct {
+		Paths                []string
+		User, System, Engine string
+	}
+	_, err := PowerShell(context.Background(), `Write-Result @{
+Paths = @($env:PSModulePath -split ';')
+User = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'
+System = Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules'
+Engine = Join-Path $PSHOME 'Modules'
+}`, nil, &out, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{inherited, out.User, out.System, out.Engine} {
+		found := false
+		for _, path := range out.Paths {
+			if strings.EqualFold(path, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("Windows PowerShell cannot search %q", want)
+		}
+	}
+	if os.Getenv("PSModulePath") != inherited {
+		t.Fatal("parent environment was changed")
 	}
 }

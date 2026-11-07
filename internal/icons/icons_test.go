@@ -213,7 +213,7 @@ func TestServeFromDatabase(t *testing.T) {
 	if code, _, _ := get(t, s, "/g/someone/thing"); code != 200 || srv.hits("/avatars/someone") != 1 {
 		t.Errorf("avatar: %d", code)
 	}
-	// Not an image: 404, and not asked again for a day.
+	// Not an image: 404, and not immediately asked again.
 	for range 2 {
 		if code, _, _ := get(t, s, "/s/broken"); code != 404 {
 			t.Errorf("html icon served: %d", code)

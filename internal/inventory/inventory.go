@@ -272,6 +272,8 @@ func Match(entries []Entry, apps []catalog.App) map[string][]string {
 // Sources reads what is installed. A nil function is a source this machine
 // does not have.
 type Sources struct {
+	// Notes preserve unavailable-source reasons when a source cannot be called.
+	Notes  []string
 	Winget func(ctx context.Context) ([]winget.Package, error)
 	Scoop  func(ctx context.Context) ([]scoop.App, error)
 	Scan   func() ([]detect.Entry, error)
@@ -304,7 +306,7 @@ func Load(ctx context.Context, src Sources) List {
 		wg.Go(func() { reg, rErr = src.Scan() })
 	}
 	wg.Wait()
-	var notes []string
+	notes := slices.Clone(src.Notes)
 	if wErr != nil {
 		notes = append(notes, wErr.Error())
 	}

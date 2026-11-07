@@ -19,6 +19,15 @@ import (
 const prelude = `param([string]$In, [string]$Out)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# Go inherits the launcher's PSModulePath without PowerShell 7's native-command
+# adjustment. Restore this Windows PowerShell host's standard locations locally.
+$modulePaths = @()
+$documents = [Environment]::GetFolderPath('MyDocuments')
+if ($documents) { $modulePaths += Join-Path $documents 'WindowsPowerShell\Modules' }
+if ($env:ProgramFiles) { $modulePaths += Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules' }
+$modulePaths += Join-Path $PSHOME 'Modules'
+$modulePaths += @($env:PSModulePath -split ';' | Where-Object { $_ })
+$env:PSModulePath = ($modulePaths | Select-Object -Unique) -join ';'
 $utf8 = New-Object System.Text.UTF8Encoding $false
 function Write-Result($value) {
   $json = ConvertTo-Json -InputObject $value -Depth 8 -Compress

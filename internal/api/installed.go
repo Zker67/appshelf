@@ -81,10 +81,15 @@ func (s *inventoryState) get() (inventory.List, bool, bool) {
 func (a *App) inventorySources(maxAge time.Duration) inventory.Sources {
 	ctx := context.Background()
 	src := inventory.Sources{Scan: a.cfg.Scan}
-	if w := a.cfg.Sources.Winget; w != nil && a.availability(ctx, catalog.Winget, w.Check).OK {
-		src.Winget = func(ctx context.Context) ([]winget.Package, error) {
-			pkgs, _, err := w.Installed(ctx, maxAge)
-			return pkgs, err
+	if w := a.cfg.Sources.Winget; w != nil {
+		av := a.availability(ctx, catalog.Winget, w.Check)
+		if av.OK {
+			src.Winget = func(ctx context.Context) ([]winget.Package, error) {
+				pkgs, _, err := w.Installed(ctx, maxAge)
+				return pkgs, err
+			}
+		} else {
+			src.Notes = append(src.Notes, "winget 未参与读取："+av.Reason+"；当前仅显示注册表程序，无法判断其可用更新")
 		}
 	}
 	if sc := a.cfg.Sources.Scoop; sc != nil && a.availability(ctx, catalog.Scoop, sc.Check).OK {
@@ -107,7 +112,10 @@ func (s *Installed) List() InstalledList {
 	match := inventory.Match(list.Entries, apps)
 	out := InstalledList{Entries: make([]InstalledEntry, 0, len(list.Entries)), Loaded: loaded, Loading: loading, At: list.At, Notes: list.Notes}
 	for _, e := range list.Entries {
-		out.Entries = append(out.Entries, entryOf(e, match[e.Key]))
+		entry := entryOf(e, match[e.Key])
+		// Refresh also retries icons which were unavailable on the previous scan.
+		entry.Icon += "?v=" + url.QueryEscape(list.At.Format(time.RFC3339Nano))
+		out.Entries = append(out.Entries, entry)
 	}
 	return out
 }

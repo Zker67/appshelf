@@ -43,6 +43,21 @@ func byKey(entries []Entry) map[string]Entry {
 	return m
 }
 
+func TestLoadPreservesUnavailableSourceReason(t *testing.T) {
+	list := Load(context.Background(), Sources{
+		Notes: []string{"winget unavailable: module search path"},
+		Scan:  func() ([]detect.Entry, error) { return registry, nil },
+	})
+	if len(list.Entries) == 0 || len(list.Notes) != 1 || !strings.Contains(list.Notes[0], "module search path") {
+		t.Fatalf("lost degraded-source reason: %+v", list)
+	}
+	for _, entry := range list.Entries {
+		if entry.Update != "" {
+			t.Fatal("reported update without source")
+		}
+	}
+}
+
 func TestBuild(t *testing.T) {
 	entries := Build(packages, true, scoopApps, registry)
 	if len(entries) != len(packages)+len(scoopApps) {
@@ -179,14 +194,18 @@ func TestLoadReal(t *testing.T) {
 		t.Fatal("nothing installed found")
 	}
 	kinds := map[Kind]int{}
-	joined := 0
+	joined, updates := 0, 0
 	for _, e := range list.Entries {
+		if e.Update != "" {
+			updates++
+		}
 		kinds[e.Kind]++
 		if e.DisplayName != "" && e.Publisher != "" {
 			joined++
 		}
 	}
 	t.Logf("%d entries %v; %d with the registry's name and publisher", len(list.Entries), kinds, joined)
+	t.Logf("%d entries with source-reported updates", updates)
 	if !wingetOK {
 		t.Logf("winget not available: registry only")
 		return

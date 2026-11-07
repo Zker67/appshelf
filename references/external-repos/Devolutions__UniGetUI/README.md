@@ -25,3 +25,15 @@
 | 图标 | 自建图标库 `WebBasedData/screenshot-database-v2.json`（约 1.5 MB、1.2 万条，图标托管在第三方网站）；winget 清单的 Icons；注册表 DisplayIcon（不是 `.exe` 时） | `Core.IconStore/IconDatabase.cs`、`PackageManagerClasses/Packages/Package.cs` 的 `GenerateIconId`、`ClientHelpers/WinGetIconsHelper.cs` | 采纳图标库（运行时下载缓存，不分发）和键名规则；注册表图标另外支持从 `.exe` 提取 |
 | 已装匹配 | 按卸载键、UpgradeCode、ProductCode、名称加发布者依次匹配注册表项 | `Managers.WinInstaller/Internal/InstalledMatcher.cs` | 参考：用 ProductCodes 把 winget 项对上注册表项 |
 | 已装、发现页 | 已装页汇总所有管理器的已装软件（含“本机”和应用商店项）；发现页并行搜索各管理器后合并 | `PackageLoader/InstalledPackagesLoader.cs`、`DiscoverablePackagesLoader.cs` | 采纳，见 [Web 前端计划](../../../plans/2026-11-07-web-ui-and-discovery/01-unigetui-comparison.md) |
+
+## 图标来源复核（2026-11-07）
+
+本次锁定 commit `e857b3f5d61e377b6137f91c0fa3c25b4bfcd4d0`；保留前文早期调研记录，只参考思路，AppShelf 实现自行编写。
+
+| 源码 | 做法 | AppShelf 处理 |
+|---|---|---|
+| [WinGetIconsHelper.cs](https://github.com/Devolutions/UniGetUI/blob/e857b3f5d61e377b6137f91c0fa3c25b4bfcd4d0/src/UniGetUI.PackageEngine.Managers.WinGet/ClientHelpers/WinGetIconsHelper.cs) | 读取 Appx 的 Square44x44Logo，尝试多个 scale 文件；用 AppModel Repository 注册表取得 MSIX 路径；winget 原生包元数据支持 Icons URL 与 SHA-256 | 采纳 XML 应用 Logo、多缩放资源和注册表路径；补稀疏包的 WindowsApps 回退。暂未接入 WinGet 原生图标元数据，仍保留现有公共图标库回退 |
+| [WinGetPkgDetailsHelper.cs](https://github.com/Devolutions/UniGetUI/blob/e857b3f5d61e377b6137f91c0fa3c25b4bfcd4d0/src/UniGetUI.PackageEngine.Managers.WinGet/Helpers/WinGetPkgDetailsHelper.cs) | 区分 Local PC、MSIX、msstore 与 winget 的图标来源；安装目录按明确标识查找 | 保留来源分流；本地额外补充 MSI ProductIcon、软件同名主 EXE 和无歧义的开始菜单名称回退 |
+| [IconCacheEngine.cs](https://github.com/Devolutions/UniGetUI/blob/e857b3f5d61e377b6137f91c0fa3c25b4bfcd4d0/src/UniGetUI.Core.IconStore/IconCacheEngine.cs) | 同一任务共享、磁盘缓存，按 SHA-256、大小、版本或 URL 校验；部分大图缩小至最多 192 像素 | 已有合并任务、文件变化失效和持久缓存；本轮不引入图片缩放依赖 |
+
+当前项目的完整策略见 [图标服务](../../../internal/icons/README.md)，执行与验收见 [图标优化计划](../../../plans/2026-11-07-installed-icons/00-overview.md)。

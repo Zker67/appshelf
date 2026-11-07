@@ -1,0 +1,305 @@
+// Package winget installs apps with winget. It reads what is installed and
+// what has updates through the Microsoft.WinGet.Client PowerShell module,
+// whose objects come back as JSON, and installs with the winget command,
+// by exact ID from the winget source.
+package winget
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os/exec"
+	"strings"
+	"sync"
+	"time"
+
+	"appshelf/internal/catalog"
+	"appshelf/internal/runner"
+	"appshelf/internal/source"
+)
+
+// ModuleName is the PowerShell module the queries need.
+const ModuleName = "Microsoft.WinGet.Client"
+
+const queryTimeout = 3 * time.Minute
+
+// Source is the winget source.
+type Source struct {
+	// cli serializes the winget command: its local index takes one
+	// installer at a time. The module's queries go through winget's COM
+	// server, which handles them alongside.
+	cli sync.Mutex
+}
+
+// New returns the winget source.
+func New() *Source { return &Source{} }
+
+func (s *Source) Type() catalog.SourceType { return catalog.Winget }
+
+const checkScript = `
+$m = Get-Module -ListAvailable -Name Microsoft.WinGet.Client | Sort-Object Version -Descending | Select-Object -First 1
+$v = ''
+if ($m) { $v = [string]$m.Version }
+Write-Result @{ Module = [bool]$m; Version = $v }
+`
+
+// Check finds winget and the module.
+func (s *Source) Check(ctx context.Context) source.Availability {
+	path, err := exec.LookPath("winget")
+	if err != nil {
+		return source.Availability{Reason: "找不到 winget，请先从 Microsoft Store 安装“应用安装程序”"}
+	}
+	res, err := runner.Run(ctx, path, []string{"--version"}, runner.Options{Timeout: time.Minute})
+	if err != nil || res.ExitCode != 0 {
+		return source.Availability{Reason: "winget 无法运行：" + firstNonEmpty(errText(err), res.Tail(2))}
+	}
+	var m struct {
+		Module  bool
+		Version string
+	}
+	if _, err := runner.PowerShell(ctx, checkScript, nil, &m, runner.Options{Timeout: time.Minute}); err != nil {
+		return source.Availability{Reason: "无法检查 PowerShell 模块：" + err.Error()}
+	}
+	if !m.Module {
+		return source.Availability{Reason: "缺少 PowerShell 模块 " + ModuleName, Fixable: true}
+	}
+	return source.Availability{OK: true, Reason: "winget " + strings.TrimSpace(res.Tail(1)) + "，模块 " + m.Version}
+}
+
+const installModuleScript = `
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+$p = Get-PackageProvider -ListAvailable -Name NuGet -ErrorAction SilentlyContinue | Where-Object { $_.Version -ge [version]'2.8.5.201' }
+if (-not $p) {
+  Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
+}
+Install-Module -Name Microsoft.WinGet.Client -Scope CurrentUser -Force -AllowClobber -Repository PSGallery
+Write-Result @{ Ok = $true }
+`
+
+// InstallModule installs the PowerShell module for the current user, from
+// the PowerShell Gallery.
+func (s *Source) InstallModule(ctx context.Context, log io.Writer) error {
+	_, err := runner.PowerShell(ctx, installModuleScript, nil, nil, runner.Options{Log: log, Timeout: 10 * time.Minute})
+	if err != nil {
+		return fmt.Errorf("安装 %s 失败：%w", ModuleName, err)
+	}
+	return nil
+}
+
+// row is a package as the module reports it.
+type row struct {
+	ID                string `json:"Id"`
+	InstalledVersion  string
+	Source            string
+	IsUpdateAvailable bool
+	Latest            string
+}
+
+const rowScript = `
+function ConvertTo-Row($pkg) {
+  $latest = ''
+  if ($pkg.IsUpdateAvailable) { $latest = [string](@($pkg.AvailableVersions)[0]) }
+  [pscustomobject]@{
+    Id = [string]$pkg.Id
+    InstalledVersion = [string]$pkg.InstalledVersion
+    Source = [string]$pkg.Source
+    IsUpdateAvailable = [bool]$pkg.IsUpdateAvailable
+    Latest = $latest
+  }
+}
+Import-Module Microsoft.WinGet.Client
+`
+
+// statusesScript reads every installed package once and keeps those of
+// the catalog: reading AvailableVersions costs time, so only for them.
+const statusesScript = rowScript + `
+$want = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+foreach ($id in @($P.Ids)) { [void]$want.Add([string]$id) }
+$rows = @(Get-WinGetPackage | Where-Object { $want.Contains([string]$_.Id) } | ForEach-Object { ConvertTo-Row $_ })
+Write-Result $rows
+`
+
+// Statuses reads the state of the apps. A package installed outside
+// winget but recognized as one of its packages counts as installed; IDs
+// compare without case, so a different case never reads as not installed.
+func (s *Source) Statuses(ctx context.Context, apps []catalog.App) (map[string]source.Status, error) {
+	out := map[string]source.Status{}
+	if len(apps) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(apps))
+	for _, a := range apps {
+		ids = append(ids, a.Source.ID)
+	}
+	var rows []row
+	if _, err := runner.PowerShell(ctx, statusesScript, map[string]any{"Ids": ids}, &rows, runner.Options{Timeout: queryTimeout}); err != nil {
+		return nil, fmt.Errorf("读取 winget 已装软件失败：%w", err)
+	}
+	byID := map[string]row{}
+	for _, r := range rows {
+		byID[strings.ToLower(r.ID)] = r
+	}
+	for _, a := range apps {
+		r, ok := byID[strings.ToLower(a.Source.ID)]
+		out[a.ID] = statusOf(r, ok)
+	}
+	return out, nil
+}
+
+const recheckScript = rowScript + `
+$rows = @(Get-WinGetPackage -Id ([string]$P.Id) -MatchOption EqualsCaseInsensitive | ForEach-Object { ConvertTo-Row $_ })
+Write-Result $rows
+`
+
+// Recheck reads the state of one app.
+func (s *Source) Recheck(ctx context.Context, app catalog.App) (source.Status, error) {
+	var rows []row
+	if _, err := runner.PowerShell(ctx, recheckScript, map[string]any{"Id": app.Source.ID}, &rows, runner.Options{Timeout: queryTimeout}); err != nil {
+		return source.Status{}, fmt.Errorf("读取 winget 安装状态失败：%w", err)
+	}
+	for _, r := range rows {
+		if strings.EqualFold(r.ID, app.Source.ID) {
+			return statusOf(r, true), nil
+		}
+	}
+	return source.Status{State: source.NotInstalled}, nil
+}
+
+func statusOf(r row, found bool) source.Status {
+	if !found {
+		return source.Status{State: source.NotInstalled}
+	}
+	st := source.Status{State: source.Installed, Version: displayVersion(r.InstalledVersion)}
+	if r.IsUpdateAvailable && r.Latest != "" {
+		st.State, st.Latest = source.UpdateAvailable, r.Latest
+	}
+	return st
+}
+
+// displayVersion hides the "Unknown" winget reports for versions it cannot
+// read.
+func displayVersion(v string) string {
+	if strings.EqualFold(v, "unknown") {
+		return ""
+	}
+	return v
+}
+
+const searchScript = `
+Import-Module Microsoft.WinGet.Client
+$rows = @(Find-WinGetPackage -Query ([string]$P.Query) -Source winget | Select-Object -First 30 | ForEach-Object {
+  [pscustomobject]@{ Id = [string]$_.Id; Name = [string]$_.Name; Version = [string]$_.Version; Source = [string]$_.Source }
+})
+Write-Result $rows
+`
+
+// Search finds packages of the winget source.
+func (s *Source) Search(ctx context.Context, query string) ([]source.SearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	var rows []struct {
+		ID      string `json:"Id"`
+		Name    string
+		Version string
+		Source  string
+	}
+	if _, err := runner.PowerShell(ctx, searchScript, map[string]any{"Query": query}, &rows, runner.Options{Timeout: queryTimeout}); err != nil {
+		return nil, fmt.Errorf("winget 搜索失败：%w", err)
+	}
+	out := make([]source.SearchResult, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, source.SearchResult{ID: r.ID, Name: r.Name, Version: r.Version, Source: r.Source})
+	}
+	return out, nil
+}
+
+// Exit codes of winget, from its documentation (returnCodes.md).
+const (
+	codeNoPackageFound      = 0x8A150014
+	codeMultiplePackages    = 0x8A150016
+	codeUpdateNotApplicable = 0x8A15002B
+	codeAlreadyInstalled    = 0x8A150061
+	codeInUse               = 0x8A150101
+	codeInstallInProgress   = 0x8A150102
+	codeRebootToFinish      = 0x8A150109
+	codeCanceledByUser      = 0x8A15010C
+)
+
+// Install installs the app's package by its exact ID from the winget
+// source; an installed package is left as it is.
+func (s *Source) Install(ctx context.Context, app catalog.App, log io.Writer) (source.Result, error) {
+	return s.run(ctx, log, "install", app.Source.ID, "--no-upgrade")
+}
+
+// Upgrade updates the app's package by its exact ID.
+func (s *Source) Upgrade(ctx context.Context, app catalog.App, log io.Writer) (source.Result, error) {
+	return s.run(ctx, log, "upgrade", app.Source.ID)
+}
+
+func (s *Source) run(ctx context.Context, log io.Writer, verb, id string, extra ...string) (source.Result, error) {
+	path, err := exec.LookPath("winget")
+	if err != nil {
+		return source.Result{}, errors.New("找不到 winget")
+	}
+	args := []string{verb, "--id", id, "--exact", "--source", "winget",
+		"--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"}
+	args = append(args, extra...)
+	s.cli.Lock()
+	defer s.cli.Unlock()
+	if log != nil {
+		fmt.Fprintf(log, "> winget %s\n\n", strings.Join(args, " "))
+	}
+	res, err := runner.Run(ctx, path, args, runner.Options{Log: log})
+	if err != nil {
+		return source.Result{}, err
+	}
+	return interpret(res)
+}
+
+// interpret turns winget's exit code into a result.
+func interpret(res runner.Result) (source.Result, error) {
+	switch res.Code() {
+	case 0:
+		return source.Result{}, nil
+	case codeAlreadyInstalled:
+		return source.Result{AlreadyInstalled: true}, nil
+	case codeRebootToFinish:
+		return source.Result{RebootRequired: true}, nil
+	case codeNoPackageFound:
+		return source.Result{}, errors.New("winget 源中找不到这个 ID")
+	case codeMultiplePackages:
+		return source.Result{}, errors.New("这个 ID 匹配到多个软件包，没有安装")
+	case codeUpdateNotApplicable:
+		return source.Result{}, errors.New("没有适用的更新")
+	case codeInUse:
+		return source.Result{}, errors.New("软件正在运行，请关闭后重试")
+	case codeInstallInProgress:
+		return source.Result{}, errors.New("另一个安装正在进行，请稍后重试")
+	case codeCanceledByUser:
+		return source.Result{}, errors.New("安装被取消")
+	}
+	msg := fmt.Sprintf("winget 退出码 0x%08X", res.Code())
+	if tail := res.Tail(2); tail != "" {
+		msg += "：" + tail
+	}
+	return source.Result{}, errors.New(msg)
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func firstNonEmpty(s ...string) string {
+	for _, v := range s {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}

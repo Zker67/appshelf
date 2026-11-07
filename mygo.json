@@ -1,0 +1,10 @@
+{
+  "name": "AppShelf",
+  "identifier": "io.github.zker67.appshelf",
+  "version": "0.1.0",
+  "out": "build",
+  "updates": {
+    "publicKey": "1IAp4m4IlyC1Va9tGqkMAd8u0YNogVN9nA5fFX7eEtY=",
+    "github": "Zker67/appshelf"
+  }
+}

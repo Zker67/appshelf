@@ -40,6 +40,11 @@ import (
 type WingetAPI interface {
 	Check(ctx context.Context) source.Availability
 	Search(ctx context.Context, query string) ([]source.SearchResult, error)
+	// SearchVersions reads the versions of what Search finds, by lowercase
+	// ID, for display.
+	SearchVersions(ctx context.Context, query string) (map[string]string, error)
+	// Warm readies the searches, for the first one to be quick.
+	Warm(ctx context.Context) error
 	Installed(ctx context.Context, maxAge time.Duration) ([]winget.Package, time.Time, error)
 	LatestVersion(ctx context.Context, id string) (string, error)
 }
@@ -126,6 +131,7 @@ type App struct {
 	order    []string // tokens of imports and deletions, oldest first
 	searchMu sync.Mutex
 	search   context.CancelFunc
+	found    searchCache
 	settings settings
 }
 

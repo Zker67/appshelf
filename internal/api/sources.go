@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"appshelf/internal/catalog"
-	"appshelf/internal/source"
 )
 
 // Sources are winget, scoop and GitHub: whether they can be used here,
@@ -56,30 +55,36 @@ func (s *Sources) InstallModule() error {
 func (s *Sources) Search(ctx context.Context, sourceType catalog.SourceType, query string) ([]SearchHit, error) {
 	a := s.a
 	<-a.ready
-	var search func(context.Context, string) ([]source.SearchResult, error)
-	var check func(context.Context) source.Availability
-	switch sourceType {
-	case catalog.Winget:
-		if w := a.cfg.Sources.Winget; w != nil {
-			search, check = w.Search, w.Check
-		}
-	case catalog.Scoop:
-		if sc := a.cfg.Sources.Scoop; sc != nil {
-			search, check = sc.Search, sc.Check
+	var sr *searcher
+	for _, one := range a.searchers() {
+		if one.t == sourceType {
+			sr = &one
 		}
 	}
-	if search == nil {
+	if sr == nil {
 		return nil, errors.New("这个来源不支持搜索")
 	}
-	if av := a.availability(ctx, sourceType, check); !av.OK {
+	if av := a.availability(ctx, sourceType, sr.check); !av.OK {
 		return nil, errors.New(av.Reason)
 	}
 	if strings.TrimSpace(query) == "" {
 		return []SearchHit{}, nil
 	}
-	res, err := search(ctx, query)
+	var versions <-chan map[string]string
+	if sr.versions != nil {
+		versions = a.found.versions(ctx, sourceType, query, sr.versions)
+	}
+	res, err := a.found.results(ctx, sourceType, query, sr.search)
 	if err != nil {
 		return nil, err
+	}
+	if versions != nil && lacksVersion(res) {
+		select {
+		case v := <-versions:
+			res, _ = withVersions(res, v)
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	return a.hits(sourceType, query, res), nil
 }

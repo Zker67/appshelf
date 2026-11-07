@@ -24,13 +24,14 @@
 | `Check` | 找得到 `winget`，并且已安装 PowerShell 模块 `Microsoft.WinGet.Client`；缺模块时 `InstallModule` 可以为当前用户安装 |
 | `Statuses` | 一次 `Get-WinGetPackage` 全量查询（本机实测 318 项约 2.3 秒，含 PowerShell 启动），按 ID 不区分大小写地挑出清单里的软件；`IsUpdateAvailable` 和 `AvailableVersions` 给出可用更新 |
 | `Recheck` | `Get-WinGetPackage -Id <id> -MatchOption EqualsCaseInsensitive` |
-| `Search` | `Find-WinGetPackage -Query <q> -Source winget`，取前 50 项 |
+| `Search` | `Find-WinGetPackage -Query <q> -Source winget -Count 50`，只读 ID 和名称，在常驻的 PowerShell（`runner.Worker`）里执行；不读版本，版本由 `SearchVersions` 补 |
 | `Install` | `winget install --id <id> --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity --no-upgrade` |
 | `Upgrade` | 同上，动词换成 `upgrade`，没有 `--no-upgrade` |
 
 - 检测不区分大小写，宁可多认出已装、跳过安装；安装用 `--exact`，大小写不符时 winget 找不到包而失败，也不会装错。
 - 没能关联到 winget 源的已装软件 ID 以 `ARP\`、`MSIX\` 开头，不会和清单里的 ID 混淆。
 - 安装和更新的 winget 命令同一时间只运行一个。
+- 搜索不读模块对象的 `Version`：它要为每个结果从 CDN 下载 `versionData.mszyml` 和清单，逐个进行，50 个结果实测 30–55 秒。改为 ID、名称和版本分开读后，宽泛的词（如 `player`、`browser`）50 项约 0.2 秒、版本约 0.4 秒（本机实测）。
 - 退出码：`0x8A150061`（已安装）记为跳过；`0x8A150109` 成功但需要重启；`0x8A150014`、`0x8A150016`、`0x8A15002B`、`0x8A150101`、`0x8A150102`、`0x8A15010C` 各有中文原因；其他退出码附上输出末尾。
 
 只用于展示：
@@ -38,6 +39,8 @@
 | 方法 | 实现 |
 |---|---|
 | `Installed(ctx, maxAge)` | `Get-WinGetPackage` 列出全部已装软件（含没能关联到源的 `ARP\`、`MSIX\` 项）和可用更新，供“本机已装”页使用；比 `maxAge` 新的结果直接复用 |
+| `SearchVersions(ctx, q)` | `winget search --query <q> --source winget --count 100`，从表格里按 ID 取其后一列作为版本（winget 直接读本地索引，不下载）；ID 被截断（带 `…`）的查不到，只缺版本 |
+| `Warm(ctx)` | 启动搜索用的 PowerShell、导入模块并打开 winget 源，供发现页显示时预热 |
 | `LatestVersion(ctx, id)` | `Find-WinGetPackage -Id <id> -MatchOption EqualsCaseInsensitive -Source winget` 的版本，用来读 winget-pkgs 里对应版本的清单文件（软件详情） |
 
 ## scoop（`scoop/`）

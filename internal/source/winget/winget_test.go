@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"appshelf/internal/catalog"
 	"appshelf/internal/runner"
@@ -97,6 +98,76 @@ func TestSearch(t *testing.T) {
 	}
 	if got, err := s.Search(context.Background(), "-Name x"); err != nil {
 		t.Errorf("a query starting with a dash: %v (%v)", err, got)
+	}
+	vs, err := s.SearchVersions(context.Background(), "Visual Studio Code")
+	if err != nil || vs["microsoft.visualstudiocode"] == "" {
+		t.Errorf("versions: %v, %v", vs, err)
+	}
+	if _, err := s.SearchVersions(context.Background(), "-Name x"); err != nil {
+		t.Errorf("versions of a query starting with a dash: %v", err)
+	}
+}
+
+// TestSearchQuick searches for words that find many packages, which took
+// half a minute when the search read each package's version.
+func TestSearchQuick(t *testing.T) {
+	s := available(t)
+	t.Cleanup(func() { s.searcher().Close() })
+	ctx := context.Background()
+	start := time.Now()
+	if err := s.Warm(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("warm: %v", time.Since(start))
+	for _, q := range []string{"player", "manager", "tool"} {
+		start := time.Now()
+		got, err := s.Search(ctx, q)
+		took := time.Since(start)
+		if err != nil || len(got) < 20 {
+			t.Fatalf("%s: %d results, %v", q, len(got), err)
+		}
+		start = time.Now()
+		vs, err := s.SearchVersions(ctx, q)
+		vtook := time.Since(start)
+		n := 0
+		for _, r := range got {
+			if vs[strings.ToLower(r.ID)] != "" {
+				n++
+			}
+		}
+		t.Logf("%s: %d results in %v; versions of %d in %v", q, len(got), took, n, vtook)
+		if err != nil || n < len(got)*8/10 {
+			t.Errorf("%s: versions of %d of %d results, %v", q, n, len(got), err)
+		}
+		if took > 5*time.Second || vtook > 10*time.Second {
+			t.Errorf("%s: search %v, versions %v", q, took, vtook)
+		}
+	}
+}
+
+func TestParseSearchTable(t *testing.T) {
+	out := "\r   - \r   \\ \r" +
+		"名称            ID                     版本          匹配\r\n" +
+		"------------------------------------------------------------------\r\n" +
+		"MDX Notes       maqibin.MDXNotes       1.0.3         Tag: 微信\r\n" +
+		"企业微信        Tencent.WeCom          5.0.13.6005   Tag: 微信\r\n" +
+		"微信开发者工具  Tencent.WeixinDevT…    2.02.2609250  Tag: 微信\r\n" +
+		"Node.js         OpenJS.NodeJS          25.1.0\r\n" +
+		"\x1b[2KQuanshi Meeting Quanshi.QuanshiMeeting 6.26.25011003\r\n" +
+		"<由于结果限制而截断了其他条目>\r\n"
+	got := parseSearchTable([]byte(out))
+	for id, v := range map[string]string{
+		"maqibin.mdxnotes": "1.0.3", "tencent.wecom": "5.0.13.6005", "openjs.nodejs": "25.1.0",
+		"quanshi.quanshimeeting": "6.26.25011003",
+	} {
+		if got[id] != v {
+			t.Errorf("%s = %q, want %q", id, got[id], v)
+		}
+	}
+	for k := range got {
+		if strings.Contains(k, "…") {
+			t.Errorf("a shortened ID: %q", k)
+		}
 	}
 }
 

@@ -89,14 +89,53 @@ type fakeWinget struct {
 	pkgs    []winget.Package
 	mu      sync.Mutex
 	queries []string
+
+	versions map[string]string
+	verr     error
+	vblock   chan struct{} // reading versions waits for it, or its context
+	vqueries []string
+	warmed   int
+	// real, when set, answers the searches.
+	real *winget.Source
+}
+
+func (w *fakeWinget) SearchVersions(ctx context.Context, q string) (map[string]string, error) {
+	w.mu.Lock()
+	w.vqueries = append(w.vqueries, q)
+	block, v, err, real := w.vblock, w.versions, w.verr, w.real
+	w.mu.Unlock()
+	if real != nil {
+		return real.SearchVersions(ctx, q)
+	}
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return v, err
+}
+func (w *fakeWinget) Warm(ctx context.Context) error {
+	w.mu.Lock()
+	w.warmed++
+	real := w.real
+	w.mu.Unlock()
+	if real != nil {
+		return real.Warm(ctx)
+	}
+	return nil
 }
 
 func (w *fakeWinget) Check(context.Context) source.Availability { return source.Availability{OK: true} }
 func (w *fakeWinget) Search(ctx context.Context, q string) ([]source.SearchResult, error) {
 	w.mu.Lock()
 	w.queries = append(w.queries, q)
-	block := w.block
+	block, real := w.block, w.real
 	w.mu.Unlock()
+	if real != nil {
+		return real.Search(ctx, q)
+	}
 	if block != nil {
 		select {
 		case <-block:

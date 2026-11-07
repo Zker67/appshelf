@@ -11,7 +11,7 @@ AppShelf 的全部业务代码。分层和依赖方向见 [项目结构总览](.
 | [core](./core) | `core.go` | 打开清单和本机状态（损坏的文件改名留存），并行读取各来源状态、套用检测规则，保存编辑，导入导出，安装预览、清单外软件的批量更新预览（[updates.go](./core/updates.go)），以及队列的执行者 | 假来源和临时目录 |
 | [queue](./queue) | `queue.go` | 安装队列：一个 goroutine 逐项执行；执行前复查（已装跳过、状态不确定不执行），执行后复查；重试、停止、继续、清除已完成 | 假执行者 |
 | [source](./source) | 见 [source/README.md](./source/README.md) | 来源接口、状态类型和三个来源 | 见来源说明 |
-| [runner](./runner) | `runner.go`、`powershell.go`、`shell_windows.go` | 运行外部命令并保留输出末尾；用临时脚本和 UTF-8 JSON 文件运行 PowerShell，避免参数转义和编码问题；用 `ShellExecuteExW` 启动安装程序，让需要管理员权限的安装程序弹出 UAC | 真实的 Windows PowerShell，包括中文和以 `-` 开头的参数 |
+| [runner](./runner) | `runner.go`、`powershell.go`、`worker.go`、`shell_windows.go` | 运行外部命令并保留输出末尾；用临时脚本和 UTF-8 JSON 文件运行 PowerShell，避免参数转义和编码问题；`Worker` 是常驻的 PowerShell，逐个执行脚本，省去每次启动和导入模块（请求以 base64 JSON 按行收发并带编号，调用方放弃时短请求跑完、长请求结束进程，空闲 3 分钟退出）；用 `ShellExecuteExW` 启动安装程序，让需要管理员权限的安装程序弹出 UAC | 真实的 Windows PowerShell，包括中文和以 `-` 开头的参数；`Worker` 的复用、错误、取消、超时、退出、空闲回收和提速 |
 | [detect](./detect) | `detect.go`、`scan_windows.go`、`suggest.go` | 扫描注册表 Uninstall 项（64 位、32 位、当前用户），按检测规则认出软件；由程序名或仓库名生成检测规则 | 真实扫描本机注册表 |
 | [catalog](./catalog) | `catalog.go`（格式和校验）、`edit.go`（编辑）、`merge.go`（导入合并） | 软件清单 | 单元测试 |
 | [state](./state) | `state.go` | 本机状态：GitHub 软件的安装记录 | 单元测试 |

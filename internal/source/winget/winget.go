@@ -37,6 +37,10 @@ type Source struct {
 	list     sync.Mutex
 	listed   []Package
 	listedAt time.Time
+
+	// search is the PowerShell kept for the searches, started on first use.
+	searchOnce sync.Once
+	search     *runner.Worker
 }
 
 // New returns the winget source.
@@ -242,36 +246,125 @@ func displayVersion(v string) string {
 	return v
 }
 
-// searchScript finds packages. It reads no publisher: the metadata of a
-// version found takes about a second and a half a package.
+// searchScript finds packages. It reads no version and no publisher: the
+// module reads them from each package's manifests, downloading what it has
+// not cached, one package after another, which takes half a minute for 50
+// packages. SearchVersions reads the versions instead.
 const searchScript = `
 Import-Module Microsoft.WinGet.Client
-$rows = @(Find-WinGetPackage -Query ([string]$P.Query) -Source winget | Select-Object -First 50 | ForEach-Object {
-  [pscustomobject]@{ Id = [string]$_.Id; Name = [string]$_.Name; Version = [string]$_.Version; Source = [string]$_.Source }
+$rows = @(Find-WinGetPackage -Query ([string]$P.Query) -Source winget -Count 50 | ForEach-Object {
+  [pscustomobject]@{ Id = [string]$_.Id; Name = [string]$_.Name }
 })
 Write-Result $rows
 `
 
-// Search finds packages of the winget source.
+// warmScript loads the module and opens the winget source, as the first
+// search would.
+const warmScript = `
+Import-Module Microsoft.WinGet.Client
+$null = @(Find-WinGetPackage -Id AppShelf.Warm.NoSuchPackage -MatchOption Equals -Source winget -Count 1)
+`
+
+// Search finds packages of the winget source, without their versions. It
+// runs in a PowerShell kept for the searches.
 func (s *Source) Search(ctx context.Context, query string) ([]source.SearchResult, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
 	}
 	var rows []struct {
-		ID      string `json:"Id"`
-		Name    string
-		Version string
-		Source  string
+		ID   string `json:"Id"`
+		Name string
 	}
-	if _, err := runner.PowerShell(ctx, searchScript, map[string]any{"Query": query}, &rows, runner.Options{Timeout: queryTimeout}); err != nil {
+	if err := s.searcher().Run(ctx, searchScript, map[string]any{"Query": query}, &rows, queryTimeout); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("winget 搜索失败：%w", err)
 	}
 	out := make([]source.SearchResult, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, source.SearchResult{ID: r.ID, Name: r.Name, Version: r.Version, Source: r.Source})
+		out = append(out, source.SearchResult{ID: r.ID, Name: r.Name, Source: "winget"})
 	}
 	return out, nil
+}
+
+// Warm starts the PowerShell of the searches and opens the winget source,
+// for the first search to be quick.
+func (s *Source) Warm(ctx context.Context) error {
+	return s.searcher().Warm(ctx, warmScript)
+}
+
+func (s *Source) searcher() *runner.Worker {
+	s.searchOnce.Do(func() { s.search = runner.NewWorker() })
+	return s.search
+}
+
+// SearchVersions runs winget search for the query and returns the latest
+// version of each package it lists, by lowercase ID. winget reads them from
+// its local index, without downloading. It is for display: the IDs to look
+// up come from Search, and an ID winget shortens finds nothing.
+func (s *Source) SearchVersions(ctx context.Context, query string) (map[string]string, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return map[string]string{}, nil
+	}
+	path, err := exec.LookPath("winget")
+	if err != nil {
+		return nil, errors.New("找不到 winget")
+	}
+	args := []string{"search", "--query", query, "--source", "winget", "--count", "100",
+		"--disable-interactivity", "--accept-source-agreements"}
+	res, err := runner.Run(ctx, path, args, runner.Options{Timeout: time.Minute})
+	if err != nil {
+		return nil, err
+	}
+	return parseSearchTable(res.Output), nil
+}
+
+// parseSearchTable reads winget search's table: each ID is followed by its
+// version. Names come first and may hold spaces, and what follows the
+// version is localized, so every word maps to the next one; a winget ID has
+// a dot and no space, and the IDs looked up are exact.
+func parseSearchTable(output []byte) map[string]string {
+	out := map[string]string{}
+	text := strings.ReplaceAll(string(output), "\r\n", "\n")
+	for line := range strings.SplitSeq(text, "\n") {
+		if i := strings.LastIndexByte(line, '\r'); i >= 0 {
+			line = line[i+1:]
+		}
+		f := strings.Fields(stripControl(line))
+		for i := 0; i+1 < len(f); i++ {
+			k := strings.ToLower(f[i])
+			if !strings.Contains(k, ".") || strings.ContainsRune(k, '…') {
+				continue
+			}
+			if _, ok := out[k]; !ok {
+				out[k] = f[i+1]
+			}
+		}
+	}
+	return out
+}
+
+// stripControl drops the escape sequences of winget's progress output.
+func stripControl(s string) string {
+	if !strings.ContainsRune(s, 0x1b) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
+			j := i + 2
+			for j < len(s) && (s[j] < 0x40 || s[j] > 0x7e) {
+				j++
+			}
+			i = j
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // LatestVersion returns the version of a package the winget source would

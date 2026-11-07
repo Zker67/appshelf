@@ -115,7 +115,8 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `Tasks` | `Preview`、`Start` | 预览每个软件将安装、更新还是跳过及原因；`Start` 重新预览后只把可执行的加入队列，没有可执行的返回错误 |
 | | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列 |
 | `Sources` | `Overview`、`InstallModule`、`Search`、`CheckGitHub` | 来源是否可用和 GitHub 额度；安装 winget 的 PowerShell 模块；编辑软件时搜索 winget 或 scoop；检查 GitHub 仓库会装哪个文件 |
-| `Discover` | `Search(query, Channel<SearchBatch>)` | winget 和 scoop 并行搜索，每个来源的结果一到就发出；新的搜索取消上一次 |
+| `Discover` | `Search(query, Channel<SearchBatch>)` | winget 和 scoop 并行搜索，每个来源的结果一到就发出；新的搜索取消上一次。winget 先发不带版本的结果，读到版本后同一来源再发一次（前端按来源整批替换）；各来源结果缓存 10 分钟 |
+| | `Warm()` | 页面显示时调用，立即返回；在后台启动 winget 搜索用的 PowerShell 并打开 winget 源，让第一次搜索也快 |
 | | `SearchGitHub`、`Details`、`SuggestRules` | GitHub 搜索（按需）；软件详情（只用于展示）；GitHub 软件的检测规则建议（先本机已装的程序，最后是仓库名） |
 | `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的；第一次调用时开始读取 |
 | | `PreviewUpdates`、`StartUpdates` | 按已识别的本机 key 批量预览、确认后直接更新 winget / scoop 软件，不要求先加入清单 |

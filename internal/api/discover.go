@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo"
@@ -23,7 +24,9 @@ var Changed = mygo.NewEvent[Change]("changed")
 type Discover struct{ a *App }
 
 // Search searches winget and scoop side by side and sends each source's
-// results as they come. A new search cancels the one under way.
+// results as they come. A new search cancels the one under way. winget's
+// results come first without versions, and again once the versions are
+// read.
 func (d *Discover) Search(ctx context.Context, query string, results *mygo.Channel[SearchBatch]) error {
 	return d.a.searchAll(ctx, query, results.Send)
 }
@@ -44,42 +47,101 @@ func (a *App) searchAll(ctx context.Context, query string, send func(SearchBatch
 	if utf8.RuneCountInString(discover.Fold(query)) == 0 {
 		return nil
 	}
-	type searcher struct {
-		t      catalog.SourceType
-		search func(context.Context, string) ([]source.SearchResult, error)
-		check  func(context.Context) source.Availability
-	}
-	var all []searcher
-	if w := a.cfg.Sources.Winget; w != nil {
-		all = append(all, searcher{catalog.Winget, w.Search, w.Check})
-	}
-	if sc := a.cfg.Sources.Scoop; sc != nil {
-		all = append(all, searcher{catalog.Scoop, sc.Search, sc.Check})
-	}
 	var mu sync.Mutex // send one batch at a time
+	sendOne := func(batch SearchBatch) {
+		if ctx.Err() != nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if err := send(batch); err != nil {
+			cancel()
+		}
+	}
 	var wg sync.WaitGroup
-	for _, s := range all {
+	for _, s := range a.searchers() {
 		wg.Go(func() {
 			batch := SearchBatch{Type: s.t, Hits: []SearchHit{}}
 			if av := a.availability(ctx, s.t, s.check); !av.OK {
 				batch.Unavailable, batch.Error = true, av.Reason
-			} else if res, err := s.search(ctx, query); err != nil {
-				batch.Error = err.Error()
-			} else {
-				batch.Hits = a.hits(s.t, query, res)
-			}
-			if ctx.Err() != nil {
+				sendOne(batch)
 				return
 			}
-			mu.Lock()
-			defer mu.Unlock()
-			if err := send(batch); err != nil {
-				cancel()
+			var versions <-chan map[string]string
+			if s.versions != nil {
+				versions = a.found.versions(ctx, s.t, query, s.versions)
+			}
+			res, err := a.found.results(ctx, s.t, query, s.search)
+			if err != nil {
+				batch.Error = err.Error()
+				sendOne(batch)
+				return
+			}
+			// Versions already read go out with the results; the others
+			// follow.
+			got := false
+			select {
+			case v := <-versions:
+				res, _ = withVersions(res, v)
+				got = true
+			default:
+			}
+			batch.Hits = a.hits(s.t, query, res)
+			sendOne(batch)
+			if got || versions == nil || !lacksVersion(res) {
+				return
+			}
+			select {
+			case v := <-versions:
+				if res, n := withVersions(res, v); n > 0 {
+					sendOne(SearchBatch{Type: s.t, Hits: a.hits(s.t, query, res)})
+				}
+			case <-ctx.Done():
 			}
 		})
 	}
 	wg.Wait()
 	return nil
+}
+
+// searcher is a source that searches.
+type searcher struct {
+	t      catalog.SourceType
+	search func(context.Context, string) ([]source.SearchResult, error)
+	check  func(context.Context) source.Availability
+	// versions reads the versions search leaves out; nil when it leaves
+	// none out.
+	versions func(context.Context, string) (map[string]string, error)
+}
+
+// searchers returns winget and scoop, those the build has.
+func (a *App) searchers() []searcher {
+	var all []searcher
+	if w := a.cfg.Sources.Winget; w != nil {
+		all = append(all, searcher{catalog.Winget, w.Search, w.Check, w.SearchVersions})
+	}
+	if sc := a.cfg.Sources.Scoop; sc != nil {
+		all = append(all, searcher{catalog.Scoop, sc.Search, sc.Check, nil})
+	}
+	return all
+}
+
+// Warm readies the searches as the page opens, for the first one to be
+// quick. It returns at once.
+func (d *Discover) Warm() {
+	a := d.a
+	go func() {
+		<-a.ready
+		w := a.cfg.Sources.Winget
+		if w == nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if av := a.availability(ctx, catalog.Winget, w.Check); av.OK {
+			w.Warm(ctx)
+		}
+	}()
 }
 
 // hits annotates and ranks a source's results.

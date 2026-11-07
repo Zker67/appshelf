@@ -537,7 +537,9 @@ export const Discover = {
   },
   /**
    * Search searches winget and scoop side by side and sends each source's
-   * results as they come. A new search cancels the one under way.
+   * results as they come. A new search cancels the one under way. winget's
+   * results come first without versions, and again once the versions are
+   * read.
    */
   search(query: string, results: Channel<SearchBatch>): Promise<void> {
     return call("Discover.Search", query, results);
@@ -564,6 +566,13 @@ export const Discover = {
  */
 export const Installed = {
   /** List returns what is installed. The first call starts reading it. */
+  /**
+   * Warm readies the searches as the page opens, for the first one to be
+   * quick. It returns at once.
+   */
+  warm(): Promise<void> {
+    return call("Discover.Warm");
+  },
   list(): Promise<InstalledList> {
     return call("Installed.List");
   },

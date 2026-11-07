@@ -17,19 +17,7 @@ import (
 // answers with Write-Result; an error ends it with its message in a file,
 // written as UTF-8, which the console of Windows PowerShell is not.
 const prelude = `param([string]$In, [string]$Out)
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-# Go inherits the launcher's PSModulePath without PowerShell 7's native-command
-# adjustment. Restore this Windows PowerShell host's standard locations locally.
-$modulePaths = @()
-$documents = [Environment]::GetFolderPath('MyDocuments')
-if ($documents) { $modulePaths += Join-Path $documents 'WindowsPowerShell\Modules' }
-if ($env:ProgramFiles) { $modulePaths += Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules' }
-$modulePaths += Join-Path $PSHOME 'Modules'
-$modulePaths += @($env:PSModulePath -split ';' | Where-Object { $_ })
-$env:PSModulePath = ($modulePaths | Select-Object -Unique) -join ';'
-$utf8 = New-Object System.Text.UTF8Encoding $false
-function Write-Result($value) {
+` + hostSetup + `function Write-Result($value) {
   $json = ConvertTo-Json -InputObject $value -Depth 8 -Compress
   [System.IO.File]::WriteAllText($Out, $json, $utf8)
 }
@@ -41,6 +29,22 @@ trap {
   exit 1
 }
 $P = Get-Content -Raw -LiteralPath $In -Encoding UTF8 | ConvertFrom-Json
+`
+
+// hostSetup prepares Windows PowerShell for the scripts, in PowerShell and
+// in the Worker alike.
+const hostSetup = `$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+# Go inherits the launcher's PSModulePath without PowerShell 7's native-command
+# adjustment. Restore this Windows PowerShell host's standard locations locally.
+$modulePaths = @()
+$documents = [Environment]::GetFolderPath('MyDocuments')
+if ($documents) { $modulePaths += Join-Path $documents 'WindowsPowerShell\Modules' }
+if ($env:ProgramFiles) { $modulePaths += Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules' }
+$modulePaths += Join-Path $PSHOME 'Modules'
+$modulePaths += @($env:PSModulePath -split ';' | Where-Object { $_ })
+$env:PSModulePath = ($modulePaths | Select-Object -Unique) -join ';'
+$utf8 = New-Object System.Text.UTF8Encoding $false
 `
 
 // ScriptError is a script that ended with an error.

@@ -19,8 +19,9 @@
 | `dto.go` | 前端看到的全部类型；改动后要重新生成 `mygo.ts` |
 | `shelf.go` | `Shelf`：清单快照、检查更新、添加、批量加入、删除与撤销、分类和标签、导入导出 |
 | `tasks.go` | `Tasks`：安装预览、开始、队列操作、日志 |
-| `sources.go` | `Sources`：来源状态与额度、安装 winget 模块、编辑时搜索、检查 GitHub 仓库 |
-| `discover.go` | `Discover`：统一搜索（`Channel` 流式返回，新的搜索取消旧的）、GitHub 搜索、详情、规则建议；以及 `Changed` 事件 |
+| `sources.go` | `Sources`：来源状态与额度、安装 winget 模块、编辑时搜索（等版本读完一起返回）、检查 GitHub 仓库 |
+| `discover.go` | `Discover`：统一搜索（`Channel` 流式返回，新的搜索取消旧的；winget 先发结果，读到版本再发一次）、预热（`Warm`）、GitHub 搜索、详情、规则建议；以及 `Changed` 事件 |
+| `search.go` | 搜索缓存：按来源和查询（忽略大小写和首尾空格）保留来源的原始结果和 winget 版本 10 分钟，最多 64 次搜索；出错不缓存；“已在清单”“本机已装”在发送时重新标记 |
 | [installed.go](./installed.go)、[installed_updates.go](./installed_updates.go) | `Installed`：本机已装列表、与清单对照，以及按已识别 key 预览和开始直接更新；不会自动加入清单 |
 | `about.go` | `About`：版本、自更新、打开目录和链接（只允许 http/https）、外观 |
 | `settings.go` | `settings.json` 的读写（外观） |
@@ -34,3 +35,5 @@
 ## 测试
 
 `api_test.go` 用假来源和临时目录直接调用服务方法，检查返回值和事件：清单快照与变化通知、批量加入与撤销删除、预览与开始、搜索（含取消）、本机已装对照、导入导出、关于、通知合并、循环里的 panic。
+
+`search_test.go`：winget 结果先于版本发出、版本补齐后再发一次、缓存命中与过期、读版本失败不影响结果、编辑时搜索带版本、预热；`TestSearchRealWinget` 经服务真实搜索本机 winget 并计时（只读，没有 winget 时跳过）。

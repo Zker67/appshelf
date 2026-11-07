@@ -30,6 +30,7 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { AddTarget } from "@/lib/add-target";
 import { errorText } from "@/lib/api";
 import { sourceID } from "@/lib/shelf";
 import { Shelf, type AddItem, type Detect, type Source } from "@/mygo";
@@ -44,7 +45,7 @@ import {
   ScanSearchIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 /** AddCandidate is a package to add, as a search or the installed list has it. */
@@ -61,6 +62,8 @@ export interface AddCandidate {
 export interface AddDialogRequest {
   items: AddCandidate[];
   install: boolean;
+  /** target is the category and tags chosen already. */
+  target?: AddTarget;
   seq: number;
   open: boolean;
 }
@@ -105,12 +108,25 @@ export function AddDialog({
 }) {
   const nav = useNav();
   const [drafts, setDrafts] = useState<Draft[]>(() => draftsOf(request?.items ?? []));
-  const [category, setCategory] = useState<CategoryChoice>(noCategory);
-  const [tags, setTags] = useState<TagChoice>(noTags);
+  const [category, setCategory] = useState<CategoryChoice>(() =>
+    request?.target ? { id: request.target.categoryId } : noCategory,
+  );
+  const [tags, setTags] = useState<TagChoice>(() =>
+    request?.target ? { ids: request.target.tagIds, newNames: [] } : noTags,
+  );
   const [busy, setBusy] = useState<"add" | "install" | null>(null);
   const open = request?.open ?? false;
   const install = request?.install ?? false;
   const missing = drafts.filter((d) => needsRule(d) && !d.rule.trim()).length;
+
+  // Once every rule is filled, as by a suggestion, the button the dialog
+  // was opened for has the focus: Enter adds. Typing somewhere keeps it there.
+  const primary = useRef<HTMLButtonElement>(null);
+  const ready = open && missing === 0 && drafts.length > 0;
+  useEffect(() => {
+    if (!ready || document.activeElement instanceof HTMLInputElement) return;
+    primary.current?.focus();
+  }, [ready]);
 
   const update = (key: string, patch: Partial<Draft>) =>
     setDrafts((ds) => ds.map((d) => (d.key === key ? { ...d, ...patch } : d)));
@@ -163,7 +179,10 @@ export function AddDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex max-h-[min(760px,calc(100vh-6rem))] flex-col gap-0 p-0 sm:max-w-2xl">
+      <DialogContent
+        className="flex max-h-[min(760px,calc(100vh-6rem))] flex-col gap-0 p-0 sm:max-w-2xl"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader className="border-b px-5 pt-5 pb-4">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <PlusIcon className="size-5 text-primary" />
@@ -217,6 +236,7 @@ export function AddDialog({
             取消
           </Button>
           <Button
+            ref={install ? undefined : primary}
             variant={install ? "outline" : "default"}
             disabled={busy !== null || missing > 0 || drafts.length === 0}
             onClick={() => submit(false)}
@@ -225,6 +245,7 @@ export function AddDialog({
             加入清单
           </Button>
           <Button
+            ref={install ? primary : undefined}
             variant={install ? "default" : "outline"}
             disabled={busy !== null || missing > 0 || drafts.length === 0}
             onClick={() => submit(true)}

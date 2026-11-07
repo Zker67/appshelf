@@ -2,9 +2,11 @@
 // and the Store, marked when the catalog has them or their source has a
 // newer version; added to the catalog from here, or their source searched.
 
+import { AddTargetChip } from "@/components/add-target";
 import { AppIcon } from "@/components/app-icon";
 import { Chip, EmptyState, SearchBox, SelectionBar } from "@/components/common";
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
+import { AddButton, InShelfButton } from "@/components/row-actions";
 import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
 import { SourceBadge, SourceIcon } from "@/components/source-badge";
 import { Pill } from "@/components/status-badge";
@@ -22,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { Installed, type InstalledEntry, type InstalledKind } from "@/mygo";
 import { useActions } from "@/state/actions";
 import { useNav } from "@/state/nav";
+import { useQuickAdd } from "@/state/quick-add";
 import {
   ArrowUpCircleIcon,
   CheckIcon,
@@ -152,16 +155,26 @@ export function InstalledPage() {
     space: () => {
       if (!overview && list.focus) list.check(list.focus, !list.selected.has(list.focus), false);
     },
+    enter: () => {
+      const e = !overview && list.focus ? byKey.get(list.focus) : undefined;
+      if (!e) return false;
+      if (e.inShelf.length > 0) nav.showInShelf(e.inShelf);
+      else if (e.source) add([e]);
+      else return false;
+      return true;
+    },
   });
 
+  const quick = useQuickAdd((k) => (byKey.get(k)?.inShelf.length ?? 0) > 0);
   const candidate = (e: InstalledEntry): AddCandidate | null =>
     e.source ? { name: e.name, source: e.source, icon: e.icon } : null;
+  /** add adds the programs with a source, not in the catalog, to the target chosen. */
   const add = (es: InstalledEntry[]) => {
-    const items = es
-      .filter((e) => e.inShelf.length === 0)
-      .map(candidate)
-      .filter((c): c is AddCandidate => c !== null);
-    if (items.length > 0) actions.add(items);
+    const items = es.flatMap((e) => {
+      const cand = e.inShelf.length === 0 ? candidate(e) : null;
+      return cand ? [{ key: e.key, cand }] : [];
+    });
+    void quick.add(items, false);
   };
   const findSource = (e: InstalledEntry) =>
     nav.search(e.name, { find: { name: e.name, rule: e.rule } });
@@ -283,6 +296,7 @@ export function InstalledPage() {
               inputRef={searchRef}
               className="mx-auto w-full max-w-sm min-w-40"
             />
+            <AddTargetChip />
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -350,6 +364,8 @@ export function InstalledPage() {
                     selecting={list.selected.size > 0}
                     onClick={(ev) => list.clickRow(e.key, ev)}
                     onCheck={(on, shift) => list.check(e.key, on, shift)}
+                    adding={quick.adding.has(e.key)}
+                    addHint={quick.hint}
                     onAdd={() => add([e])}
                     onFind={() => findSource(e)}
                     onShow={() => nav.showInShelf(e.inShelf)}
@@ -387,6 +403,8 @@ function EntryRow({
   checked,
   focused,
   selecting,
+  adding,
+  addHint,
   onClick,
   onCheck,
   onAdd,
@@ -398,6 +416,8 @@ function EntryRow({
   checked: boolean;
   focused: boolean;
   selecting: boolean;
+  adding: boolean;
+  addHint: string;
   onClick: (ev: MouseEvent) => void;
   onCheck: (on: boolean, shift: boolean) => void;
   onAdd: () => void;
@@ -462,12 +482,6 @@ function EntryRow({
             </TooltipContent>
           </Tooltip>
         )}
-        {inShelf && (
-          <Pill tone="success">
-            <CheckIcon />
-            已在清单
-          </Pill>
-        )}
       </div>
       {e.update && e.source && (
         <Button
@@ -483,32 +497,16 @@ function EntryRow({
           更新
         </Button>
       )}
-      <div className="flex w-[92px] shrink-0 justify-end">
+      <div className="flex w-[104px] shrink-0 justify-end">
         {inShelf ? (
-          <Button
-            size="xs"
-            variant="ghost"
-            className="text-muted-foreground"
-            onClick={(ev) => {
-              ev.stopPropagation();
-              onShow();
-            }}
-          >
-            查看
-          </Button>
+          <InShelfButton onClick={onShow} />
         ) : e.source ? (
-          <Button
-            size="xs"
-            variant="outline"
-            className="transition-colors group-hover/row:border-primary/40 group-hover/row:text-primary"
-            onClick={(ev) => {
-              ev.stopPropagation();
-              onAdd();
-            }}
-          >
-            <PlusIcon />
-            加入清单
-          </Button>
+          <AddButton
+            label="加入清单"
+            adding={adding}
+            hint={e.source.type === "github" ? "确认检测规则后加入" : addHint}
+            onClick={onAdd}
+          />
         ) : (
           <Tooltip>
             <TooltipTrigger asChild>

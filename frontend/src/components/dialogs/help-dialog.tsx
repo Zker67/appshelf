@@ -159,7 +159,7 @@ function Start() {
       title: "加入清单",
       text: (
         <>
-          点<Ui>加入清单</Ui>，可以同时设好分类和标签。
+          先在搜索框旁的<Ui>加入到</Ui>选好分类和标签，之后点<Ui>加入</Ui>就直接放进去。
         </>
       ),
     },
@@ -404,6 +404,7 @@ function Keys() {
       "上下移动",
     ],
     [<Kbd key="space">空格</Kbd>, "勾选当前项"],
+    [<Kbd key="enter">Enter</Kbd>, "加入当前项，已在清单的去清单查看"],
     [<Kbd key="right">右键</Kbd>, "更多操作"],
   ];
   return (

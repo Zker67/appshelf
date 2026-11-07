@@ -105,11 +105,14 @@ export interface PageKeys {
   escape?: () => boolean;
   move?: (delta: number) => void;
   space?: () => void;
+  /** enter acts on the row focused; it returns whether it did something. */
+  enter?: () => boolean;
 }
 
 /**
  * usePageKeys handles a page's keys: Ctrl+F and / focus its search, Ctrl+A
- * selects its rows, Esc clears, ↑ ↓ move, Space checks. A page kept but
+ * selects its rows, Esc clears, ↑ ↓ move, Space checks, Enter acts on the
+ * row focused (adds it, or opens it in the catalog). A page kept but
  * hidden has no effects, so only the page shown listens.
  */
 export function usePageKeys(keys: PageKeys): void {
@@ -138,6 +141,8 @@ export function usePageKeys(keys: PageKeys): void {
     } else if (e.key === " " && keys.space && !onControl) {
       e.preventDefault();
       keys.space();
+    } else if (e.key === "Enter" && !ctrl && !onControl && keys.enter?.()) {
+      e.preventDefault();
     }
   });
   useEffect(() => {

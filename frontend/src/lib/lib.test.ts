@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { ShelfApp } from "@/mygo";
+import { describeTarget, liveTarget, parseTarget } from "./add-target";
+import { pairTwins } from "./twins";
 import { prune, selectRange, toggle } from "./selection";
 import {
   countStatus,
@@ -163,5 +165,70 @@ describe("selection", () => {
     expect([...prune(sel, order)]).toEqual(["a"]);
     const same = new Set(["a", "b"]);
     expect(prune(same, order)).toBe(same);
+  });
+});
+
+describe("add target", () => {
+  const shelf = {
+    categories: [{ id: "c_dev", name: "开发", count: 1 }],
+    tags: [
+      { id: "t_daily", name: "常用", count: 1 },
+      { id: "t_new", name: "新机", count: 0 },
+    ],
+  };
+
+  it("drops a category or tags no longer in the catalog", () => {
+    expect(liveTarget({ categoryId: "c_gone", tagIds: ["t_daily", "t_gone"] }, shelf)).toEqual({
+      categoryId: "",
+      tagIds: ["t_daily"],
+    });
+    expect(liveTarget({ categoryId: "c_dev", tagIds: [] }, shelf)).toEqual({
+      categoryId: "c_dev",
+      tagIds: [],
+    });
+  });
+
+  it("keeps the target while the catalog is not read", () => {
+    const t = { categoryId: "c_x", tagIds: ["t_x"] };
+    expect(liveTarget(t, undefined)).toBe(t);
+  });
+
+  it("names the target", () => {
+    expect(describeTarget({ categoryId: "", tagIds: [] }, shelf)).toBe("不分类");
+    expect(describeTarget({ categoryId: "c_dev", tagIds: ["t_daily", "t_new"] }, shelf)).toBe(
+      "分类「开发」 · 标签 常用、新机",
+    );
+  });
+});
+
+describe("stored add target", () => {
+  it("reads a target, and ignores what is not one", () => {
+    expect(parseTarget('{"categoryId":"c_dev","tagIds":["t_a",3]}')).toEqual({
+      categoryId: "c_dev",
+      tagIds: ["t_a"],
+    });
+    expect(parseTarget(null)).toEqual({ categoryId: "", tagIds: [] });
+    expect(parseTarget("not json")).toEqual({ categoryId: "", tagIds: [] });
+    expect(parseTarget('{"categoryId":1}')).toEqual({ categoryId: "", tagIds: [] });
+  });
+});
+
+describe("twins", () => {
+  const hit = (type: string, id: string, name: string) => ({ type, id, name });
+
+  it("pairs a winget and a scoop hit of the same name, folded", () => {
+    const w = [hit("winget", "7zip.7zip", "7-Zip"), hit("winget", "Git.Git", "Git")];
+    const s = [hit("scoop", "main/7zip", "7zip"), hit("scoop", "main/gitui", "gitui")];
+    const twins = pairTwins(w, s);
+    expect([...twins.keys()]).toEqual(["winget:7zip.7zip"]);
+    expect(twins.get("winget:7zip.7zip")?.id).toBe("main/7zip");
+  });
+
+  it("pairs a hit once", () => {
+    const w = [hit("winget", "A.One", "Tool"), hit("winget", "B.Two", "tool")];
+    const s = [hit("scoop", "main/tool", "tool"), hit("scoop", "extras/tool", "Tool")];
+    const twins = pairTwins(w, s);
+    expect(twins.size).toBe(1);
+    expect(twins.get("winget:A.One")?.id).toBe("main/tool");
   });
 });

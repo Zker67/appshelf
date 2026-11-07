@@ -2,11 +2,13 @@
 // asked; what is already in the catalog or installed is marked. Adding is a
 // click; adding by hand is for what no search finds.
 
+import { AddTargetChip } from "@/components/add-target";
 import { AppIcon } from "@/components/app-icon";
 import { CopyButton, EmptyState, InfoRow, SearchBox, SelectionBar } from "@/components/common";
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
 import { DetailPanel } from "@/components/detail-panel";
 import { PackageInfo } from "@/components/package-info";
+import { AddButton, InShelfButton } from "@/components/row-actions";
 import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
 import { GitHubMark, SourceBadge, SourceIcon } from "@/components/source-badge";
 import { Pill } from "@/components/status-badge";
@@ -19,18 +21,23 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { errorText, useShelf, useSources } from "@/lib/api";
 import { sourceKey, sourceLabel, type SourceKind } from "@/lib/shelf";
 import { fold, formatDateTime, formatStars } from "@/lib/text";
+import { pairTwins } from "@/lib/twins";
 import { revealRow, useList, usePageKeys } from "@/lib/use-list";
 import { cn } from "@/lib/utils";
 import { Discover, type SearchBatch, type SearchHit, type Source } from "@/mygo";
 import { useActions } from "@/state/actions";
 import { useNav, type FindSource } from "@/state/nav";
+import { useQuickAdd } from "@/state/quick-add";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArchiveIcon,
+  ArrowRightIcon,
   CheckIcon,
   DownloadIcon,
   FingerprintIcon,
   LayersIcon,
+  LoaderCircleIcon,
+  MergeIcon,
   MonitorCheckIcon,
   PencilLineIcon,
   PlusIcon,
@@ -81,6 +88,14 @@ export function sourceOf(h: SearchHit): Source {
   }
 }
 
+/**
+ * pickOf is the source chosen of a winget row with a scoop twin: as the user
+ * chose, else the one in the catalog, else winget.
+ */
+function pickOf(h: SearchHit, twin: SearchHit, picks: Record<string, SourceKind>): SourceKind {
+  return picks[keyOf(h)] ?? (twin.inShelf && !h.inShelf ? "scoop" : "winget");
+}
+
 export function DiscoverPage() {
   const nav = useNav();
   const actions = useActions();
@@ -91,6 +106,8 @@ export function DiscoverPage() {
   const [searched, setSearched] = useState("");
   const [only, setOnly] = useState<SourceKind | null>(null);
   const [find, setFind] = useState<FindSource | null>(null);
+  /** picks: the source chosen of a result in winget and scoop, by its row. */
+  const [picks, setPicks] = useState<Record<string, SourceKind>>({});
   const gen = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -189,15 +206,66 @@ export function DiscoverPage() {
       github: fresh(results.github),
     };
   }, [results, shelf]);
-  const all = useMemo(() => kinds.flatMap((k) => view[k].hits), [view]);
-  const visible = useMemo(() => (only ? view[only].hits : all), [all, only, view]);
-  const byKey = useMemo(() => new Map(all.map((h) => [keyOf(h), h])), [all]);
-  const order = useMemo(() => visible.map(keyOf), [visible]);
+  // With all sources shown, an app in winget and scoop is one row, of the
+  // winget key; the source to add is chosen on it.
+  const merged = only === null;
+  const twins = useMemo(() => pairTwins(view.winget.hits, view.scoop.hits), [view]);
+  const sections = useMemo(() => {
+    const paired = new Set([...twins.values()].map(keyOf));
+    return kinds
+      .filter((k) => (only ? only === k : true))
+      .map((k) => ({
+        kind: k,
+        hits:
+          merged && k === "scoop"
+            ? view.scoop.hits.filter((h) => !paired.has(keyOf(h)))
+            : view[k].hits,
+      }));
+  }, [merged, only, twins, view]);
+  /** twinPick is how a row with a twin chooses its source, by the row's key. */
+  const twinPick = (key: string): TwinPick | undefined => {
+    const row = merged ? view.winget.hits.find((h) => keyOf(h) === key) : undefined;
+    const twin = row && twins.get(key);
+    if (!row || !twin) return undefined;
+    return {
+      pick: pickOf(row, twin, picks),
+      onPick: (k) => setPicks((p) => ({ ...p, [key]: k })),
+    };
+  };
+  const rows = useMemo(() => sections.flatMap((s) => s.hits), [sections]);
+  const byKey = useMemo(
+    () =>
+      new Map(
+        rows.map((h) => {
+          const twin = merged ? twins.get(keyOf(h)) : undefined;
+          return [keyOf(h), twin && pickOf(h, twin, picks) === "scoop" ? twin : h] as const;
+        }),
+      ),
+    [rows, merged, twins, picks],
+  );
+  const allCount = kinds.reduce((n, k) => n + view[k].hits.length, 0) - twins.size;
+  const order = useMemo(() => rows.map(keyOf), [rows]);
   const list = useList(order, false);
   const focused = list.focus ? byKey.get(list.focus) : undefined;
   const selected = [...list.selected].map((k) => byKey.get(k)).filter((h): h is SearchHit => !!h);
   const addable = selected.filter((h) => !h.inShelf);
   useEffect(() => revealRow(listRef, list.focus), [list.focus]);
+
+  const quick = useQuickAdd((k) => !!byKey.get(k)?.inShelf);
+  const candidate = (h: SearchHit): AddCandidate => ({
+    name: h.name,
+    source: sourceOf(h),
+    icon: h.icon,
+    ...(find ? { detect: { displayName: find.rule }, from: find.name } : {}),
+  });
+  /** add adds the rows not in the catalog, as each shows its source. */
+  const add = (keys: string[], install: boolean) => {
+    const items = keys.flatMap((key) => {
+      const h = byKey.get(key);
+      return h && !h.inShelf ? [{ key, cand: candidate(h) }] : [];
+    });
+    void quick.add(items, install);
+  };
 
   usePageKeys({
     focusSearch: () => searchRef.current?.select(),
@@ -217,16 +285,13 @@ export function DiscoverPage() {
     space: () => {
       if (list.focus) list.check(list.focus, !list.selected.has(list.focus), false);
     },
+    enter: () => {
+      if (!list.focus || !focused) return false;
+      if (focused.inShelf) nav.showInShelf([focused.inShelf]);
+      else add([list.focus], false);
+      return true;
+    },
   });
-
-  const candidate = (h: SearchHit): AddCandidate => ({
-    name: h.name,
-    source: sourceOf(h),
-    icon: h.icon,
-    ...(find ? { detect: { displayName: find.rule }, from: find.name } : {}),
-  });
-  const add = (hits: SearchHit[], install: boolean) =>
-    actions.add(hits.filter((h) => !h.inShelf).map(candidate), { install });
 
   const loading = kinds.some((k) => results[k].state === "loading");
   const anyDone = kinds.some((k) => results[k].state !== "idle");
@@ -256,7 +321,7 @@ export function DiscoverPage() {
               <SideRow
                 icon={LayersIcon}
                 label="全部结果"
-                count={all.length}
+                count={allCount}
                 active={only === null}
                 onClick={() => setOnly(null)}
               />
@@ -280,6 +345,7 @@ export function DiscoverPage() {
       <ResizablePanel id="list" minSize={520}>
         <div className="@container relative flex h-full min-h-0 flex-col bg-background">
           <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b px-3">
+            <AddTargetChip />
             <SearchBox
               value={query}
               onChange={setQuery}
@@ -353,9 +419,9 @@ export function DiscoverPage() {
                 </Button>
               ))}
             </EmptyState>
-          ) : visible.length === 0 && loading ? (
+          ) : rows.length === 0 && loading ? (
             <ResultSkeleton />
-          ) : visible.length === 0 ? (
+          ) : rows.length === 0 ? (
             <EmptyState icon={SearchXIcon} title={`没有找到「${searched}」`}>
               {results.github.state === "idle" && (
                 <Button onClick={() => searchGitHub(searched)}>
@@ -371,35 +437,47 @@ export function DiscoverPage() {
           ) : (
             <ScrollArea className="min-h-0 flex-1" viewportRef={listRef}>
               <div className="list-stagger pb-20">
-                {kinds
-                  .filter((k) => (only ? only === k : true))
-                  .map((k) =>
-                    view[k].hits.length === 0 ? null : (
-                      <section key={k}>
-                        <div className="sticky top-0 z-10 flex h-8 items-center gap-2 border-b bg-background/90 px-4 text-xs font-medium text-muted-foreground backdrop-blur">
-                          <SourceIcon type={k} />
-                          {sourceLabel(k)}
-                          <span className="tabular-nums">{results[k].hits.length}</span>
-                          {results[k].state === "loading" && (
-                            <span className="text-primary">更新中</span>
-                          )}
-                        </div>
-                        {view[k].hits.map((h) => (
+                {sections.map(({ kind: k, hits }) =>
+                  hits.length === 0 ? null : (
+                    <section key={k}>
+                      <div className="sticky top-0 z-10 flex h-8 items-center gap-2 border-b bg-background/90 px-4 text-xs font-medium text-muted-foreground backdrop-blur">
+                        <SourceIcon type={k} />
+                        {sourceLabel(k)}
+                        <span className="tabular-nums">{hits.length}</span>
+                        {merged && k === "scoop" && twins.size > 0 && (
+                          <span className="flex items-center gap-1 font-normal">
+                            <MergeIcon className="size-3" />
+                            另有 {twins.size} 个与 winget 同名，已合并
+                          </span>
+                        )}
+                        {results[k].state === "loading" && (
+                          <span className="text-primary">更新中</span>
+                        )}
+                      </div>
+                      {hits.map((row) => {
+                        const key = keyOf(row);
+                        const h = byKey.get(key) ?? row;
+                        return (
                           <HitRow
-                            key={keyOf(h)}
+                            key={key}
+                            rowKey={key}
                             hit={h}
-                            checked={list.selected.has(keyOf(h))}
-                            focused={list.focus === keyOf(h)}
+                            twin={twinPick(key)}
+                            checked={list.selected.has(key)}
+                            focused={list.focus === key}
                             selecting={list.selected.size > 0}
-                            onClick={(e) => list.clickRow(keyOf(h), e)}
-                            onCheck={(on, shift) => list.check(keyOf(h), on, shift)}
-                            onAdd={() => add([h], false)}
+                            onClick={(e) => list.clickRow(key, e)}
+                            onCheck={(on, shift) => list.check(key, on, shift)}
+                            adding={quick.adding.has(key)}
+                            addHint={quick.hint}
+                            onAdd={() => add([key], false)}
                             onShow={() => h.inShelf && nav.showInShelf([h.inShelf])}
                           />
-                        ))}
-                      </section>
-                    ),
-                  )}
+                        );
+                      })}
+                    </section>
+                  ),
+                )}
                 <div className="flex items-center justify-center gap-2 py-5 text-sm text-muted-foreground">
                   查不到？
                   {results.github.state === "idle" && (
@@ -421,7 +499,11 @@ export function DiscoverPage() {
             </ScrollArea>
           )}
           <SelectionBar count={selected.length} onClear={() => list.selectAll(false)}>
-            <Button size="sm" disabled={addable.length === 0} onClick={() => add(selected, false)}>
+            <Button
+              size="sm"
+              disabled={addable.length === 0}
+              onClick={() => add([...list.selected], false)}
+            >
               <PlusIcon />
               加入清单{addable.length > 0 && ` ${addable.length}`}
             </Button>
@@ -429,7 +511,7 @@ export function DiscoverPage() {
               size="sm"
               variant="secondary"
               disabled={addable.length === 0}
-              onClick={() => add(selected, true)}
+              onClick={() => add([...list.selected], true)}
             >
               <DownloadIcon />
               加入并安装
@@ -437,7 +519,7 @@ export function DiscoverPage() {
           </SelectionBar>
         </div>
       </ResizablePanel>
-      {focused && (
+      {focused && list.focus && (
         <>
           <ResizableHandle />
           <ResizablePanel
@@ -449,8 +531,11 @@ export function DiscoverPage() {
           >
             <HitDetail
               hit={focused}
+              twin={twinPick(list.focus)}
               onClose={list.closeDetails}
-              onAdd={(install) => add([focused], install)}
+              adding={quick.adding.has(list.focus)}
+              addHint={quick.hint}
+              onAdd={(install) => list.focus && add([list.focus], install)}
               onShow={() => focused.inShelf && nav.showInShelf([focused.inShelf])}
             />
           </ResizablePanel>
@@ -505,20 +590,70 @@ function SourceRow({
   );
 }
 
+/** TwinPick chooses the source of a result found in winget and scoop. */
+interface TwinPick {
+  pick: SourceKind;
+  onPick: (k: SourceKind) => void;
+}
+
+/** TwinSwitch is the choice of winget or scoop, for a result in both. */
+function TwinSwitch({ twin, className }: { twin: TwinPick; className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          role="radiogroup"
+          aria-label="选择来源"
+          className={cn("inline-flex shrink-0 rounded-md bg-muted p-0.5", className)}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {(["winget", "scoop"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={twin.pick === k}
+              onClick={() => twin.onPick(k)}
+              className={cn(
+                "flex h-5 items-center gap-1 rounded-[5px] px-1.5 text-[11px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                twin.pick === k
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <SourceIcon type={k} className="size-3" />
+              {sourceLabel(k)}
+            </button>
+          ))}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>winget 和 scoop 都有，选择从哪里安装</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function HitRow({
+  rowKey,
   hit: h,
+  twin,
   checked,
   focused,
   selecting,
+  adding,
+  addHint,
   onClick,
   onCheck,
   onAdd,
   onShow,
 }: {
+  rowKey: string;
   hit: SearchHit;
+  twin?: TwinPick;
   checked: boolean;
   focused: boolean;
   selecting: boolean;
+  adding: boolean;
+  addHint: string;
   onClick: (e: MouseEvent) => void;
   onCheck: (on: boolean, shift: boolean) => void;
   onAdd: () => void;
@@ -526,7 +661,7 @@ function HitRow({
 }) {
   return (
     <div
-      data-row={keyOf(h)}
+      data-row={rowKey}
       onClick={onClick}
       className={cn(
         "row-lazy group/row relative flex h-[60px] items-center gap-3 border-b border-border/60 px-3 transition-colors duration-150 select-none",
@@ -557,6 +692,7 @@ function HitRow({
           )}
         </div>
         <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          {twin && <TwinSwitch twin={twin} />}
           <span className="max-w-[45%] shrink-0 truncate font-mono">{h.id}</span>
           {h.summary && <span className="min-w-0 truncate">{h.summary}</span>}
         </div>
@@ -580,39 +716,16 @@ function HitRow({
             本机已装
           </Pill>
         )}
-        {h.inShelf && (
-          <Pill tone="primary">
-            <CheckIcon />
-            已在清单
-          </Pill>
-        )}
       </div>
-      <div className="flex w-[72px] shrink-0 justify-end">
+      <div className="flex w-[104px] shrink-0 justify-end">
         {h.inShelf ? (
-          <Button
-            size="xs"
-            variant="ghost"
-            className="text-muted-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              onShow();
-            }}
-          >
-            查看
-          </Button>
+          <InShelfButton onClick={onShow} />
         ) : (
-          <Button
-            size="xs"
-            variant="outline"
-            className="transition-colors group-hover/row:border-primary/40 group-hover/row:text-primary"
-            onClick={(e) => {
-              e.stopPropagation();
-              onAdd();
-            }}
-          >
-            <PlusIcon />
-            加入
-          </Button>
+          <AddButton
+            adding={adding}
+            hint={h.type === "github" ? "确认检测规则后加入" : addHint}
+            onClick={onAdd}
+          />
         )}
       </div>
     </div>
@@ -621,11 +734,17 @@ function HitRow({
 
 function HitDetail({
   hit: h,
+  twin,
+  adding,
+  addHint,
   onClose,
   onAdd,
   onShow,
 }: {
   hit: SearchHit;
+  twin?: TwinPick;
+  adding: boolean;
+  addHint: string;
   onClose: () => void;
   onAdd: (install: boolean) => void;
   onShow: () => void;
@@ -638,7 +757,7 @@ function HitDetail({
       title={h.name}
       badges={
         <>
-          <SourceBadge type={h.type} />
+          {twin ? <TwinSwitch twin={twin} /> : <SourceBadge type={h.type} />}
           {h.installed && (
             <Pill tone="success">
               <MonitorCheckIcon />
@@ -656,16 +775,23 @@ function HitDetail({
       actions={
         h.inShelf ? (
           <Button size="sm" variant="outline" onClick={onShow}>
-            <CheckIcon />
+            <ArrowRightIcon />
             在清单中查看
           </Button>
         ) : (
           <>
-            <Button size="sm" onClick={() => onAdd(false)}>
-              <PlusIcon />
-              加入清单
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => onAdd(true)}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="sm" disabled={adding} onClick={() => onAdd(false)}>
+                  {adding ? <LoaderCircleIcon className="animate-spin" /> : <PlusIcon />}
+                  加入清单
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {h.type === "github" ? "确认检测规则后加入" : addHint}
+              </TooltipContent>
+            </Tooltip>
+            <Button size="sm" variant="outline" disabled={adding} onClick={() => onAdd(true)}>
               <DownloadIcon />
               加入并安装
             </Button>

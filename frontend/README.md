@@ -27,18 +27,18 @@ bun run --cwd frontend build    # 构建到 dist/（go tool mygo build 会自动
 
 ## 目录
 
-| 路径                                                 | 内容                                                                                                                                 |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| [src/main.tsx](./src/main.tsx)、`src/App.tsx`        | 入口：主题同步、查询客户端、提示；标题栏和三个页面（第一次打开时挂载，之后保留状态）                                                 |
-| [src/mygo.ts](./src/mygo.ts)                         | 生成的 Go 服务客户端和类型，不要手改                                                                                                 |
-| [src/pages/shelf/](./src/pages/shelf/)               | 我的清单：侧栏筛选（状态、分类、标签，就地新建、重命名、删除）、导入导出、列表、右键菜单、批量操作、详情                             |
-| [src/pages/discover/](./src/pages/discover/)         | 发现：winget 和 scoop 边输边搜，GitHub 按需搜索，加入清单、查看详情、手动添加入口                                                    |
-| [src/pages/installed/](./src/pages/installed/)       | 本机已装：按来源和状态筛选，加入清单、查找来源                                                                                       |
-| [src/components/dialogs/](./src/components/dialogs/) | 加入清单、安装预览、编辑软件、任务面板、设置、使用说明                                                                               |
-| [src/components/](./src/components/)                 | 标题栏、页面左侧栏（筛选行和底部的设置入口）、页面图标、软件图标、来源和状态标记、分类和标签选择、详情栏、软件详情等共用组件         |
-| [src/components/ui/](./src/components/ui/)           | shadcn 生成的基础组件，不参与格式和 lint 检查                                                                                        |
-| [src/lib/](./src/lib/)                               | 查询与事件（`api.ts`）、筛选和排序（`shelf.ts`）、文字和时间（`text.ts`）、多选（`selection.ts`、`use-list.ts`）、主题（`theme.ts`） |
-| [src/state/](./src/state/)                           | 页面切换和页面之间的请求（`nav.tsx`），各页共用的对话框（`actions.tsx`）                                                             |
+| 路径                                                 | 内容                                                                                                                                                                                                              |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [src/main.tsx](./src/main.tsx)、`src/App.tsx`        | 入口：主题同步、查询客户端、提示；标题栏和三个页面（第一次打开时挂载，之后保留状态）                                                                                                                              |
+| [src/mygo.ts](./src/mygo.ts)                         | 生成的 Go 服务客户端和类型，不要手改                                                                                                                                                                              |
+| [src/pages/shelf/](./src/pages/shelf/)               | 我的清单：侧栏筛选（状态、分类、标签，就地新建、重命名、删除）、导入导出、列表、右键菜单、批量操作、详情                                                                                                          |
+| [src/pages/discover/](./src/pages/discover/)         | 发现：winget 和 scoop 边输边搜，GitHub 按需搜索，按搜索框旁“加入到”的分类和标签一键加入清单，winget 与 scoop 同名结果合并、查看详情、手动添加入口                                                                 |
+| [src/pages/installed/](./src/pages/installed/)       | 本机已装：按来源和状态筛选，加入清单、查找来源                                                                                                                                                                    |
+| [src/components/dialogs/](./src/components/dialogs/) | 加入清单、安装预览、编辑软件、任务面板、设置、使用说明                                                                                                                                                            |
+| [src/components/](./src/components/)                 | 标题栏、页面左侧栏（筛选行和底部的设置入口）、页面图标、软件图标、来源和状态标记、分类和标签选择、“加入到”选择（`add-target.tsx`）、行尾的加入和已在清单按钮（`row-actions.tsx`）、详情栏、软件详情等共用组件     |
+| [src/components/ui/](./src/components/ui/)           | shadcn 生成的基础组件，不参与格式和 lint 检查                                                                                                                                                                     |
+| [src/lib/](./src/lib/)                               | 查询与事件（`api.ts`）、筛选和排序（`shelf.ts`）、文字和时间（`text.ts`）、多选（`selection.ts`、`use-list.ts`）、主题（`theme.ts`）、默认加入位置（`add-target.ts`）、winget 与 scoop 同名结果配对（`twins.ts`） |
+| [src/state/](./src/state/)                           | 页面切换和页面之间的请求（`nav.tsx`），各页共用的对话框（`actions.tsx`），一键加入（`quick-add.ts`）                                                                                                              |
 
 ## 约定
 

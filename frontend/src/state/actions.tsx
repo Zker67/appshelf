@@ -1,12 +1,17 @@
 // The dialogs every page opens: installing, adding, editing, the tasks,
 // the settings and the guide.
 
-import { AddDialog, type AddCandidate } from "@/components/dialogs/add-dialog";
+import {
+  AddDialog,
+  type AddCandidate,
+  type AddDialogRequest,
+} from "@/components/dialogs/add-dialog";
 import { AppEditor } from "@/components/dialogs/app-editor";
 import { HelpDialog } from "@/components/dialogs/help-dialog";
 import { PreviewDialog, type PreviewRequest } from "@/components/dialogs/preview-dialog";
 import { SettingsDialog, type SettingsTab } from "@/components/dialogs/settings-dialog";
 import { TasksSheet } from "@/components/dialogs/tasks-sheet";
+import type { AddTarget } from "@/lib/add-target";
 import type { App, TaskAction } from "@/mygo";
 import { createContext, use, useMemo, useState, type ReactNode } from "react";
 
@@ -15,7 +20,7 @@ interface Actions {
   preview: (ids: string[], action: TaskAction) => void;
   previewInstalledUpdates: (keys: string[]) => void;
   /** add adds packages to the catalog with a category and tags. */
-  add: (items: AddCandidate[], opts?: { install?: boolean }) => void;
+  add: (items: AddCandidate[], opts?: { install?: boolean; target?: AddTarget }) => void;
   /** edit edits an app, or adds one by hand with what is known of it. */
   edit: (app?: App, draft?: Partial<App>) => void;
   openTasks: () => void;
@@ -32,12 +37,7 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
   // A request stays after its dialog closes, for the dialog to animate out;
   // a new one remounts the dialog by its seq.
   const [preview, setPreview] = useState<PreviewRequest | null>(null);
-  const [add, setAdd] = useState<{
-    items: AddCandidate[];
-    install: boolean;
-    seq: number;
-    open: boolean;
-  } | null>(null);
+  const [add, setAdd] = useState<AddDialogRequest | null>(null);
   const [edit, setEdit] = useState<{
     app?: App;
     draft?: Partial<App>;
@@ -54,7 +54,13 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
       previewInstalledUpdates: (keys) =>
         setPreview({ ids: keys, action: "upgrade", installed: true, seq: next(), open: true }),
       add: (items, opts) =>
-        setAdd({ items, install: opts?.install ?? false, seq: next(), open: true }),
+        setAdd({
+          items,
+          install: opts?.install ?? false,
+          target: opts?.target,
+          seq: next(),
+          open: true,
+        }),
       edit: (app, draft) => setEdit({ app, draft, seq: next(), open: true }),
       openTasks: () => setTasks(true),
       openSettings: (tab) => setSettings({ tab: tab ?? "sources" }),

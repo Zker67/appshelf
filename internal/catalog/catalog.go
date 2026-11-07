@@ -50,6 +50,8 @@ type App struct {
 	TagIDs     []string `json:"tagIds,omitempty"`
 	Source     Source   `json:"source"`
 	Detect     *Detect  `json:"detect,omitempty"`
+	// Note is the user's own note on the app, in Markdown.
+	Note string `json:"note,omitempty"`
 }
 
 // SourceType names where an app is installed from.
@@ -148,6 +150,9 @@ var (
 )
 
 const maxNameLen = 200
+
+// MaxNoteLen is how long a note can be, in characters.
+const MaxNoteLen = 20000
 
 // Parse reads a catalog from JSON and validates all of it.
 func Parse(data []byte) (*Catalog, error) {
@@ -344,6 +349,12 @@ func ValidateApp(app App) error {
 		}
 	default:
 		return &ValidationError{Field: "source.type", Message: "未知的来源类型：" + string(s.Type)}
+	}
+	if len([]rune(app.Note)) > MaxNoteLen {
+		return &ValidationError{Field: "note", Message: fmt.Sprintf("备注不能超过 %d 个字", MaxNoteLen)}
+	}
+	if strings.ContainsRune(app.Note, 0) {
+		return &ValidationError{Field: "note", Message: "备注含有无效字符"}
 	}
 	if d := app.Detect; d != nil {
 		if d.DisplayName == "" && d.ExePath == "" {

@@ -99,6 +99,11 @@ describe("shelf", () => {
     expect(ids(filterApps(apps, filter({ categories: new Set([""]) })))).toEqual(["a3", "a4"]);
     expect(inGroups(apps[0]!, filter({ tags: new Set(["t_none"]) }))).toBe(false);
   });
+  it("finds apps by their notes", () => {
+    const noted = [...apps, app("a6", "Typora", { note: "## 激活\n- [ ] 输入**许可证**" })];
+    expect(ids(filterApps(noted, filter({ query: "许可证" })))).toEqual(["a6"]);
+    expect(ids(filterApps(noted, filter({ query: "typora 激活" })))).toEqual(["a6"]);
+  });
   it("filters by state and query within the groups", () => {
     expect(ids(filterApps(apps, filter({ status: "update" })))).toEqual(["a2"]);
     expect(ids(filterApps(apps, filter({ status: "problem" })))).toEqual(["a4"]);

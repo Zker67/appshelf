@@ -36,7 +36,9 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
       "name": "Visual Studio Code",
       "categoryId": "c_7f3k2m9q",
       "tagIds": ["t_a8d2kq4n"],
-      "source": { "type": "winget", "id": "Microsoft.VisualStudioCode" }
+      "source": { "type": "winget", "id": "Microsoft.VisualStudioCode" },
+      "note": "## 安装后
+- [ ] 登录 GitHub 打开设置同步"
     },
     {
       "id": "a_q8w2e4rt",
@@ -63,6 +65,8 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `apps[].categoryId` | 可省略（未分类）；填写时必须是已有分类。一个软件最多一个分类 |
 | `apps[].tagIds` | 可省略；每项必须是已有标签，不能重复 |
 | `apps[].source` | 必填，见下表。两个软件的来源不能相同（比较时不区分大小写） |
+| `apps[].note` | 可省略：用户自己的备注，Markdown 原文，最多 20000 字（按 Unicode 码点计），不能含 NUL。保存时换行统一为 `
+`，去掉首尾空行和末尾空白；空白备注不写入。只用于展示，不参与安装和检测判断 |
 | `apps[].detect` | 可选（GitHub 来源必填）：认出“不是从该来源装的”同一软件。`displayName` 是正则表达式，不区分大小写地匹配注册表 Uninstall 项的 DisplayName；`exePath` 是可执行文件路径，可以写 `%LOCALAPPDATA%` 这样的环境变量。两项至少填一项，任一项命中就算已安装 |
 
 | `source.type` | 字段 | 规则 |
@@ -78,7 +82,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 导入不会覆盖现有清单，而是合并：
 
 - 分类、标签按名称匹配（不区分大小写），已有的复用，没有的新增。
-- 软件按来源匹配。已有的软件保留自己的名称、分类、检测规则和安装参数，只追加导入文件里的标签；它没有分类时才采用导入文件的分类。没有的软件新增。
+- 软件按来源匹配。已有的软件保留自己的名称、分类、检测规则、安装参数和备注，只追加导入文件里的标签；它没有分类、没有备注时才采用导入文件的分类、备注（备注不拼接）。没有的软件新增。
 - 导入文件中的 ID 与现有 ID 冲突时重新生成，不会串到别的项上。
 - 合并前先在确认框中显示将新增和合并的数量。
 
@@ -111,6 +115,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `Shelf` | `Snapshot`、`Refresh` | 清单和每个软件的状态（`status` 为 `null` 表示还没读到）；`Refresh` 就是“检查更新”：检查来源、重读全部状态，再刷新本机已装 |
 | | `SaveApp`、`AddPackages`、`DeleteApps`、`UndoDelete` | 手动添加或编辑一个软件；批量加入搜索结果或本机程序（可同时新建分类和标签，每项单独成败）；删除返回撤销令牌，撤销时恢复软件和 GitHub 安装记录 |
 | | `SetCategory`、`SetTag`、`Add/Rename/DeleteCategory`、`Add/Rename/DeleteTag` | 批量设分类、加或去标签；分类和标签的管理 |
+| | `SetNote` | 改一个软件的备注（Markdown），返回保存后的内容，空字符串即删除；不重新读取本机状态。`SaveApp` 编辑已有软件时保留原备注，只有新建时采用传入的备注 |
 | | `Export`、`ReadImport`、`ApplyImport` | 导出到用户选择的文件；导入先读文件返回合并预览和令牌，确认后再合并 |
 | `Tasks` | `Preview`、`Start` | 预览每个软件将安装、更新还是跳过及原因；`Start` 重新预览后只把可执行的加入队列，没有可执行的返回错误 |
 | | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列 |

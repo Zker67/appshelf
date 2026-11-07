@@ -148,6 +148,7 @@ export function ShelfPage() {
     install: (ids) => actions.preview(ids, "install"),
     upgrade: (ids) => actions.preview(ids, "upgrade"),
     edit: (app) => actions.edit(app),
+    note: (item) => actions.editNote(item),
     remove,
   };
 

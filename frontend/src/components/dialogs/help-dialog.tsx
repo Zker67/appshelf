@@ -18,6 +18,7 @@ import {
   KeyboardIcon,
   LayoutDashboardIcon,
   ListChecksIcon,
+  NotebookPenIcon,
   PencilLineIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -304,6 +305,16 @@ function ShelfHelp() {
               icon: FolderTreeIcon,
               title: "分类和标签",
               text: "左侧可以多选筛选，名称旁边能重命名和删除。",
+            },
+            {
+              icon: NotebookPenIcon,
+              title: "备注",
+              text: (
+                <>
+                  详情的<Ui>备注</Ui>页签或右键<Ui>写备注</Ui>，用 Markdown
+                  记下设置、激活方式等，边写边预览、自动保存，搜索也能搜到。
+                </>
+              ),
             },
             {
               icon: ListChecksIcon,

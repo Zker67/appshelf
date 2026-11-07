@@ -226,5 +226,35 @@ func normalizeApp(a App) App {
 		}
 	}
 	a.TagIDs = tags
+	a.Note = NormalizeNote(a.Note)
 	return a
+}
+
+// NormalizeNote makes a note's line breaks "\n" and drops the blank lines
+// and spaces around it, keeping those inside, as Markdown's two spaces that
+// break a line. A note of spaces is none.
+func NormalizeNote(note string) string {
+	note = strings.ReplaceAll(note, "\r\n", "\n")
+	note = strings.ReplaceAll(note, "\r", "\n")
+	note = strings.TrimRight(note, " \t\n")
+	for {
+		line, rest, ok := strings.Cut(note, "\n")
+		if !ok || strings.TrimSpace(line) != "" {
+			return note
+		}
+		note = rest
+	}
+}
+
+// SetNote changes the note of an app; "" removes it.
+func (c *Catalog) SetNote(id, note string) error {
+	return c.apply(func(n *Catalog) error {
+		for i := range n.Apps {
+			if n.Apps[i].ID == id {
+				n.Apps[i].Note = NormalizeNote(note)
+				return nil
+			}
+		}
+		return &ValidationError{Message: "软件不在清单里"}
+	})
 }

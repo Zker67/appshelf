@@ -135,6 +135,20 @@ func (s *Shelf) UndoDelete(token string) (int, error) {
 	return len(added), nil
 }
 
+// SetNote changes an app's own note, in Markdown, and returns it as saved;
+// "" removes it. SaveApp keeps an app's note.
+func (s *Shelf) SetNote(id, note string) (string, error) {
+	var saved string
+	var err error
+	s.a.write([]ChangeKind{ChangedShelf}, func() {
+		if err = s.a.core.SetNote(id, note); err == nil {
+			app, _ := s.a.core.Catalog().App(id)
+			saved = app.Note
+		}
+	})
+	return saved, err
+}
+
 // SetCategory puts apps in a category, or none for "".
 func (s *Shelf) SetCategory(ids []string, categoryID string) error {
 	var err error

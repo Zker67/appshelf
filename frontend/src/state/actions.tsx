@@ -1,5 +1,5 @@
-// The dialogs every page opens: installing, adding, editing, the tasks,
-// the settings and the guide.
+// The dialogs every page opens: installing, adding, editing, an app's
+// note, the tasks, the settings and the guide.
 
 import {
   AddDialog,
@@ -8,11 +8,12 @@ import {
 } from "@/components/dialogs/add-dialog";
 import { AppEditor } from "@/components/dialogs/app-editor";
 import { HelpDialog } from "@/components/dialogs/help-dialog";
+import { NoteEditor, type NoteRequest } from "@/components/dialogs/note-editor";
 import { PreviewDialog, type PreviewRequest } from "@/components/dialogs/preview-dialog";
 import { SettingsDialog, type SettingsTab } from "@/components/dialogs/settings-dialog";
 import { TasksSheet } from "@/components/dialogs/tasks-sheet";
 import type { AddTarget } from "@/lib/add-target";
-import type { App, TaskAction } from "@/mygo";
+import type { App, ShelfApp, TaskAction } from "@/mygo";
 import { createContext, use, useMemo, useState, type ReactNode } from "react";
 
 interface Actions {
@@ -23,6 +24,8 @@ interface Actions {
   add: (items: AddCandidate[], opts?: { install?: boolean; target?: AddTarget }) => void;
   /** edit edits an app, or adds one by hand with what is known of it. */
   edit: (app?: App, draft?: Partial<App>) => void;
+  /** editNote writes an app's own note. */
+  editNote: (item: ShelfApp) => void;
   openTasks: () => void;
   openSettings: (tab?: SettingsTab) => void;
   openHelp: () => void;
@@ -44,6 +47,7 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
     seq: number;
     open: boolean;
   } | null>(null);
+  const [note, setNote] = useState<NoteRequest | null>(null);
   const [tasks, setTasks] = useState(false);
   const [settings, setSettings] = useState<{ tab: SettingsTab } | null>(null);
   const [help, setHelp] = useState(false);
@@ -62,6 +66,15 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
           open: true,
         }),
       edit: (app, draft) => setEdit({ app, draft, seq: next(), open: true }),
+      editNote: ({ app, icon }) =>
+        setNote({
+          id: app.id,
+          name: app.name,
+          icon,
+          note: app.note ?? "",
+          seq: next(),
+          open: true,
+        }),
       openTasks: () => setTasks(true),
       openSettings: (tab) => setSettings({ tab: tab ?? "sources" }),
       openHelp: () => setHelp(true),
@@ -88,6 +101,11 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
         key={`e${edit?.seq ?? 0}`}
         request={edit}
         onClose={() => setEdit((e) => e && { ...e, open: false })}
+      />
+      <NoteEditor
+        key={`n${note?.seq ?? 0}`}
+        request={note}
+        onClose={() => setNote((n) => n && { ...n, open: false })}
       />
       <TasksSheet open={tasks} onOpenChange={setTasks} />
       <SettingsDialog

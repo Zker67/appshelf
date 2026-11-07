@@ -372,13 +372,16 @@ func (c *Core) edit(fn func(n *catalog.Catalog) error) error {
 }
 
 // SaveApp adds or changes an app, saves the catalog and reads the app's
-// state again.
+// state again. An app changed keeps its note: SetNote changes that.
 func (c *Core) SaveApp(a catalog.App) (catalog.App, error) {
 	var saved catalog.App
 	var old catalog.App
 	var existed bool
 	if a.ID != "" {
 		old, existed = c.cat.App(a.ID)
+	}
+	if existed {
+		a.Note = old.Note
 	}
 	err := c.edit(func(n *catalog.Catalog) error {
 		var err error
@@ -482,6 +485,12 @@ func (c *Core) EditApps(ids []string, fn func(a *catalog.App)) error {
 		}
 		return nil
 	})
+}
+
+// SetNote changes the note of an app and saves the catalog; "" removes it.
+// The app's state is not read again.
+func (c *Core) SetNote(id, note string) error {
+	return c.edit(func(n *catalog.Catalog) error { return n.SetNote(id, note) })
 }
 
 // AddCategory adds a category.

@@ -54,6 +54,7 @@ export interface App {
   tagIds?: string[];
   source: Source;
   detect?: Detect;
+  note?: string;
 }
 
 /** AppStatus is the state of an app, as its source and detection rule say. */
@@ -429,6 +430,13 @@ export const Shelf = {
   /** SetCategory puts apps in a category, or none for "". */
   setCategory(ids: string[], categoryID: string): Promise<void> {
     return call("Shelf.SetCategory", ids, categoryID);
+  },
+  /**
+   * SetNote changes an app's own note, in Markdown, and returns it as saved;
+   * "" removes it. SaveApp keeps an app's note.
+   */
+  setNote(id: string, note: string): Promise<string> {
+    return call("Shelf.SetNote", id, note);
   },
   /** SetTag gives apps a tag, or takes it from them. */
   setTag(ids: string[], tagID: string, on: boolean): Promise<void> {

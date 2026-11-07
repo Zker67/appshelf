@@ -14,8 +14,9 @@ type MergeSummary struct {
 //
 //   - categories and tags match by name, ignoring case; others are added;
 //   - apps match by their source (Source.Key). An app already in base keeps
-//     its name, category, source and detection rule, gains the imported
-//     app's tags, and takes its category only when it has none;
+//     its name, category, source, detection rule and note, gains the
+//     imported app's tags, and takes its category and note only when it
+//     has none;
 //   - other apps are added, with their categories and tags mapped;
 //   - an imported ID already used in base gets a new ID.
 func Merge(base, incoming *Catalog) (*Catalog, MergeSummary, error) {
@@ -89,6 +90,9 @@ func Merge(base, incoming *Catalog) (*Catalog, MergeSummary, error) {
 			}
 			if a.CategoryID == "" {
 				a.CategoryID = cat
+			}
+			if a.Note == "" {
+				a.Note = in.Note
 			}
 			sum.MergedApps++
 			continue

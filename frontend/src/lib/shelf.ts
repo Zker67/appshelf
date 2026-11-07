@@ -144,12 +144,12 @@ export function inGroups(app: ShelfApp, f: ShelfFilter): boolean {
   return (app.app.tagIds ?? []).some((t) => f.tags.has(t));
 }
 
-/** filterApps applies the groups, the state and the query. */
+/** filterApps applies the groups, the state and the query: names, sources and notes. */
 export function filterApps(apps: ShelfApp[], f: ShelfFilter): ShelfApp[] {
   return apps.filter((a) => {
     if (!inGroups(a, f)) return false;
     if (f.status !== "all" && statusGroup(a) !== f.status) return false;
-    return matches(f.query, [a.app.name, sourceID(a.app.source)]);
+    return matches(f.query, [a.app.name, sourceID(a.app.source), a.app.note]);
   });
 }
 

@@ -1,6 +1,6 @@
 // A row of the catalog: the app at the left, its source below its name,
-// its groups and state at the right, a quick install or update on hover;
-// its menu on right click.
+// a mark when it has a note, its groups and state at the right, a quick
+// install or update on hover; its menu on right click.
 
 import { AppIcon } from "@/components/app-icon";
 import { copyText } from "@/components/common";
@@ -22,6 +22,8 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { noteSummary } from "@/lib/markdown";
 import { sourceID } from "@/lib/shelf";
 import { cn } from "@/lib/utils";
 import type { App, CategoryInfo, ShelfApp, TagInfo } from "@/mygo";
@@ -33,6 +35,7 @@ import {
   HashIcon,
   LoaderCircleIcon,
   MinusIcon,
+  NotebookPenIcon,
   PanelRightIcon,
   PencilIcon,
   Trash2Icon,
@@ -49,6 +52,8 @@ export interface RowActions {
   install: (ids: string[]) => void;
   upgrade: (ids: string[]) => void;
   edit: (app: App) => void;
+  /** note writes the app's own note. */
+  note: (item: ShelfApp) => void;
   remove: (apps: ShelfApp[]) => void;
 }
 
@@ -109,6 +114,19 @@ export function ShelfRow({
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-baseline gap-2">
               <span className="truncate text-sm font-medium">{app.name}</span>
+              {app.note && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <NotebookPenIcon
+                      aria-label="有备注"
+                      className="size-3.5 shrink-0 self-center text-primary/70"
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-72">
+                    {noteSummary(app.note) || "有备注"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {(status?.version || status?.state === "updateAvailable") && (
                 <span className="shrink-0 font-mono text-xs text-muted-foreground">
                   {status.version || "?"}
@@ -220,6 +238,10 @@ function RowMenu({
           <ContextMenuItem onSelect={() => act.edit(item.app)}>
             <PencilIcon />
             编辑
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => act.note(item)}>
+            <NotebookPenIcon />
+            {item.app.note ? "编辑备注" : "写备注"}
           </ContextMenuItem>
         </>
       )}

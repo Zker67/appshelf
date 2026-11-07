@@ -1,6 +1,6 @@
 // The details of an app of the catalog: what AppShelf knows of it first,
 // its groups changed in place, then what its source says; how it installs
-// and is found in a tab of its own.
+// and is found in a tab of its own, the user's note in another.
 
 import { AppIcon } from "@/components/app-icon";
 import { CopyButton, InfoCard, InfoRow } from "@/components/common";
@@ -24,6 +24,7 @@ import {
   HashIcon,
   InfoIcon,
   LinkIcon,
+  NotebookPenIcon,
   PencilIcon,
   PlusIcon,
   RegexIcon,
@@ -35,6 +36,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { NoteTab } from "./note";
 import { assignCategory } from "./ops";
 import { TagMenu } from "./tag-menu";
 
@@ -199,8 +201,8 @@ export function ShelfDetail({
             )}
           </InfoCard>
         }
-        tabs={
-          rules.length > 0
+        tabs={[
+          ...(rules.length > 0
             ? [
                 {
                   value: "rules",
@@ -217,8 +219,9 @@ export function ShelfDetail({
                   ),
                 },
               ]
-            : []
-        }
+            : []),
+          { value: "note", label: "备注", icon: NotebookPenIcon, content: <NoteTab item={item} /> },
+        ]}
       />
     </DetailPanel>
   );

@@ -2,9 +2,9 @@
 // its groups changed in place, then what its source says.
 
 import { AppIcon } from "@/components/app-icon";
-import { CopyButton, InfoRow } from "@/components/common";
+import { CopyButton, InfoCard, InfoRow } from "@/components/common";
 import { DetailPanel } from "@/components/detail-panel";
-import { PackageInfo } from "@/components/package-info";
+import { PackageInfo, Version } from "@/components/package-info";
 import { CategoryPicker } from "@/components/pickers";
 import { SourceBadge } from "@/components/source-badge";
 import { StatusBadge } from "@/components/status-badge";
@@ -14,12 +14,23 @@ import { sourceID } from "@/lib/shelf";
 import type { CategoryInfo, ShelfApp, TagInfo } from "@/mygo";
 import {
   ArrowUpCircleIcon,
+  BoxIcon,
   ChevronsUpDownIcon,
   DownloadIcon,
+  FileArchiveIcon,
+  FingerprintIcon,
   FolderIcon,
+  FolderSearchIcon,
   HashIcon,
+  InfoIcon,
+  LinkIcon,
+  PackageIcon,
   PencilIcon,
   PlusIcon,
+  RegexIcon,
+  ScanSearchIcon,
+  TagsIcon,
+  TerminalIcon,
   Trash2Icon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -103,15 +114,15 @@ export function ShelfDetail({
         </>
       }
     >
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col">
-          <InfoRow label="来源">
+      <div className="flex flex-col gap-4">
+        <InfoCard>
+          <InfoRow label="来源" icon={FingerprintIcon}>
             <span className="flex min-w-0 items-center gap-1">
               <Mono>{id}</Mono>
               <CopyButton text={id} what="来源 ID" />
             </span>
           </InfoRow>
-          <InfoRow label="分类">
+          <InfoRow label="分类" icon={FolderIcon}>
             <CategoryPicker
               value={{ id: app.categoryId ?? "" }}
               onChange={(c) => void assignCategory(named, c, names)}
@@ -126,7 +137,7 @@ export function ShelfDetail({
               </button>
             </CategoryPicker>
           </InfoRow>
-          <InfoRow label="标签">
+          <InfoRow label="标签" icon={TagsIcon}>
             <div className="flex flex-wrap items-center gap-1">
               {tagList.map((t) => (
                 <span
@@ -148,43 +159,52 @@ export function ShelfDetail({
               </TagMenu>
             </div>
           </InfoRow>
-          {status?.version && <InfoRow label="已装版本">{status.version}</InfoRow>}
+          {status?.version && (
+            <InfoRow label="已装版本" icon={BoxIcon}>
+              <Version>{status.version}</Version>
+            </InfoRow>
+          )}
           {status?.latest && status.latest !== status.version && (
-            <InfoRow label="最新版本">{status.latest}</InfoRow>
+            <InfoRow label="最新版本" icon={PackageIcon}>
+              <Version>{status.latest}</Version>
+            </InfoRow>
           )}
           {status?.asset && (
-            <InfoRow label="安装包">
+            <InfoRow label="安装包" icon={FileArchiveIcon}>
               <Mono>{status.asset}</Mono>
             </InfoRow>
           )}
-          {status?.note && <InfoRow label="说明">{status.note}</InfoRow>}
+          {status?.note && (
+            <InfoRow label="说明" icon={InfoIcon}>
+              {status.note}
+            </InfoRow>
+          )}
           {app.detect?.displayName && (
-            <InfoRow label="检测名称">
+            <InfoRow label="检测名称" icon={ScanSearchIcon}>
               <Mono>{app.detect.displayName}</Mono>
             </InfoRow>
           )}
           {app.detect?.exePath && (
-            <InfoRow label="检测路径">
+            <InfoRow label="检测路径" icon={FolderSearchIcon}>
               <Mono>{app.detect.exePath}</Mono>
             </InfoRow>
           )}
           {src.assetPattern && (
-            <InfoRow label="安装包匹配">
+            <InfoRow label="安装包匹配" icon={RegexIcon}>
               <Mono>{src.assetPattern}</Mono>
             </InfoRow>
           )}
           {src.installerArgs && (
-            <InfoRow label="安装参数">
+            <InfoRow label="安装参数" icon={TerminalIcon}>
               <Mono>{src.installerArgs}</Mono>
             </InfoRow>
           )}
           {src.bucketUrl && (
-            <InfoRow label="bucket 地址">
+            <InfoRow label="bucket 地址" icon={LinkIcon}>
               <Mono>{src.bucketUrl}</Mono>
             </InfoRow>
           )}
-        </div>
-        <div className="h-px bg-border" />
+        </InfoCard>
         <PackageInfo pkgRef={{ type: src.type, id }} />
       </div>
     </DetailPanel>

@@ -29,6 +29,7 @@ import {
   ArchiveIcon,
   CheckIcon,
   DownloadIcon,
+  FingerprintIcon,
   LayersIcon,
   MonitorCheckIcon,
   PencilLineIcon,
@@ -679,7 +680,7 @@ function HitDetail({
           ...(h.type === "winget" && h.version ? { version: h.version } : {}),
         }}
         before={
-          <InfoRow label="ID">
+          <InfoRow label="ID" icon={FingerprintIcon}>
             <span className="flex min-w-0 items-center gap-1">
               <span className="font-mono text-[13px] break-all">{h.id}</span>
               <CopyButton text={h.id} what="ID" />

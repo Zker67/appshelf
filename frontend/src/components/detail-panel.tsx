@@ -24,36 +24,40 @@ export function DetailPanel({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
-      <div className="anim-panel flex items-start gap-3 px-4 pt-4 pb-3">
-        <div className="anim-rise shrink-0 [animation-delay:60ms]">{icon}</div>
-        <div className="min-w-0 flex-1 pt-0.5">
-          <div className="text-[15px] leading-snug font-semibold break-words select-text">
-            {title}
+      <div className="shrink-0 border-b bg-linear-to-b from-primary/[0.08] via-primary/[0.03] to-transparent dark:from-primary/[0.14] dark:via-primary/[0.05]">
+        <div className="anim-panel flex items-center gap-3.5 px-5 pt-5 pb-4">
+          <div className="anim-rise shrink-0 rounded-[28%] bg-card p-1.5 shadow-soft ring-1 ring-border/70 [animation-delay:60ms]">
+            {icon}
           </div>
-          {badges && <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{badges}</div>}
+          <div className="min-w-0 flex-1">
+            <div className="text-[17px] leading-snug font-semibold tracking-tight break-words select-text">
+              {title}
+            </div>
+            {badges && <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{badges}</div>}
+          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="-mt-1 -mr-2 self-start text-muted-foreground transition-transform hover:rotate-90"
+                onClick={onClose}
+                aria-label="关闭详情"
+              >
+                <XIcon />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>关闭详情</TooltipContent>
+          </Tooltip>
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="-mt-1 -mr-1 text-muted-foreground"
-              onClick={onClose}
-              aria-label="关闭详情"
-            >
-              <XIcon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>关闭详情</TooltipContent>
-        </Tooltip>
+        {actions && (
+          <div className="anim-panel flex flex-wrap items-center gap-2 px-5 pb-4 [animation-delay:50ms]">
+            {actions}
+          </div>
+        )}
       </div>
-      {actions && (
-        <div className="anim-panel flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 [animation-delay:50ms]">
-          {actions}
-        </div>
-      )}
       <ScrollArea className="min-h-0 flex-1">
-        <div className="anim-panel p-4 [animation-delay:100ms]">{children}</div>
+        <div className="anim-panel px-5 py-4 [animation-delay:100ms]">{children}</div>
       </ScrollArea>
     </div>
   );

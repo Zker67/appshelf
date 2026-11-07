@@ -250,12 +250,37 @@ export function Chip({
   );
 }
 
-/** Field is "label：value" of a details panel. */
-export function InfoRow({ label, children }: { label: string; children: ReactNode }) {
+/** Field is "label：value" of a details panel, its label led by an icon. */
+export function InfoRow({
+  label,
+  icon: Icon,
+  children,
+}: {
+  label: string;
+  icon?: LucideIcon;
+  children: ReactNode;
+}) {
   return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-2 py-1.5 text-sm">
-      <div className="pt-px text-muted-foreground">{label}</div>
+    <div className="grid grid-cols-[6.75rem_minmax(0,1fr)] items-start gap-3 py-2.5 text-sm">
+      <div className="flex items-center gap-2 pt-px text-[13px] text-muted-foreground">
+        {Icon && <Icon className="size-3.5 shrink-0 text-primary/70" />}
+        <span className="truncate">{label}</span>
+      </div>
       <div className="min-w-0 break-words select-text">{children}</div>
+    </div>
+  );
+}
+
+/** InfoCard holds the fields of a details panel, a line between each. */
+export function InfoCard({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "anim-rise flex flex-col divide-y divide-border/70 rounded-xl border bg-card px-4 shadow-xs",
+        className,
+      )}
+    >
+      {children}
     </div>
   );
 }

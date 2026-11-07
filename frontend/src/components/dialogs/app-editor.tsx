@@ -431,7 +431,7 @@ function PackageSearch({
             </InputGroupAddon>
           </InputGroup>
           {hits !== null && (
-            <div className="anim-rise max-h-64 overflow-y-auto rounded-lg border">
+            <ScrollArea className="anim-rise rounded-lg border" viewportClassName="max-h-64">
               {hits.length === 0 ? (
                 <div className="px-3 py-6 text-center text-sm text-muted-foreground">没有找到</div>
               ) : (
@@ -469,7 +469,7 @@ function PackageSearch({
                   );
                 })
               )}
-            </div>
+            </ScrollArea>
           )}
         </>
       )}

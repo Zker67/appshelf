@@ -5,6 +5,7 @@
 import { AppIcon } from "@/components/app-icon";
 import { Chip, EmptyState, SearchBox, SelectionBar } from "@/components/common";
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
+import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
 import { SourceBadge, SourceIcon } from "@/components/source-badge";
 import { Pill } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ import {
   ArrowUpCircleIcon,
   CheckIcon,
   CircleDashedIcon,
+  CircleHelpIcon,
+  LayoutDashboardIcon,
   LayersIcon,
   LayoutGridIcon,
   MonitorCheckIcon,
@@ -35,20 +38,13 @@ import {
   TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentType,
-  type MouseEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
+import { InstalledOverview, type ListFilter } from "./overview";
 
 type KindFilter = "all" | InstalledKind;
-type StateFilter = "all" | "update" | "notInShelf" | "inShelf";
+type StateFilter = "all" | "update" | "notInShelf" | "inShelf" | "noSource";
 
 const kindItems: Array<{ value: InstalledKind; label: string }> = [
   { value: "winget", label: "winget" },
@@ -71,6 +67,7 @@ const stateItems: Array<{
     tone: "text-muted-foreground",
   },
   { value: "inShelf", label: "已在清单", icon: CheckIcon, tone: "text-success" },
+  { value: "noSource", label: "无来源", icon: CircleHelpIcon, tone: "text-muted-foreground" },
 ];
 
 function stateOf(e: InstalledEntry, s: StateFilter): boolean {
@@ -81,6 +78,8 @@ function stateOf(e: InstalledEntry, s: StateFilter): boolean {
       return e.inShelf.length === 0;
     case "inShelf":
       return e.inShelf.length > 0;
+    case "noSource":
+      return !e.source;
   }
   return true;
 }
@@ -92,6 +91,8 @@ export function InstalledPage() {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<KindFilter>("all");
   const [state, setState] = useState<StateFilter>("all");
+  // The page opens on the overview; a filter or a search shows the list.
+  const [overview, setOverview] = useState(true);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -123,9 +124,21 @@ export function InstalledPage() {
   const stateCount = (s: StateFilter) => ofKind.filter((e) => stateOf(e, s)).length;
   const loading = !data?.loaded;
 
+  const openList = (f: ListFilter) => {
+    setKind(f.kind ?? "all");
+    setState(f.state ?? "all");
+    setOverview(false);
+  };
+  const search = (q: string) => {
+    setQuery(q);
+    if (q.trim()) setOverview(false);
+  };
+
   usePageKeys({
     focusSearch: () => searchRef.current?.focus(),
-    selectAll: () => list.selectAll(true),
+    selectAll: () => {
+      if (!overview) list.selectAll(true);
+    },
     escape: () => {
       if (list.selected.size > 0) {
         list.selectAll(false);
@@ -133,9 +146,11 @@ export function InstalledPage() {
       }
       return false;
     },
-    move: (d) => list.move(d),
+    move: (d) => {
+      if (!overview) list.move(d);
+    },
     space: () => {
-      if (list.focus) list.check(list.focus, !list.selected.has(list.focus), false);
+      if (!overview && list.focus) list.check(list.focus, !list.selected.has(list.focus), false);
     },
   });
 
@@ -177,16 +192,21 @@ export function InstalledPage() {
         <div className="flex h-full min-h-0 flex-col bg-sidebar">
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-4 p-2.5">
-              <SideRow
-                icon={LayoutGridIcon}
-                label="全部程序"
-                count={entries.length}
-                active={kind === "all" && state === "all"}
-                onClick={() => {
-                  setKind("all");
-                  setState("all");
-                }}
-              />
+              <div className="flex flex-col gap-0.5">
+                <SideRow
+                  icon={LayoutDashboardIcon}
+                  label="概览"
+                  active={overview}
+                  onClick={() => setOverview(true)}
+                />
+                <SideRow
+                  icon={LayoutGridIcon}
+                  label="全部程序"
+                  count={entries.length}
+                  active={!overview && kind === "all" && state === "all"}
+                  onClick={() => openList({})}
+                />
+              </div>
               <SideGroup title="来源">
                 {kindItems
                   .filter((k) => kindCount(k.value) > 0 || kind === k.value)
@@ -198,8 +218,11 @@ export function InstalledPage() {
                       )}
                       label={k.label}
                       count={kindCount(k.value)}
-                      active={kind === k.value}
-                      onClick={() => setKind(kind === k.value ? "all" : k.value)}
+                      active={!overview && kind === k.value}
+                      onClick={() => {
+                        setKind(!overview && kind === k.value ? "all" : k.value);
+                        setOverview(false);
+                      }}
                     />
                   ))}
               </SideGroup>
@@ -211,13 +234,17 @@ export function InstalledPage() {
                     iconClass={s.tone}
                     label={s.label}
                     count={stateCount(s.value)}
-                    active={state === s.value}
-                    onClick={() => setState(state === s.value ? "all" : s.value)}
+                    active={!overview && state === s.value}
+                    onClick={() => {
+                      setState(!overview && state === s.value ? "all" : s.value);
+                      setOverview(false);
+                    }}
                   />
                 ))}
               </SideGroup>
             </div>
           </ScrollArea>
+          <SettingsFooter />
         </div>
       </ResizablePanel>
       <ResizableHandle />
@@ -226,7 +253,7 @@ export function InstalledPage() {
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
             <div className="flex shrink-0 items-center gap-2">
               <span className="text-sm font-semibold">本机已装</span>
-              <Chip icon={LayersIcon}>{shown.length} 个</Chip>
+              <Chip icon={LayersIcon}>{overview ? entries.length : shown.length} 个</Chip>
               {(data?.notes.length ?? 0) > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -251,7 +278,7 @@ export function InstalledPage() {
             </div>
             <SearchBox
               value={query}
-              onChange={setQuery}
+              onChange={search}
               placeholder="搜索名称或发布者"
               inputRef={searchRef}
               className="mx-auto w-full max-w-sm min-w-40"
@@ -281,6 +308,14 @@ export function InstalledPage() {
             </EmptyState>
           ) : isPending || (loading && entries.length === 0) ? (
             <ListSkeleton />
+          ) : overview ? (
+            <InstalledOverview
+              entries={entries}
+              at={at}
+              onOpen={openList}
+              onUpdate={actions.previewInstalledUpdates}
+              onAdd={add}
+            />
           ) : shown.length === 0 ? (
             <EmptyState
               icon={SearchXIcon}
@@ -324,7 +359,10 @@ export function InstalledPage() {
               </div>
             </ScrollArea>
           )}
-          <SelectionBar count={selected.length} onClear={() => list.selectAll(false)}>
+          <SelectionBar
+            count={overview ? 0 : selected.length}
+            onClear={() => list.selectAll(false)}
+          >
             <Button
               size="sm"
               disabled={updatable.length === 0}
@@ -341,66 +379,6 @@ export function InstalledPage() {
         </div>
       </ResizablePanel>
     </ResizablePanelGroup>
-  );
-}
-
-function SideGroup({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex h-7 items-center pl-2.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function SideRow({
-  icon: Icon,
-  iconClass,
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  iconClass?: string;
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "relative flex h-8 items-center gap-2 rounded-lg pr-2 pl-2.5 text-left text-[13px] transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        active
-          ? "bg-primary/10 font-medium text-foreground dark:bg-primary/15"
-          : "text-foreground/80 hover:bg-foreground/[0.05] hover:text-foreground",
-      )}
-    >
-      {active && (
-        <span className="anim-fade absolute top-1.5 bottom-1.5 left-0 w-[3px] rounded-full bg-primary" />
-      )}
-      <Icon
-        className={cn(
-          "size-4 shrink-0",
-          active ? "text-primary" : (iconClass ?? "text-muted-foreground"),
-        )}
-      />
-      <span className="min-w-0 truncate">{label}</span>
-      <span
-        className={cn(
-          "ml-auto text-xs tabular-nums",
-          active ? "text-primary" : "text-muted-foreground",
-        )}
-      >
-        {count}
-      </span>
-    </button>
   );
 }
 
@@ -502,6 +480,7 @@ function EntryRow({
         <Button
           size="xs"
           variant="outline"
+          className="transition-colors hover:border-primary/40 hover:text-primary"
           onClick={(ev) => {
             ev.stopPropagation();
             onUpdate();

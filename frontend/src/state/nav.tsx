@@ -38,7 +38,7 @@ const NavContext = createContext<Nav | null>(null);
 let seq = 0;
 
 export function NavProvider({ children }: { children: ReactNode }) {
-  const [page, setPage] = useState<Page>("shelf");
+  const [page, setPage] = useState<Page>("installed");
   const [discoverIntent, setDiscoverIntent] = useState<DiscoverIntent | null>(null);
   const [shelfFocus, setShelfFocus] = useState<Nav["shelfFocus"]>(null);
   const search = useCallback((query: string, opts?: { find?: FindSource; github?: boolean }) => {

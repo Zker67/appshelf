@@ -18,7 +18,7 @@ AppShelf 的界面：MyGo 的 Web 页面窗口里运行的 React 应用。它只
 
 ```bash
 bun install --cwd frontend      # 安装依赖
-bun run --cwd frontend dev      # 开发服务器 http://localhost:5173（go tool mygo dev 会自动启动）
+bun run --cwd frontend dev      # 开发服务器 http://localhost:6173（go tool mygo dev 会自动启动）
 bun run --cwd frontend check    # 格式、lint、类型检查
 bun run --cwd frontend fmt      # 整理格式
 bun run --cwd frontend test     # 单元测试
@@ -35,7 +35,7 @@ bun run --cwd frontend build    # 构建到 dist/（go tool mygo build 会自动
 | [src/pages/discover/](./src/pages/discover/)         | 发现：winget 和 scoop 边输边搜，GitHub 按需搜索，加入清单、查看详情、手动添加入口                                                    |
 | [src/pages/installed/](./src/pages/installed/)       | 本机已装：按来源和状态筛选，加入清单、查找来源                                                                                       |
 | [src/components/dialogs/](./src/components/dialogs/) | 加入清单、安装预览、编辑软件、任务面板、设置、使用说明                                                                               |
-| [src/components/](./src/components/)                 | 标题栏、页面图标、软件图标、来源和状态标记、分类和标签选择、详情栏、软件详情等共用组件                                               |
+| [src/components/](./src/components/)                 | 标题栏、页面左侧栏（筛选行和底部的设置入口）、页面图标、软件图标、来源和状态标记、分类和标签选择、详情栏、软件详情等共用组件         |
 | [src/components/ui/](./src/components/ui/)           | shadcn 生成的基础组件，不参与格式和 lint 检查                                                                                        |
 | [src/lib/](./src/lib/)                               | 查询与事件（`api.ts`）、筛选和排序（`shelf.ts`）、文字和时间（`text.ts`）、多选（`selection.ts`、`use-list.ts`）、主题（`theme.ts`） |
 | [src/state/](./src/state/)                           | 页面切换和页面之间的请求（`nav.tsx`），各页共用的对话框（`actions.tsx`）                                                             |

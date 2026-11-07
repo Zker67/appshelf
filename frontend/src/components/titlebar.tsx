@@ -14,22 +14,14 @@ import { cn } from "@/lib/utils";
 import { About, type ThemeSource } from "@/mygo";
 import { useActions } from "@/state/actions";
 import { useNav, type Page } from "@/state/nav";
-import {
-  CircleHelpIcon,
-  ListChecksIcon,
-  LoaderCircleIcon,
-  MonitorIcon,
-  MoonIcon,
-  SettingsIcon,
-  SunIcon,
-} from "lucide-react";
+import { ListChecksIcon, LoaderCircleIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { toast } from "sonner";
 
 const pages: Array<{ page: Page; label: string; icon: ComponentType<SVGProps<SVGSVGElement>> }> = [
+  { page: "installed", label: "本机已装", icon: InstalledIcon },
   { page: "shelf", label: "我的清单", icon: ShelfIcon },
   { page: "discover", label: "发现", icon: DiscoverIcon },
-  { page: "installed", label: "本机已装", icon: InstalledIcon },
 ];
 
 /**
@@ -147,24 +139,6 @@ function Tools() {
             {pending}
           </span>
         )}
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-1.5 text-muted-foreground hover:text-foreground"
-        onClick={actions.openHelp}
-      >
-        <CircleHelpIcon />
-        使用说明
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-1.5 text-muted-foreground hover:text-foreground"
-        onClick={() => actions.openSettings()}
-      >
-        <SettingsIcon />
-        设置
       </Button>
       <DropdownMenu>
         <Tooltip>

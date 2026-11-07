@@ -12,7 +12,7 @@ export default defineConfig({
   },
   server: {
     // The app loads this address during `mygo dev` (devUrl in mygo.json).
-    port: 5173,
+    port: 6173,
     strictPort: true,
     watch: { ignored: ["**/dist/**"] },
   },

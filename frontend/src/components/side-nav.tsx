@@ -1,0 +1,98 @@
+// The left side of a page: groups of filter rows, and help and settings at
+// the bottom, so that they sit in the window's lower left on every page.
+
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { useActions } from "@/state/actions";
+import { CircleHelpIcon, SettingsIcon } from "lucide-react";
+import type { ComponentType, ReactNode } from "react";
+
+export function SideGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-7 items-center pl-2.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+export function SideRow({
+  icon: Icon,
+  iconClass,
+  label,
+  count,
+  trailing,
+  active,
+  onClick,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  iconClass?: string;
+  label: string;
+  count?: number;
+  /** trailing shows in place of the count, as a search still running. */
+  trailing?: ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "relative flex h-8 items-center gap-2 rounded-lg pr-2 pl-2.5 text-left text-[13px] transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        active
+          ? "bg-primary/10 font-medium text-foreground dark:bg-primary/15"
+          : "text-foreground/80 hover:bg-foreground/[0.05] hover:text-foreground",
+      )}
+    >
+      {active && (
+        <span className="anim-fade absolute top-1.5 bottom-1.5 left-0 w-[3px] rounded-full bg-primary" />
+      )}
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          active ? "text-primary" : (iconClass ?? "text-muted-foreground"),
+        )}
+      />
+      <span className="min-w-0 truncate">{label}</span>
+      <span
+        className={cn(
+          "ml-auto flex items-center text-xs tabular-nums",
+          active ? "text-primary" : "text-muted-foreground",
+        )}
+      >
+        {trailing ?? count}
+      </span>
+    </button>
+  );
+}
+
+/** SettingsFooter is the bottom of a page's left side: help, then settings. */
+export function SettingsFooter() {
+  const actions = useActions();
+  return (
+    <div className="flex shrink-0 flex-col gap-0.5 border-t p-2.5">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+        onClick={actions.openHelp}
+      >
+        <CircleHelpIcon />
+        使用说明
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+        onClick={() => actions.openSettings()}
+      >
+        <SettingsIcon />
+        设置
+      </Button>
+    </div>
+  );
+}

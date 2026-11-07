@@ -3,7 +3,7 @@
   "identifier": "io.github.zker67.appshelf",
   "version": "0.3.0",
   "out": "build",
-  "devUrl": "http://localhost:5173",
+  "devUrl": "http://localhost:6173",
   "devCommand": "bun run --cwd frontend dev",
   "buildCommand": "bun run --cwd frontend build",
   "frontendDist": "frontend/dist",

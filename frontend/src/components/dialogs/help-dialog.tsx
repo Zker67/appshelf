@@ -251,6 +251,13 @@ function DiscoverHelp() {
 function InstalledHelp() {
   return (
     <>
+      <H>概览</H>
+      <List>
+        <li>打开这一页先看概览：程序总数、来源分布、可更新、清单覆盖和无来源的程序。</li>
+        <li>
+          点概览里的任意一块，进入对应筛选的列表；「全部更新」「全部加入清单」都会先预览再执行。
+        </li>
+      </List>
       <H>列表从哪来</H>
       <List>
         <li>winget 认识的程序、scoop 装的软件、注册表里的其他程序，以及应用商店应用。</li>

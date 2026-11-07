@@ -7,6 +7,7 @@ import { CopyButton, EmptyState, InfoRow, SearchBox, SelectionBar } from "@/comp
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
 import { DetailPanel } from "@/components/detail-panel";
 import { PackageInfo } from "@/components/package-info";
+import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
 import { GitHubMark, SourceBadge, SourceIcon } from "@/components/source-badge";
 import { Pill } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -39,7 +40,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { Channel } from "mygo-runtime";
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
 
@@ -232,7 +233,7 @@ export function DiscoverPage() {
   const layout = useDefaultLayout({
     id: "discover",
     storage: localStorage,
-    panelIds: focused ? ["list", "detail"] : ["list"],
+    panelIds: focused ? ["side", "list", "detail"] : ["side", "list"],
   });
 
   return (
@@ -241,29 +242,43 @@ export function DiscoverPage() {
       defaultLayout={layout.defaultLayout}
       onLayoutChanged={layout.onLayoutChanged}
     >
-      <ResizablePanel id="list" minSize={520}>
-        <div className="@container relative flex h-full min-h-0 flex-col bg-background">
-          <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b px-3">
-            <div className="flex shrink-0 items-center gap-1">
-              <SourceChip
-                label="全部"
-                icon={<LayersIcon className="size-3.5" />}
+      <ResizablePanel
+        id="side"
+        defaultSize={232}
+        minSize={196}
+        maxSize={340}
+        groupResizeBehavior="preserve-pixel-size"
+      >
+        <div className="flex h-full min-h-0 flex-col bg-sidebar">
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex flex-col gap-4 p-2.5">
+              <SideRow
+                icon={LayersIcon}
+                label="全部结果"
                 count={all.length}
                 active={only === null}
                 onClick={() => setOnly(null)}
               />
-              {kinds.map((k) => (
-                <SourceChip
-                  key={k}
-                  label={sourceLabel(k)}
-                  icon={<SourceIcon type={k} />}
-                  count={results[k].hits.length}
-                  state={results[k]}
-                  active={only === k}
-                  onClick={() => setOnly(only === k ? null : k)}
-                />
-              ))}
+              <SideGroup title="来源">
+                {kinds.map((k) => (
+                  <SourceRow
+                    key={k}
+                    kind={k}
+                    result={results[k]}
+                    active={only === k}
+                    onClick={() => setOnly(only === k ? null : k)}
+                  />
+                ))}
+              </SideGroup>
             </div>
+          </ScrollArea>
+          <SettingsFooter />
+        </div>
+      </ResizablePanel>
+      <ResizableHandle />
+      <ResizablePanel id="list" minSize={520}>
+        <div className="@container relative flex h-full min-h-0 flex-col bg-background">
+          <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b px-3">
             <SearchBox
               value={query}
               onChange={setQuery}
@@ -444,54 +459,46 @@ export function DiscoverPage() {
   );
 }
 
-function SourceChip({
-  label,
-  icon,
-  count,
-  state,
+/** SourceRow filters the results to one source, and tells how its search went. */
+function SourceRow({
+  kind,
+  result,
   active,
   onClick,
 }: {
-  label: string;
-  icon: ReactNode;
-  count: number;
-  state?: SourceResult;
+  kind: SourceKind;
+  result: SourceResult;
   active: boolean;
   onClick: () => void;
 }) {
-  const problem = state && (state.state === "error" || state.state === "unavailable");
-  const chip = (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium transition-colors duration-150",
-        active
-          ? "border-primary/30 bg-primary/10 text-primary"
-          : "border-transparent text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground",
-      )}
-    >
-      {icon}
-      <span className="hidden @4xl:inline">{label}</span>
-      {state?.state === "loading" ? (
-        <span className="size-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-      ) : problem ? (
-        <TriangleAlertIcon className="size-3.5 text-warning" />
-      ) : (
-        <span className="tabular-nums">{count}</span>
-      )}
-    </button>
-  );
+  const label = sourceLabel(kind);
+  const problem = result.state === "error" || result.state === "unavailable";
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{chip}</TooltipTrigger>
-      <TooltipContent className="max-w-80">
+      <TooltipTrigger asChild>
+        <div className="flex flex-col">
+          <SideRow
+            icon={({ className }) => <SourceIcon type={kind} className={cn("size-4", className)} />}
+            label={label}
+            count={result.hits.length}
+            trailing={
+              result.state === "loading" ? (
+                <span className="size-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              ) : problem ? (
+                <TriangleAlertIcon className="size-3.5 text-warning" />
+              ) : undefined
+            }
+            active={active}
+            onClick={onClick}
+          />
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="max-w-80">
         {problem
-          ? `${label}：${state.error ?? "不可用"}`
-          : state?.state === "idle" && label === "GitHub"
+          ? `${label}：${result.error ?? "不可用"}`
+          : result.state === "idle" && kind === "github"
             ? "GitHub 只在点「搜 GitHub」或回车时搜索"
-            : `${label} ${count} 个结果`}
+            : `${label} ${result.hits.length} 个结果`}
       </TooltipContent>
     </Tooltip>
   );

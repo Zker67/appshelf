@@ -178,6 +178,13 @@
   display: block !important;
 }
 
+/* react-resizable-panels gives a panel's inner box overflow: auto, which
+   flashes a native scrollbar while a page shown again lays its panels out.
+   Panels scroll only through their own ScrollArea. */
+[data-slot="resizable-panel"] > div {
+  overflow: hidden !important;
+}
+
 /* Rows far out of view skip their layout and paint. */
 .row-lazy {
   content-visibility: auto;

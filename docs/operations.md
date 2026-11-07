@@ -9,7 +9,7 @@
 ```bash
 bun install --cwd frontend   # 第一次运行前安装前端依赖
 go tool mygo doctor          # 检查本机环境
-go tool mygo dev             # 开发模式：启动 Vite+ 开发服务器（5173 端口），前端热更新，Go 改动后重启
+go tool mygo dev             # 开发模式：启动 Vite+ 开发服务器（6173 端口），前端热更新，Go 改动后重启
 ```
 
 `mygo.json` 的 `devCommand`、`buildCommand` 分别运行 `frontend/` 的 `dev`、`build` 脚本，构建结果在 `frontend/dist/`，打包时嵌入 exe。

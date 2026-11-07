@@ -21,6 +21,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { sourceID } from "@/lib/shelf";
 import { cn } from "@/lib/utils";
 import type { App, CategoryInfo, ShelfApp, TagInfo } from "@/mygo";
@@ -234,18 +235,20 @@ function RowMenu({
           <FolderIcon />
           设分类
         </ContextMenuSubTrigger>
-        <ContextMenuSubContent className="max-h-80 w-48 overflow-y-auto">
-          <ContextMenuRadioGroup
-            value={oneCat ?? "__mixed"}
-            onValueChange={(v) => void assignCategory(named, { id: v }, names)}
-          >
-            <ContextMenuRadioItem value="">不分类</ContextMenuRadioItem>
-            {[...categories.values()].map((c) => (
-              <ContextMenuRadioItem key={c.id} value={c.id}>
-                {c.name}
-              </ContextMenuRadioItem>
-            ))}
-          </ContextMenuRadioGroup>
+        <ContextMenuSubContent className="w-48">
+          <ScrollArea viewportClassName="max-h-78">
+            <ContextMenuRadioGroup
+              value={oneCat ?? "__mixed"}
+              onValueChange={(v) => void assignCategory(named, { id: v }, names)}
+            >
+              <ContextMenuRadioItem value="">不分类</ContextMenuRadioItem>
+              {[...categories.values()].map((c) => (
+                <ContextMenuRadioItem key={c.id} value={c.id}>
+                  {c.name}
+                </ContextMenuRadioItem>
+              ))}
+            </ContextMenuRadioGroup>
+          </ScrollArea>
         </ContextMenuSubContent>
       </ContextMenuSub>
       {tags.size > 0 && (
@@ -254,26 +257,28 @@ function RowMenu({
             <HashIcon />
             标签
           </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="max-h-80 w-48 overflow-y-auto">
-            {[...tags.values()].map((t) => {
-              const n = targets.filter((a) => a.app.tagIds?.includes(t.id)).length;
-              const all = n === targets.length;
-              return (
-                <ContextMenuCheckboxItem
-                  key={t.id}
-                  checked={all}
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    void assignTag(named, t, !all);
-                  }}
-                >
-                  <span className="truncate">{t.name}</span>
-                  {n > 0 && !all && (
-                    <MinusIcon className="absolute right-2 text-muted-foreground" />
-                  )}
-                </ContextMenuCheckboxItem>
-              );
-            })}
+          <ContextMenuSubContent className="w-48">
+            <ScrollArea viewportClassName="max-h-78">
+              {[...tags.values()].map((t) => {
+                const n = targets.filter((a) => a.app.tagIds?.includes(t.id)).length;
+                const all = n === targets.length;
+                return (
+                  <ContextMenuCheckboxItem
+                    key={t.id}
+                    checked={all}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      void assignTag(named, t, !all);
+                    }}
+                  >
+                    <span className="truncate">{t.name}</span>
+                    {n > 0 && !all && (
+                      <MinusIcon className="absolute right-2 text-muted-foreground" />
+                    )}
+                  </ContextMenuCheckboxItem>
+                );
+              })}
+            </ScrollArea>
           </ContextMenuSubContent>
         </ContextMenuSub>
       )}

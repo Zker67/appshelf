@@ -558,6 +558,13 @@ export const Discover = {
   suggestRules(repo: string): Promise<RuleSuggestion[]> {
     return call("Discover.SuggestRules", repo);
   },
+  /**
+   * Warm readies the searches as the page opens, for the first one to be
+   * quick. It returns at once.
+   */
+  warm(): Promise<void> {
+    return call("Discover.Warm");
+  },
 } as const;
 
 /**
@@ -566,13 +573,6 @@ export const Discover = {
  */
 export const Installed = {
   /** List returns what is installed. The first call starts reading it. */
-  /**
-   * Warm readies the searches as the page opens, for the first one to be
-   * quick. It returns at once.
-   */
-  warm(): Promise<void> {
-    return call("Discover.Warm");
-  },
   list(): Promise<InstalledList> {
     return call("Installed.List");
   },

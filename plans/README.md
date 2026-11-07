@@ -56,3 +56,4 @@ plans/
 | [手动添加简化与弹窗滚动修复](./2026-11-07-simple-manual-add/00-overview.md) | `[in-progress]` | 手动添加改为一个输入框：搜软件名或粘贴 GitHub 链接，选中即可加入，次要项收进高级设置；修复弹窗内容压住底栏 |
 | [一键加入与发现页改进](./2026-11-07-discover-add-target/00-overview.md) | `[in-progress]` | 搜索框旁“加入到”设好分类和标签，发现和本机已装一键加入（可撤销、Enter 加入）；“已在清单 →”按钮；winget 与 scoop 同名结果合并；GitHub 仍弹窗确认检测规则 |
 | [详情栏压缩与分页签](./2026-11-07-detail-tabs/00-overview.md) | `[in-progress]` | 详情分「概览」「介绍」（清单另有「安装规则」）页签各自滚动；信息改为 2 列信息格和链接按钮，ID 挪到标题下，往下滚时头部收缩 |
+| [发现页搜索提速](./2026-11-07-faster-discover-search/00-overview.md) | `[in-progress]` | winget 搜索不再逐个下载版本信息，改为常驻 PowerShell 取 ID 和名称、`winget search` 补版本、结果缓存与页面预热；宽泛关键词从 30–55 秒降到约 0.2 秒出结果、0.4 秒补齐版本；等待用户在真实窗口验收 |

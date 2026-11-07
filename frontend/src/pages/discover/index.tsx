@@ -164,10 +164,15 @@ export function DiscoverPage() {
     if (withGitHub) searchGitHub(text, my);
   };
 
+  // Ready the searches as the page shows, for the first one to be quick.
+  useEffect(() => {
+    void Discover.warm();
+  }, []);
+
   // Typing searches after a pause.
   useEffect(() => {
     if (query.trim() === searched) return;
-    const t = window.setTimeout(() => search(query, false), 400);
+    const t = window.setTimeout(() => search(query, false), 250);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);

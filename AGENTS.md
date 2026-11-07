@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-AppShelf：Windows 个人软件商城，桌面应用；自更新使用公开仓库 `Zker67/appshelf` 的 GitHub Release。软件清单支持分类和标签，可以导入导出；能检测本机已装软件，按分类或标签多选逐个批量安装，并检查更新（包括 AppShelf 自身）。“发现”页统一搜索 winget、scoop、GitHub 并一键加入清单，“本机已装”页列出本机已有的程序。安装来源为 winget、scoop、GitHub Releases。技术栈：Go + MyGo（`github.com/egoist/mygo`）的 Web 页面窗口，界面是 `frontend/` 的 React 应用；版本以 `go.mod` 和 `frontend/package.json` 为准。
+AppShelf：Windows 个人软件图书馆，桌面应用；自更新使用公开仓库 `Zker67/appshelf` 的 GitHub Release。软件清单支持分类和标签，可以导入导出；能检测本机已装软件，按分类或标签多选逐个批量安装，并检查更新（包括 AppShelf 自身）。“发现”页统一搜索 winget、scoop、GitHub 并一键加入清单，“本机已装”页列出本机已有的程序。安装来源为 winget、scoop、GitHub Releases。技术栈：Go + MyGo（`github.com/egoist/mygo`）的 Web 页面窗口，界面是 `frontend/` 的 React 应用；版本以 `go.mod` 和 `frontend/package.json` 为准。
 
 ## 项目不变量
 
@@ -14,7 +14,7 @@ AppShelf：Windows 个人软件商城，桌面应用；自更新使用公开仓�
 - **复用来源自身的能力**：安装、检测、更新都调用 winget、scoop 和 GitHub API 的官方能力，不自己实现安装器。
 - **不做离线安装包**：不缓存或管理本地 EXE/MSI 安装包。
 - **MyGo Web 前端，前端只做展示**：界面是 `frontend/` 的 React 应用，只通过 `internal/api` 绑定的服务读写；安装判断、检测、队列、外部命令和网络请求都在 Go 端，token 不进前端。本机已装、搜索结果、软件详情和图标只用于展示，不参与是否已装的判断。
-- **只对清单里的软件安装和更新**：“本机已装”页只显示“可更新”标记和“加入清单”，不直接更新清单外的软件。
+- **安装与直接更新的边界**：安装只对清单里的软件执行；“本机已装”页允许对精确识别的 winget / scoop 软件直接更新，包括未加入清单的软件。直接更新先预览并确认，复用逐项队列和执行前后复查，不自动加入清单，不退化为安装；未知来源或来源外安装仍不更新。
 
 ## 项目特有验证
 

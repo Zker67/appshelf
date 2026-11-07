@@ -567,9 +567,20 @@ export const Installed = {
   list(): Promise<InstalledList> {
     return call("Installed.List");
   },
+  /** PreviewUpdates checks current source state without changing the catalog. */
+  previewUpdates(keys: string[]): Promise<PreviewEntry[]> {
+    return call("Installed.PreviewUpdates", keys);
+  },
   /** Refresh reads what is installed again. */
   refresh(): Promise<void> {
     return call("Installed.Refresh");
+  },
+  /**
+   * StartUpdates resolves and checks the targets again, then uses only Upgrade.
+   * The shared queue performs its own pre/post checks before changing software.
+   */
+  startUpdates(keys: string[]): Promise<number> {
+    return call("Installed.StartUpdates", keys);
   },
 } as const;
 

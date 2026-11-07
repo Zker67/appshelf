@@ -116,6 +116,7 @@ export function InstalledPage() {
     .map((k) => byKey.get(k))
     .filter((e): e is InstalledEntry => !!e);
   const addable = selected.filter((e) => e.source && e.inShelf.length === 0);
+  const updatable = selected.filter((e) => e.source && !!e.update);
   useEffect(() => revealRow(listRef, list.focus), [list.focus]);
 
   const kindCount = (k: InstalledKind) => entries.filter((e) => e.kind === k).length;
@@ -317,12 +318,21 @@ export function InstalledPage() {
                     onAdd={() => add([e])}
                     onFind={() => findSource(e)}
                     onShow={() => nav.showInShelf(e.inShelf)}
+                    onUpdate={() => actions.previewInstalledUpdates([e.key])}
                   />
                 ))}
               </div>
             </ScrollArea>
           )}
           <SelectionBar count={selected.length} onClear={() => list.selectAll(false)}>
+            <Button
+              size="sm"
+              disabled={updatable.length === 0}
+              onClick={() => actions.previewInstalledUpdates(updatable.map((e) => e.key))}
+            >
+              <ArrowUpCircleIcon />
+              更新{updatable.length > 0 && ` ${updatable.length}`}
+            </Button>
             <Button size="sm" disabled={addable.length === 0} onClick={() => add(selected)}>
               <PlusIcon />
               加入清单{addable.length > 0 && ` ${addable.length}`}
@@ -404,6 +414,7 @@ function EntryRow({
   onAdd,
   onFind,
   onShow,
+  onUpdate,
 }: {
   entry: InstalledEntry;
   checked: boolean;
@@ -414,6 +425,7 @@ function EntryRow({
   onAdd: () => void;
   onFind: () => void;
   onShow: () => void;
+  onUpdate: () => void;
 }) {
   const inShelf = e.inShelf.length > 0;
   return (
@@ -475,7 +487,7 @@ function EntryRow({
               </span>
             </TooltipTrigger>
             <TooltipContent>
-              {inShelf ? "在我的清单里更新" : "加入清单后可以在 AppShelf 里更新"}
+              {e.source ? "可直接更新，无需先加入清单" : "需要可用的更新来源"}
             </TooltipContent>
           </Tooltip>
         )}
@@ -486,6 +498,19 @@ function EntryRow({
           </Pill>
         )}
       </div>
+      {e.update && e.source && (
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={(ev) => {
+            ev.stopPropagation();
+            onUpdate();
+          }}
+        >
+          <ArrowUpCircleIcon />
+          更新
+        </Button>
+      )}
       <div className="flex w-[92px] shrink-0 justify-end">
         {inShelf ? (
           <Button

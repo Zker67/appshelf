@@ -142,7 +142,7 @@ func main() {
 		})
 
 		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:           "AppShelf 软件商城",
+			Title:           "AppShelf 软件图书馆",
 			URL:             "/",
 			Width:           1240,
 			Height:          800,

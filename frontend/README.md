@@ -42,6 +42,8 @@ bun run --cwd frontend build    # 构建到 dist/（go tool mygo build 会自动
 
 ## 约定
 
+图标切页缓存的浏览器回归见 [tests/README.md](./tests/README.md)。
+
 - 外观跟随 Go 设置的窗口主题（`prefers-color-scheme`），亮暗两套颜色都在 `src/index.css`，主色取自应用图标的深钴蓝。
 - 图标只走 Go 的 `icon` 协议（`About.info().iconBase` 加路径，路径格式见 `docs/api.md`），页面不加载外部网址；链接用 `About.openURL` 在浏览器中打开。
 - 文案用简体中文，简短；时间写成“年-月-日 时:分”（24 小时制）。

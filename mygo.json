@@ -1,7 +1,7 @@
 {
   "name": "AppShelf",
   "identifier": "io.github.zker67.appshelf",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "out": "build",
   "devUrl": "http://localhost:5173",
   "devCommand": "bun run --cwd frontend dev",

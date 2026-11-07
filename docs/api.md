@@ -118,6 +118,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `Discover` | `Search(query, Channel<SearchBatch>)` | winget 和 scoop 并行搜索，每个来源的结果一到就发出；新的搜索取消上一次 |
 | | `SearchGitHub`、`Details`、`SuggestRules` | GitHub 搜索（按需）；软件详情（只用于展示）；GitHub 软件的检测规则建议（先本机已装的程序，最后是仓库名） |
 | `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的；第一次调用时开始读取 |
+| | `PreviewUpdates`、`StartUpdates` | 按已识别的本机 key 批量预览、确认后直接更新 winget / scoop 软件，不要求先加入清单 |
 | `About` | `Info`、`CheckForUpdates`、`OpenLogs`、`OpenDataDir`、`OpenURL`、`SetTheme` | 版本、自更新、目录、用默认浏览器打开链接（只允许 http/https）、外观 |
 
 ### 事件
@@ -144,9 +145,9 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `source.Source`（`internal/source`） | 一种安装来源 | `Type`、`Check`（可用性）、`Statuses`（批量读状态）、`Recheck`（单项复查）、`Install`、`Upgrade`；能搜索的来源再实现 `source.Searcher` |
 | `source.Status` | 一个软件在本机的状态 | `Unknown`（未知）、`NotInstalled`、`Installed`、`UpdateAvailable`、`Unavailable`（来源不可用）；`Blocked()` 为真时不允许安装或更新；`External` 表示由检测规则认出、不是从该来源装的 |
 | `queue.Executor`（`internal/queue`） | 队列执行一项所需的能力 | `Status`（执行前复查）、`Run`、`OpenLog`、`Finished`（执行后复查）；由 `internal/core` 实现 |
-| `core.Core`（`internal/core`） | 清单、状态、来源和队列的汇总 | 只在 `internal/api` 的循环 goroutine 上调用；后台结果通过 `Config.Post` 交回这个 goroutine |
+| `core.Core`（`internal/core`） | 清单、状态、来源和队列的汇总 | 清单与状态图只在 `internal/api` 的循环 goroutine 上访问；`PreviewUpdates` 可在循环外批量读取来源，不改清单或状态图；后台结果通过 `Config.Post` 交回循环 |
 | `api.App`（`internal/api`） | 绑定服务、事件 | 方法经循环 goroutine 读写 core，写完标记变化种类，由通知器合并后发 `changed` |
-| `inventory`、`discover`、`icons` | 本机已装、搜索排序与详情、图标 | 只提供展示信息，不参与安装判断 |
+| `inventory`、`discover`、`icons` | 本机已装、搜索排序与详情、图标 | inventory 可提供直接更新的精确候选 key 和来源；安装状态及是否可更新仍由来源复查决定，详情和图标不参与判断 |
 
 ### 防误装流程
 
@@ -161,3 +162,11 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 - 计划阶段的草案写入 `plans/`；确定后的长期合同同步到本文件或对应专题文档。
 
 本机列表的 `Notes` 保留 winget 预检查不可用和读取失败的原因；当来源不可用时，本机注册表仍可显示，但不将缺少更新信息解释成已确认没有更新。
+
+### 本机直接更新
+
+- `Installed.PreviewUpdates(keys)`：只接受本机列表 key，Go 端解析精确 winget / scoop 来源，分组批量读取当前状态，返回现有 PreviewEntry；不写清单。
+- `Installed.StartUpdates(keys)`：重新解析和检查后，只以 Upgrade 动作加入共享队列；执行前后复查，失败可重试。
+- 已在清单的软件复用原 App ID；其他目标使用由来源 key 派生的临时 ID，任务按来源身份去重，避免清单入口与本机入口重复排队。
+- 未安装、状态未知、来源不可用、来源外安装或无更新时跳过；来源不明确的本机 / 商店项不接受直接更新。原有安装入口仍要求软件在清单里。
+- 不自动创建 catalog.json、添加软件、分类或标签；更新完成后通过现有队列通知重新读取本机状态。

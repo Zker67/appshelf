@@ -312,7 +312,7 @@ function AboutTab() {
       <div className="flex items-center gap-4 rounded-xl border bg-gradient-to-br from-primary/10 via-card to-card p-4">
         <img src={logo} alt="" className="size-14 drop-shadow-md" draggable={false} />
         <div className="min-w-0 flex-1">
-          <div className="text-base font-semibold">AppShelf 软件商城</div>
+          <div className="text-base font-semibold">AppShelf 软件图书馆</div>
           <div className="mt-1 flex items-center gap-2">
             <Pill tone="primary">
               {data?.version ? `v${data.version.replace(/^v/, "")}` : "开发版本"}

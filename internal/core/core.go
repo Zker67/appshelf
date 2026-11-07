@@ -3,7 +3,8 @@
 // sources' work in the background.
 //
 // Its methods are called on the UI thread, which alone reads and changes
-// what Core holds. Background work hands its results back through post,
+// what Core holds. PreviewUpdates may read sources off-loop without changing
+// the catalog or status maps. Background work hands its results back through post,
 // which runs a function on the UI thread (Window.Update in the app).
 package core
 
@@ -189,6 +190,10 @@ func (c *Core) Refresh() {
 // readAll runs on a goroutine: the sources side by side, then the
 // detection rules.
 func (c *Core) readAll(apps []catalog.App) map[string]source.Status {
+	return c.readAllContext(c.ctx, apps, true)
+}
+
+func (c *Core) readAllContext(ctx context.Context, apps []catalog.App, checkUnused bool) map[string]source.Status {
 	groups := map[catalog.SourceType][]catalog.App{}
 	for _, a := range apps {
 		groups[a.Source.Type] = append(groups[a.Source.Type], a)
@@ -200,9 +205,12 @@ func (c *Core) readAll(apps []catalog.App) map[string]source.Status {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			av := src.Check(c.ctx)
-			c.setAvailability(t, av)
 			group := groups[t]
+			if !checkUnused && len(group) == 0 {
+				return
+			}
+			av := src.Check(ctx)
+			c.setAvailability(t, av)
 			if len(group) == 0 {
 				return
 			}
@@ -212,7 +220,7 @@ func (c *Core) readAll(apps []catalog.App) map[string]source.Status {
 					res[a.ID] = source.Status{State: source.Unavailable, Note: av.Reason}
 				}
 			} else {
-				got, err := src.Statuses(c.ctx, group)
+				got, err := src.Statuses(ctx, group)
 				for _, a := range group {
 					switch st, ok := got[a.ID]; {
 					case err != nil:
@@ -673,6 +681,7 @@ func (c *Core) openLog(what string) (*os.File, string, error) {
 
 // PreviewItem is what installing or updating an app would do.
 type PreviewItem struct {
+	Status   source.Status
 	App      catalog.App
 	Runnable bool
 	Plan     string // "安装", or why not
@@ -689,40 +698,44 @@ func (c *Core) Preview(ids []string, action queue.Action) []PreviewItem {
 			continue
 		}
 		st, known := c.statuses[id]
-		item := PreviewItem{App: a, Detail: describeSource(a, st)}
-		switch {
-		case c.Queue.Pending(id):
-			item.Plan = "跳过：已在任务中"
-		case !known:
-			item.Plan = "跳过：还没有读到安装状态"
-		case st.State == source.Unavailable:
-			item.Plan = "不可用：" + st.Note
-		case st.State == source.Unknown:
-			item.Plan = "跳过：无法确认安装状态（" + st.Note + "）"
-		case action == queue.Install && st.External:
-			item.Plan = "跳过：已安装（来源外）"
-		case action == queue.Install && st.IsInstalled():
-			item.Plan = "跳过：已安装"
-		case action == queue.Install:
-			item.Runnable, item.Plan = true, "安装"
-		case st.State == source.NotInstalled:
-			item.Plan = "跳过：未安装"
-		case st.External:
-			item.Plan = "跳过：不是通过这个来源安装的"
-		case st.State != source.UpdateAvailable && st.Note != "":
-			// The check may not have been able to look for updates.
-			item.Plan = "跳过：没有发现更新（" + st.Note + "）"
-		case st.State != source.UpdateAvailable:
-			item.Plan = "跳过：已是最新版本"
-		default:
-			item.Runnable, item.Plan = true, "更新 "+orDash(st.Version)+" → "+st.Latest
-		}
-		if item.Runnable && st.Note != "" {
-			item.Detail += "；" + st.Note
-		}
-		out = append(out, item)
+		out = append(out, c.preview(a, st, known, action))
 	}
 	return out
+}
+
+func (c *Core) preview(a catalog.App, st source.Status, known bool, action queue.Action) PreviewItem {
+	item := PreviewItem{App: a, Status: st, Detail: describeSource(a, st)}
+	switch {
+	case c.Queue.Pending(a.ID) || c.Queue.PendingSource(a.Source):
+		item.Plan = "跳过：已在任务中"
+	case !known:
+		item.Plan = "跳过：还没有读到安装状态"
+	case st.State == source.Unavailable:
+		item.Plan = "不可用：" + st.Note
+	case st.State == source.Unknown:
+		item.Plan = "跳过：无法确认安装状态（" + st.Note + "）"
+	case action == queue.Install && st.External:
+		item.Plan = "跳过：已安装（来源外）"
+	case action == queue.Install && st.IsInstalled():
+		item.Plan = "跳过：已安装"
+	case action == queue.Install:
+		item.Runnable, item.Plan = true, "安装"
+	case st.State == source.NotInstalled:
+		item.Plan = "跳过：未安装"
+	case st.External:
+		item.Plan = "跳过：不是通过这个来源安装的"
+	case st.State != source.UpdateAvailable && st.Note != "":
+		// The check may not have been able to look for updates.
+		item.Plan = "跳过：没有发现更新（" + st.Note + "）"
+	case st.State != source.UpdateAvailable:
+		item.Plan = "跳过：已是最新版本"
+	default:
+		item.Runnable, item.Plan = true, "更新 "+orDash(st.Version)+" → "+st.Latest
+	}
+	if item.Runnable && st.Note != "" {
+		item.Detail += "；" + st.Note
+	}
+	return item
 }
 
 func describeSource(a catalog.App, st source.Status) string {

@@ -115,7 +115,7 @@ go tool mygo build              # 先构建前端，再输出到 build/windows-a
 
 | 现象 | 处理 |
 |---|---|
-| 只剩“本机”类型且无法显示可更新，或 winget 提示缺少模块 | 先使用 0.2.1 或更新版本重新启动，修复继承 PowerShell 7 模块路径的问题；若确实没有安装模块，再在“设置 → 安装来源”点“安装模块”，或手动执行 `Install-Module Microsoft.WinGet.Client -Scope CurrentUser` |
+| 只剩“本机”类型且无法显示可更新，或 winget 提示缺少模块 | 先使用 0.3.0 或更新版本重新启动，修复继承 PowerShell 7 模块路径的问题；若确实没有安装模块，再在“设置 → 安装来源”点“安装模块”，或手动执行 `Install-Module Microsoft.WinGet.Client -Scope CurrentUser` |
 | GitHub 软件附注“GitHub 请求额度已用完” | 设置 `GH_TOKEN` 后重新启动 AppShelf，或等待提示里的恢复时间 |
 | 某一项安装失败 | 任务面板里点“日志”查看安装命令和完整输出；安装程序需要管理员权限时会弹出 UAC，取消 UAC 会记为“已取消管理员授权” |
 | 启动时提示清单文件无法读取 | 原文件已改名为 `catalog.json.broken-<时间>`，修好后可以从“我的清单”左下角的“导入”导回 |

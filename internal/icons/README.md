@@ -34,3 +34,5 @@
 [local_test.go](./local_test.go) 覆盖本机图标不依赖网络、并发去重、重启复用与文件变化失效、共享软件包扫描与取消等待、安装目录和包 Logo 回退、临时失败恢复及下载排队超时。真实只读测试读取本机 Appx Logo，不运行安装。
 
 [identity_test.go](./identity_test.go) 覆盖 MSI 产品代码、XML 命名空间与 Logo 优先级、多 EXE 和大目录里的主程序选择、开始菜单名称回退及便携包 ID；真实测试逐项请求本机软件包图标，并解码验证 PNG。
+
+前端的图标状态按 URL 标识保存，Activity 隐藏恢复时不重置为 loading；恢复 Effect 时核对现有图片的 complete 和 naturalWidth。切换页面命中缓存无需重新等待加载事件，组件回归见 [前端测试](../../frontend/tests/README.md)。

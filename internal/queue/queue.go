@@ -116,7 +116,7 @@ func (q *Queue) Add(apps []catalog.App, action Action) int {
 	q.mu.Lock()
 	added := 0
 	for _, a := range apps {
-		if q.pendingLocked(a.ID) {
+		if q.pendingLocked(a.ID) || q.pendingSourceLocked(a.Source) {
 			continue
 		}
 		q.nextID++
@@ -142,7 +142,7 @@ func (q *Queue) pendingLocked(appID string) bool {
 func (q *Queue) Retry(id int) bool {
 	q.mu.Lock()
 	i := slices.IndexFunc(q.items, func(it *Item) bool { return it.ID == id })
-	if i < 0 || q.items[i].State != Failed || q.pendingLocked(q.items[i].App.ID) {
+	if i < 0 || q.items[i].State != Failed || q.pendingLocked(q.items[i].App.ID) || q.pendingSourceLocked(q.items[i].App.Source) {
 		q.mu.Unlock()
 		return false
 	}
@@ -207,6 +207,26 @@ func (q *Queue) Pending(appID string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.pendingLocked(appID)
+}
+
+// PendingSource also covers the same package queued under a catalog ID or
+// a temporary installed-update ID.
+func (q *Queue) PendingSource(src catalog.Source) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.pendingSourceLocked(src)
+}
+
+func (q *Queue) pendingSourceLocked(src catalog.Source) bool {
+	if src.Type == "" {
+		return false
+	}
+	for _, it := range q.items {
+		if !it.State.Done() && it.App.Source.Key() == src.Key() {
+			return true
+		}
+	}
+	return false
 }
 
 func (q *Queue) startLocked() {

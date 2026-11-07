@@ -26,11 +26,13 @@ import (
 // coreSource is a source for the core: states by source key, installing
 // sets the state after.
 type coreSource struct {
-	typ   catalog.SourceType
-	avail source.Availability
-	mu    sync.Mutex
-	state map[string]source.Status
-	after map[string]source.Status
+	typ           catalog.SourceType
+	avail         source.Availability
+	mu            sync.Mutex
+	state         map[string]source.Status
+	after         map[string]source.Status
+	actions       []string
+	upgradeErrors int
 }
 
 func newCoreSource(t catalog.SourceType) *coreSource {
@@ -60,13 +62,24 @@ func (f *coreSource) Recheck(_ context.Context, a catalog.App) (source.Status, e
 func (f *coreSource) Install(_ context.Context, a catalog.App, _ io.Writer) (source.Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.actions = append(f.actions, "install:"+a.ID)
 	if st, ok := f.after[a.Source.Key()]; ok {
 		f.state[a.Source.Key()] = st
 	}
 	return source.Result{}, nil
 }
 func (f *coreSource) Upgrade(ctx context.Context, a catalog.App, log io.Writer) (source.Result, error) {
-	return f.Install(ctx, a, log)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.actions = append(f.actions, "upgrade:"+a.ID)
+	if f.upgradeErrors > 0 {
+		f.upgradeErrors--
+		return source.Result{}, errors.New("temporary update failure")
+	}
+	if st, ok := f.after[a.Source.Key()]; ok {
+		f.state[a.Source.Key()] = st
+	}
+	return source.Result{}, nil
 }
 
 // fakeWinget is what the services use of winget.

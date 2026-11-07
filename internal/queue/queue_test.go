@@ -68,6 +68,28 @@ func (f *fake) Finished(it Item, st source.Status, _ source.Result) source.Statu
 
 func appOf(id string) catalog.App { return catalog.App{ID: id, Name: id} }
 
+func TestSameSourceCannotQueueUnderDifferentIDs(t *testing.T) {
+	f := newFake()
+	f.gate = make(chan struct{})
+	first := catalog.App{ID: "catalog_app", Name: "App", Source: catalog.Source{Type: catalog.Winget, ID: "Vendor.App"}}
+	second := first
+	second.ID = "installed_app"
+	f.before[first.ID] = source.Status{State: source.UpdateAvailable, Version: "1", Latest: "2"}
+	f.after[first.ID] = source.Status{State: source.Installed, Version: "2"}
+	q := New(context.Background(), f, nil)
+	if n := q.Add([]catalog.App{first}, Upgrade); n != 1 {
+		t.Fatalf("first add: %d", n)
+	}
+	if n := q.Add([]catalog.App{second}, Upgrade); n != 0 {
+		t.Fatalf("same source queued %d more times", n)
+	}
+	close(f.gate)
+	wait(t, q)
+	if len(q.Items()) != 1 {
+		t.Fatal("duplicate tasks created")
+	}
+}
+
 func wait(t *testing.T, q *Queue) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)

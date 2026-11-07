@@ -21,7 +21,7 @@
 | `tasks.go` | `Tasks`：安装预览、开始、队列操作、日志 |
 | `sources.go` | `Sources`：来源状态与额度、安装 winget 模块、编辑时搜索、检查 GitHub 仓库 |
 | `discover.go` | `Discover`：统一搜索（`Channel` 流式返回，新的搜索取消旧的）、GitHub 搜索、详情、规则建议；以及 `Changed` 事件 |
-| `installed.go` | `Installed`：本机已装列表的读取、合并刷新和与清单的对照 |
+| [installed.go](./installed.go)、[installed_updates.go](./installed_updates.go) | `Installed`：本机已装列表、与清单对照，以及按已识别 key 预览和开始直接更新；不会自动加入清单 |
 | `about.go` | `About`：版本、自更新、打开目录和链接（只允许 http/https）、外观 |
 | `settings.go` | `settings.json` 的读写（外观） |
 

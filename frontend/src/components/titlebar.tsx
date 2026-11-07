@@ -47,7 +47,7 @@ export function Titlebar() {
     >
       <div className="flex shrink-0 items-center gap-2 pr-2">
         <img src={logo} alt="" className="size-[22px] drop-shadow-sm" draggable={false} />
-        <span className="text-[13px] font-semibold tracking-[0.08em]">软件商城</span>
+        <span className="text-[13px] font-semibold tracking-[0.08em]">软件图书馆</span>
       </div>
       <NavTabs />
       <div className="flex-1" />

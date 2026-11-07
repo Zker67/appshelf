@@ -8,7 +8,7 @@ AppShelf 的全部业务代码。分层和依赖方向见 [项目结构总览](.
 | [inventory](./inventory) | `inventory.go` | 本机已装程序：合并 winget、scoop、注册表和应用商店应用，与清单对照，见 [inventory/README.md](./inventory/README.md) | 单元测试，加一次真实的只读读取 |
 | [discover](./discover) | `rank.go`、`details.go`、`suggest.go` | 搜索结果排序、软件详情（带缓存）、GitHub 软件的检测规则建议，见 [discover/README.md](./discover/README.md) | 单元测试，加真实读取 VS Code 的详情 |
 | [icons](./icons) | `icons.go`、`database.go`、`fetch.go` | 图标协议：图标库、本机图标、GitHub 头像，下载和缓存，见 [icons/README.md](./icons/README.md) | 单元测试，加真实下载图标库 |
-| [core](./core) | `core.go` | 打开清单和本机状态（损坏的文件改名留存），并行读取各来源状态、套用检测规则，保存编辑，导入导出，安装预览，以及队列的执行者 | 假来源和临时目录 |
+| [core](./core) | `core.go` | 打开清单和本机状态（损坏的文件改名留存），并行读取各来源状态、套用检测规则，保存编辑，导入导出，安装预览、清单外软件的批量更新预览（[updates.go](./core/updates.go)），以及队列的执行者 | 假来源和临时目录 |
 | [queue](./queue) | `queue.go` | 安装队列：一个 goroutine 逐项执行；执行前复查（已装跳过、状态不确定不执行），执行后复查；重试、停止、继续、清除已完成 | 假执行者 |
 | [source](./source) | 见 [source/README.md](./source/README.md) | 来源接口、状态类型和三个来源 | 见来源说明 |
 | [runner](./runner) | `runner.go`、`powershell.go`、`shell_windows.go` | 运行外部命令并保留输出末尾；用临时脚本和 UTF-8 JSON 文件运行 PowerShell，避免参数转义和编码问题；用 `ShellExecuteExW` 启动安装程序，让需要管理员权限的安装程序弹出 UAC | 真实的 Windows PowerShell，包括中文和以 `-` 开头的参数 |

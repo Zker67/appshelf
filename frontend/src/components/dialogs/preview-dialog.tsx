@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorText, useShelf } from "@/lib/api";
 import { sourceID } from "@/lib/shelf";
-import { Tasks, type PreviewEntry, type TaskAction } from "@/mygo";
+import { Installed, Tasks, type PreviewEntry, type TaskAction } from "@/mygo";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUpCircleIcon,
@@ -37,6 +37,7 @@ export interface PreviewRequest {
   action: TaskAction;
   seq: number;
   open: boolean;
+  installed?: boolean;
 }
 
 export function PreviewDialog({
@@ -54,8 +55,11 @@ export function PreviewDialog({
   const preview = useQuery({
     // Under the shelf's key: read again while the states of apps just
     // added arrive.
-    queryKey: ["shelf", "preview", request?.seq ?? 0],
-    queryFn: () => Tasks.preview(request?.ids ?? [], action),
+    queryKey: [request?.installed ? "installed" : "shelf", "preview", request?.seq ?? 0],
+    queryFn: () =>
+      request?.installed
+        ? Installed.previewUpdates(request.ids)
+        : Tasks.preview(request?.ids ?? [], action),
     enabled: open && !!request,
   });
   const { data: shelf } = useShelf();
@@ -70,7 +74,9 @@ export function PreviewDialog({
     if (!request) return;
     setBusy(true);
     try {
-      const n = await Tasks.start(request.ids, action);
+      const n = request.installed
+        ? await Installed.startUpdates(request.ids)
+        : await Tasks.start(request.ids, action);
       toast.success(`已开始${verb} ${n} 个软件`);
       onClose();
       onStarted();

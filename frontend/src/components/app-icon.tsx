@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { iconURL, useAbout } from "@/lib/api";
 import { hue, initial } from "@/lib/text";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * AppIcon shows a program's icon, which Go finds and serves; while it
@@ -20,6 +20,25 @@ export function AppIcon({
 }) {
   const { data: about } = useAbout();
   const baseSrc = iconURL(about?.iconBase, path);
+  // A new URL gets new state. Activity resumes effects while preserving
+  // state and DOM, so an effect must never reset a completed image to loading.
+  return (
+    <IconImage key={baseSrc} baseSrc={baseSrc} name={name} size={size} className={className} />
+  );
+}
+
+export function IconImage({
+  baseSrc,
+  name,
+  size = 36,
+  className,
+}: {
+  baseSrc: string;
+  name: string;
+  size?: number;
+  className?: string;
+}) {
+  const imageRef = useRef<HTMLImageElement>(null);
   const [attempt, setAttempt] = useState(0);
   const src =
     baseSrc && attempt > 0
@@ -27,9 +46,13 @@ export function AppIcon({
       : baseSrc;
   const [state, setState] = useState<"loading" | "ok" | "failed">(src ? "loading" : "failed");
   useEffect(() => {
-    setAttempt(0);
-    setState(baseSrc ? "loading" : "failed");
-  }, [baseSrc]);
+    // Cached images may complete before effects resume after Activity hides
+    // and restores a page. Reconcile from the actual element; never reset it.
+    const image = imageRef.current;
+    if (image?.complete && image.currentSrc) {
+      setState(image.naturalWidth > 0 ? "ok" : "failed");
+    }
+  }, [src]);
   useEffect(() => {
     if (state !== "failed" || !baseSrc || attempt >= 3) return;
     const timer = setTimeout(() => {
@@ -59,6 +82,7 @@ export function AppIcon({
         <>
           {state === "loading" && <div className="absolute inset-0 rounded-[26%] bg-muted" />}
           <img
+            ref={imageRef}
             key={src}
             src={src}
             alt=""

@@ -4,7 +4,7 @@
 import { AddDialog, type AddCandidate } from "@/components/dialogs/add-dialog";
 import { AppEditor } from "@/components/dialogs/app-editor";
 import { HelpDialog } from "@/components/dialogs/help-dialog";
-import { PreviewDialog } from "@/components/dialogs/preview-dialog";
+import { PreviewDialog, type PreviewRequest } from "@/components/dialogs/preview-dialog";
 import { SettingsDialog, type SettingsTab } from "@/components/dialogs/settings-dialog";
 import { TasksSheet } from "@/components/dialogs/tasks-sheet";
 import type { App, TaskAction } from "@/mygo";
@@ -13,6 +13,7 @@ import { createContext, use, useMemo, useState, type ReactNode } from "react";
 interface Actions {
   /** preview shows what installing or updating apps would do, to start it. */
   preview: (ids: string[], action: TaskAction) => void;
+  previewInstalledUpdates: (keys: string[]) => void;
   /** add adds packages to the catalog with a category and tags. */
   add: (items: AddCandidate[], opts?: { install?: boolean }) => void;
   /** edit edits an app, or adds one by hand with what is known of it. */
@@ -30,12 +31,7 @@ const next = () => ++counter;
 export function ActionsProvider({ children }: { children: ReactNode }) {
   // A request stays after its dialog closes, for the dialog to animate out;
   // a new one remounts the dialog by its seq.
-  const [preview, setPreview] = useState<{
-    ids: string[];
-    action: TaskAction;
-    seq: number;
-    open: boolean;
-  } | null>(null);
+  const [preview, setPreview] = useState<PreviewRequest | null>(null);
   const [add, setAdd] = useState<{
     items: AddCandidate[];
     install: boolean;
@@ -55,6 +51,8 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Actions>(
     () => ({
       preview: (ids, action) => setPreview({ ids, action, seq: next(), open: true }),
+      previewInstalledUpdates: (keys) =>
+        setPreview({ ids: keys, action: "upgrade", installed: true, seq: next(), open: true }),
       add: (items, opts) =>
         setAdd({ items, install: opts?.install ?? false, seq: next(), open: true }),
       edit: (app, draft) => setEdit({ app, draft, seq: next(), open: true }),

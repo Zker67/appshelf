@@ -1,0 +1,642 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"appshelf/internal/catalog"
+	"appshelf/internal/core"
+	"appshelf/internal/detect"
+	"appshelf/internal/discover"
+	"appshelf/internal/source"
+	"appshelf/internal/source/github"
+	"appshelf/internal/source/scoop"
+	"appshelf/internal/source/winget"
+	"appshelf/internal/state"
+)
+
+// coreSource is a source for the core: states by source key, installing
+// sets the state after.
+type coreSource struct {
+	typ   catalog.SourceType
+	avail source.Availability
+	mu    sync.Mutex
+	state map[string]source.Status
+	after map[string]source.Status
+}
+
+func newCoreSource(t catalog.SourceType) *coreSource {
+	return &coreSource{typ: t, avail: source.Availability{OK: true}, state: map[string]source.Status{}, after: map[string]source.Status{}}
+}
+
+func (f *coreSource) Type() catalog.SourceType                  { return f.typ }
+func (f *coreSource) Check(context.Context) source.Availability { return f.avail }
+func (f *coreSource) get(a catalog.App) source.Status {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if st, ok := f.state[a.Source.Key()]; ok {
+		return st
+	}
+	return source.Status{State: source.NotInstalled}
+}
+func (f *coreSource) Statuses(_ context.Context, apps []catalog.App) (map[string]source.Status, error) {
+	out := map[string]source.Status{}
+	for _, a := range apps {
+		out[a.ID] = f.get(a)
+	}
+	return out, nil
+}
+func (f *coreSource) Recheck(_ context.Context, a catalog.App) (source.Status, error) {
+	return f.get(a), nil
+}
+func (f *coreSource) Install(_ context.Context, a catalog.App, _ io.Writer) (source.Result, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if st, ok := f.after[a.Source.Key()]; ok {
+		f.state[a.Source.Key()] = st
+	}
+	return source.Result{}, nil
+}
+func (f *coreSource) Upgrade(ctx context.Context, a catalog.App, log io.Writer) (source.Result, error) {
+	return f.Install(ctx, a, log)
+}
+
+// fakeWinget is what the services use of winget.
+type fakeWinget struct {
+	results []source.SearchResult
+	block   chan struct{} // a search waits for it, or its context
+	pkgs    []winget.Package
+	mu      sync.Mutex
+	queries []string
+}
+
+func (w *fakeWinget) Check(context.Context) source.Availability { return source.Availability{OK: true} }
+func (w *fakeWinget) Search(ctx context.Context, q string) ([]source.SearchResult, error) {
+	w.mu.Lock()
+	w.queries = append(w.queries, q)
+	block := w.block
+	w.mu.Unlock()
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return w.results, nil
+}
+func (w *fakeWinget) Installed(context.Context, time.Duration) ([]winget.Package, time.Time, error) {
+	return w.pkgs, time.Now(), nil
+}
+func (w *fakeWinget) LatestVersion(context.Context, string) (string, error) { return "1.0", nil }
+
+type fakeScoop struct{}
+
+func (fakeScoop) Check(context.Context) source.Availability {
+	return source.Availability{Reason: "未安装 scoop"}
+}
+func (fakeScoop) Search(context.Context, string) ([]source.SearchResult, error) { return nil, nil }
+func (fakeScoop) Installed(context.Context) ([]scoop.App, error)                { return nil, nil }
+func (fakeScoop) Info(context.Context, string, string) (scoop.Info, error)      { return scoop.Info{}, nil }
+
+type fakeGitHub struct{ repos []github.Repo }
+
+func (g fakeGitHub) SearchRepos(context.Context, string, int) ([]github.Repo, error) {
+	return g.repos, nil
+}
+func (g fakeGitHub) Repository(context.Context, string) (github.Repo, error) {
+	return github.Repo{}, nil
+}
+func (g fakeGitHub) Describe(_ context.Context, app catalog.App) (github.Release, github.Asset, error) {
+	if app.Source.Repo == "o/none" {
+		return github.Release{}, github.Asset{}, errors.New("没有正式版 release")
+	}
+	return github.Release{Tag: "v2"}, github.Asset{Name: "setup.exe"}, nil
+}
+func (g fakeGitHub) SearchRate() github.Rate {
+	return github.Rate{Known: true, Limit: 10, Remaining: 9}
+}
+
+// env is an App on a core with fake sources.
+type env struct {
+	t       *testing.T
+	app     *App
+	core    *core.Core
+	winget  *coreSource
+	wapi    *fakeWinget
+	dir     string
+	mu      sync.Mutex
+	changes []Change
+	opened  []string
+	file    string // what OpenFile and SaveFile answer
+	theme   ThemeSource
+
+	shelf     *Shelf
+	tasks     *Tasks
+	sources   *Sources
+	discover  *Discover
+	installed *Installed
+	about     *About
+}
+
+func newEnv(t *testing.T) *env {
+	t.Helper()
+	e := &env{t: t, dir: t.TempDir()}
+	e.app = New(Hooks{
+		Emit: func(c Change) {
+			e.mu.Lock()
+			e.changes = append(e.changes, c)
+			e.mu.Unlock()
+		},
+		OpenPath: func(p string) error { e.opened = append(e.opened, p); return nil },
+		OpenURL:  func(u string) error { e.opened = append(e.opened, u); return nil },
+		SaveFile: func(context.Context, string, string) (string, error) { return e.file, nil },
+		OpenFile: func(context.Context, string) (string, error) { return e.file, nil },
+		SetTheme: func(t ThemeSource) { e.theme = t },
+	})
+	for _, s := range e.app.Services() {
+		switch s := s.(type) {
+		case *Shelf:
+			e.shelf = s
+		case *Tasks:
+			e.tasks = s
+		case *Sources:
+			e.sources = s
+		case *Discover:
+			e.discover = s
+		case *Installed:
+			e.installed = s
+		case *About:
+			e.about = s
+		}
+	}
+	e.winget = newCoreSource(catalog.Winget)
+	c, err := core.Open(context.Background(), core.Config{
+		Paths:   core.Paths{Catalog: filepath.Join(e.dir, "catalog.json"), State: filepath.Join(e.dir, "state.json"), Logs: filepath.Join(e.dir, "logs")},
+		Sources: func(*state.Store) []source.Source { return []source.Source{e.winget, newCoreSource(catalog.GitHub)} },
+		Post:    e.app.Post,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.core = c
+	e.wapi = &fakeWinget{
+		results: []source.SearchResult{{ID: "Obsidian.Clipper", Name: "Obsidian Clipper", Version: "1"}, {ID: "Obsidian.Obsidian", Name: "Obsidian", Version: "1.9"}},
+		pkgs:    []winget.Package{{ID: "Obsidian.Obsidian", Name: "Obsidian", Version: "1.8", Source: "winget", Update: "1.9"}, {ID: `ARP\Machine\X64\Tool`, Name: "Tool 2.1 (x64)", Version: "2.1"}},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	e.app.Start(ctx, Config{
+		Core:    c,
+		Sources: SourceAPIs{Winget: e.wapi, Scoop: fakeScoop{}, GitHub: fakeGitHub{repos: []github.Repo{{FullName: "localsend/localsend", Description: "Share files", Stars: 50000}}}},
+		Details: discover.NewDetails(discover.Fetchers{}, "", ""),
+		Scan: func() ([]detect.Entry, error) {
+			return []detect.Entry{{DisplayName: "Tool 2.1 (x64)", DisplayVersion: "2.1", Publisher: "Tool Co", Name: "Tool", Scope: "Machine", Arch: "X64", Key: `HKLM\Tool`}}, nil
+		},
+		Version:  "0.2.0",
+		DataDir:  e.dir,
+		Settings: filepath.Join(e.dir, "settings.json"),
+		IconBase: "http://icon.localhost",
+	})
+	e.until(func() bool { return !e.shelf.Snapshot().Refreshing })
+	e.until(func() bool { return e.installed.List().Loaded })
+	return e
+}
+
+// until waits for cond.
+func (e *env) until(cond func() bool) {
+	e.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			e.t.Fatal("timed out")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// kindsSince returns the kinds of the changes emitted after n changes.
+func (e *env) changesSince(n int) []Change {
+	time.Sleep(150 * time.Millisecond)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.changes[n:])
+}
+
+func (e *env) changeCount() int {
+	time.Sleep(150 * time.Millisecond) // let pending changes out
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.changes)
+}
+
+func TestShelfAndChanges(t *testing.T) {
+	e := newEnv(t)
+	n := e.changeCount()
+	saved, err := e.shelf.SaveApp(catalog.App{Name: "Git", Source: catalog.Source{Type: catalog.Winget, ID: "Git.Git"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := e.changesSince(n)
+	if len(changes) == 0 || !slices.Contains(changes[0].Kinds, ChangedShelf) {
+		t.Fatalf("changes after saving = %+v", changes)
+	}
+	// Changes close together come as one.
+	n = e.changeCount()
+	for i := range 5 {
+		if _, err := e.shelf.AddTag("标签" + string(rune('A'+i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if changes := e.changesSince(n); len(changes) == 0 || len(changes) >= 5 {
+		t.Errorf("%d changes for five quick edits: %+v", len(changes), changes)
+	}
+
+	e.until(func() bool {
+		s := e.shelf.Snapshot()
+		return len(s.Apps) == 1 && s.Apps[0].Status != nil && !s.Apps[0].Checking
+	})
+	snap := e.shelf.Snapshot()
+	app := snap.Apps[0]
+	if app.App.ID != saved.ID || app.Icon != "/w/Git.Git" || app.Status.State != StateNotInstalled || snap.Uncategorized != 1 || len(snap.Tags) != 5 {
+		t.Errorf("snapshot = %+v", snap)
+	}
+	if _, err := e.shelf.SaveApp(catalog.App{Name: "", Source: catalog.Source{Type: catalog.Winget, ID: "X.Y"}}); err == nil {
+		t.Error("an app without a name saved")
+	}
+
+	cat, err := e.shelf.AddCategory("开发")
+	if err != nil || cat.ID == "" || cat.Name != "开发" {
+		t.Fatalf("category = %+v, %v", cat, err)
+	}
+	if err := e.shelf.SetCategory([]string{saved.ID}, cat.ID); err != nil {
+		t.Fatal(err)
+	}
+	tag := e.shelf.Snapshot().Tags[0]
+	if err := e.shelf.SetTag([]string{saved.ID}, tag.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	snap = e.shelf.Snapshot()
+	if snap.Apps[0].App.CategoryID != cat.ID || !slices.Equal(snap.Apps[0].App.TagIDs, []string{tag.ID}) || snap.Categories[0].Count != 1 || snap.Tags[0].Count != 1 {
+		t.Errorf("after category and tag: %+v", snap)
+	}
+	if err := e.shelf.SetTag([]string{saved.ID}, tag.ID, false); err != nil || len(e.shelf.Snapshot().Apps[0].App.TagIDs) != 0 {
+		t.Errorf("tag not removed: %v", err)
+	}
+	if err := e.shelf.RenameCategory(cat.ID, "开发工具"); err != nil || e.shelf.Snapshot().Categories[0].Name != "开发工具" {
+		t.Errorf("rename: %v", err)
+	}
+	if err := e.shelf.DeleteCategory(cat.ID); err != nil || e.shelf.Snapshot().Uncategorized != 1 {
+		t.Errorf("delete category: %v", err)
+	}
+}
+
+func TestAddPackagesAndUndoDelete(t *testing.T) {
+	e := newEnv(t)
+	res, err := e.shelf.AddPackages(AddRequest{
+		Items: []AddItem{
+			{Name: "Obsidian", Source: catalog.Source{Type: catalog.Winget, ID: "Obsidian.Obsidian"}},
+			{Name: "", Source: catalog.Source{Type: catalog.Winget, ID: "No.Name"}},
+			{Name: "LocalSend", Source: catalog.Source{Type: catalog.GitHub, Repo: "localsend/localsend"}, Detect: &catalog.Detect{DisplayName: "^LocalSend"}},
+		},
+		NewCategory: "效率",
+		NewTags:     []string{"常用", "常用", " "},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Added) != 2 || len(res.Failed) != 1 || res.Failed[0].Name != "" {
+		t.Fatalf("result = %+v", res)
+	}
+	snap := e.shelf.Snapshot()
+	if len(snap.Categories) != 1 || len(snap.Tags) != 1 || snap.Categories[0].Count != 2 || snap.Tags[0].Count != 2 {
+		t.Fatalf("snapshot = %+v", snap)
+	}
+	// The same category by name again: no second one.
+	if _, err := e.shelf.AddPackages(AddRequest{Items: []AddItem{{Name: "Git", Source: catalog.Source{Type: catalog.Winget, ID: "Git.Git"}}}, NewCategory: "效率"}); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(e.shelf.Snapshot().Categories); n != 1 {
+		t.Errorf("%d categories", n)
+	}
+	if _, err := e.shelf.AddPackages(AddRequest{}); err == nil {
+		t.Error("nothing to add accepted")
+	}
+
+	e.core.Store().PutGitHub(res.Added[1], state.GitHubRecord{Tag: "v1", AssetName: "a.exe"})
+	token, err := e.shelf.DeleteApps(res.Added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(e.shelf.Snapshot().Apps); n != 1 {
+		t.Fatalf("%d apps after deleting", n)
+	}
+	catID := e.shelf.Snapshot().Categories[0].ID
+	if err := e.shelf.DeleteCategory(catID); err != nil {
+		t.Fatal(err)
+	}
+	n, err := e.shelf.UndoDelete(token)
+	if err != nil || n != 2 {
+		t.Fatalf("undo = %d, %v", n, err)
+	}
+	snap = e.shelf.Snapshot()
+	var ids []string
+	for _, a := range snap.Apps {
+		ids = append(ids, a.App.ID)
+		if a.App.CategoryID != "" {
+			t.Errorf("restored into a deleted category: %+v", a.App)
+		}
+	}
+	for _, id := range res.Added {
+		if !slices.Contains(ids, id) {
+			t.Errorf("app %s not restored", id)
+		}
+	}
+	if r, ok := e.core.Store().GitHub(res.Added[1]); !ok || r.Tag != "v1" {
+		t.Error("GitHub record not restored")
+	}
+	if _, err := e.shelf.UndoDelete(token); err == nil {
+		t.Error("undone twice")
+	}
+}
+
+func TestTasks(t *testing.T) {
+	e := newEnv(t)
+	e.winget.state["winget:has.it"] = source.Status{State: source.Installed, Version: "1"}
+	e.winget.after["winget:new.app"] = source.Status{State: source.Installed, Version: "2"}
+	res, err := e.shelf.AddPackages(AddRequest{Items: []AddItem{
+		{Name: "New", Source: catalog.Source{Type: catalog.Winget, ID: "New.App"}},
+		{Name: "Has", Source: catalog.Source{Type: catalog.Winget, ID: "Has.It"}},
+	}})
+	if err != nil || len(res.Added) != 2 {
+		t.Fatal(res, err)
+	}
+	e.until(func() bool {
+		for _, a := range e.shelf.Snapshot().Apps {
+			if a.Status == nil || a.Checking {
+				return false
+			}
+		}
+		return true
+	})
+	prev := e.tasks.Preview(res.Added, ActionInstall)
+	if len(prev) != 2 || !prev[0].Runnable || prev[0].Plan != "安装" || prev[1].Runnable || prev[0].Icon != "/w/New.App" {
+		t.Fatalf("preview = %+v", prev)
+	}
+	n, err := e.tasks.Start(res.Added, ActionInstall)
+	if err != nil || n != 1 {
+		t.Fatalf("start = %d, %v", n, err)
+	}
+	e.until(func() bool {
+		l := e.tasks.List()
+		return len(l.Items) == 1 && l.Items[0].State == TaskSucceeded && !l.Running
+	})
+	item := e.tasks.List().Items[0]
+	if item.Name != "New" || item.Action != ActionInstall || !item.HasLog || item.Started.IsZero() {
+		t.Errorf("task = %+v", item)
+	}
+	if err := e.tasks.OpenLog(item.ID); err != nil || len(e.opened) != 1 {
+		t.Errorf("open log: %v %v", err, e.opened)
+	}
+	if err := e.tasks.Retry(item.ID); err == nil {
+		t.Error("a task that succeeded retried")
+	}
+	e.tasks.ClearDone()
+	if len(e.tasks.List().Items) != 0 {
+		t.Error("done tasks not cleared")
+	}
+	if _, err := e.tasks.Start(res.Added[1:], ActionInstall); err == nil {
+		t.Error("an installed app queued")
+	}
+	e.until(func() bool {
+		a := e.shelf.Snapshot().Apps[0]
+		return a.Status != nil && a.Status.State == StateInstalled
+	})
+}
+
+func TestSearch(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.shelf.SaveApp(catalog.App{Name: "Clipper", Source: catalog.Source{Type: catalog.Winget, ID: "obsidian.clipper"}}); err != nil {
+		t.Fatal(err)
+	}
+	var batches []SearchBatch
+	if err := e.app.searchAll(context.Background(), "obsidian", func(b SearchBatch) error { batches = append(batches, b); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	slices.SortFunc(batches, func(a, b SearchBatch) int { return strings.Compare(string(a.Type), string(b.Type)) })
+	if len(batches) != 2 || batches[0].Type != catalog.Scoop || !batches[0].Unavailable || batches[1].Type != catalog.Winget {
+		t.Fatalf("batches = %+v", batches)
+	}
+	hits := batches[1].Hits
+	if len(hits) != 2 || hits[0].ID != "Obsidian.Obsidian" || !hits[0].Installed || hits[0].InShelf != "" || hits[1].InShelf == "" || hits[0].Icon != "/w/Obsidian.Obsidian" {
+		t.Errorf("hits = %+v", hits)
+	}
+
+	// A new search cancels the one under way, which sends nothing.
+	e.wapi.mu.Lock()
+	e.wapi.block = make(chan struct{})
+	e.wapi.mu.Unlock()
+	first := make(chan []SearchBatch, 1)
+	go func() {
+		var got []SearchBatch
+		e.app.searchAll(context.Background(), "obs", func(b SearchBatch) error { got = append(got, b); return nil })
+		first <- got
+	}()
+	e.until(func() bool { e.wapi.mu.Lock(); defer e.wapi.mu.Unlock(); return len(e.wapi.queries) == 2 })
+	e.wapi.mu.Lock()
+	e.wapi.block = nil
+	e.wapi.mu.Unlock()
+	var second []SearchBatch
+	e.app.searchAll(context.Background(), "obsidian", func(b SearchBatch) error { second = append(second, b); return nil })
+	got := <-first
+	for _, b := range got {
+		if b.Type == catalog.Winget {
+			t.Errorf("canceled search sent %+v", b)
+		}
+	}
+	if len(second) != 2 {
+		t.Errorf("second search sent %d batches", len(second))
+	}
+
+	gh, err := e.discover.SearchGitHub(context.Background(), "localsend")
+	if err != nil || len(gh.Hits) != 1 || gh.Hits[0].Name != "localsend" || gh.Hits[0].Stars != 50000 || gh.Rate.Remaining != 9 || gh.Hits[0].Icon != "/g/localsend/localsend" {
+		t.Errorf("github = %+v, %v", gh, err)
+	}
+	rules := e.discover.SuggestRules("someone/tool")
+	if len(rules) != 2 || rules[0].From != "Tool 2.1 (x64)" || rules[1].Rule != "^tool" {
+		t.Errorf("rules = %+v", rules)
+	}
+	hitsEd, err := e.sources.Search(context.Background(), catalog.Winget, "obsidian")
+	if err != nil || len(hitsEd) != 2 {
+		t.Errorf("editor search = %+v, %v", hitsEd, err)
+	}
+	if _, err := e.sources.Search(context.Background(), catalog.Scoop, "x"); err == nil || !strings.Contains(err.Error(), "scoop") {
+		t.Errorf("scoop search: %v", err)
+	}
+	chk, err := e.sources.CheckGitHub(context.Background(), "o/app", "")
+	if err != nil || chk.Tag != "v2" || chk.Asset != "setup.exe" {
+		t.Errorf("check = %+v, %v", chk, err)
+	}
+	if _, err := e.sources.CheckGitHub(context.Background(), "not a repo", ""); err == nil {
+		t.Error("bad repository checked")
+	}
+}
+
+func TestInstalledList(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.shelf.SaveApp(catalog.App{Name: "Obsidian", Source: catalog.Source{Type: catalog.Winget, ID: "Obsidian.Obsidian"}}); err != nil {
+		t.Fatal(err)
+	}
+	list := e.installed.List()
+	if !list.Loaded || len(list.Entries) != 2 {
+		t.Fatalf("list = %+v", list)
+	}
+	var obs, tool InstalledEntry
+	for _, en := range list.Entries {
+		switch en.Kind {
+		case InstalledWinget:
+			obs = en
+		case InstalledLocal:
+			tool = en
+		}
+	}
+	if obs.Source == nil || obs.Source.ID != "Obsidian.Obsidian" || len(obs.InShelf) != 1 || obs.Update != "1.9" || obs.Rule != "" {
+		t.Errorf("winget entry = %+v", obs)
+	}
+	if tool.Source != nil || tool.Publisher != "Tool Co" || tool.Rule != `^Tool v?\d[\w.+-]* \(x64\)$` || !strings.HasPrefix(tool.Icon, "/i/") {
+		t.Errorf("local entry = %+v", tool)
+	}
+	// Adding it with the rule matches it.
+	if _, err := e.shelf.AddPackages(AddRequest{Items: []AddItem{{Name: "Tool", Source: catalog.Source{Type: catalog.Winget, ID: "Tool.Tool"}, Detect: &catalog.Detect{DisplayName: tool.Rule}}}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, en := range e.installed.List().Entries {
+		if en.Kind == InstalledLocal && len(en.InShelf) != 1 {
+			t.Errorf("local entry not matched: %+v", en)
+		}
+	}
+	n := e.changeCount()
+	e.installed.Refresh()
+	e.until(func() bool { return !e.installed.List().Loading })
+	found := false
+	for _, c := range e.changesSince(n) {
+		found = found || slices.Contains(c.Kinds, ChangedInstalled)
+	}
+	if !found {
+		t.Error("no change for the installed list")
+	}
+}
+
+func TestImportExport(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.shelf.SaveApp(catalog.App{Name: "Git", Source: catalog.Source{Type: catalog.Winget, ID: "Git.Git"}}); err != nil {
+		t.Fatal(err)
+	}
+	e.file = filepath.Join(e.dir, "export")
+	path, err := e.shelf.Export(context.Background())
+	if err != nil || path != e.file+".json" {
+		t.Fatalf("export = %q, %v", path, err)
+	}
+	if _, err := catalog.Load(path); err != nil {
+		t.Fatal(err)
+	}
+	other := catalog.New()
+	other.Apps = append(other.Apps, catalog.App{ID: "a_x", Name: "Git again", Source: catalog.Source{Type: catalog.Winget, ID: "git.git"}}, catalog.App{ID: "a_y", Name: "7-Zip", Source: catalog.Source{Type: catalog.Winget, ID: "7zip.7zip"}})
+	data, _ := other.Marshal()
+	e.file = filepath.Join(e.dir, "in.json")
+	os.WriteFile(e.file, data, 0o644)
+	prev, err := e.shelf.ReadImport(context.Background())
+	if err != nil || prev == nil || prev.File != "in.json" || prev.Counts.AddedApps != 1 || prev.Counts.MergedApps != 1 {
+		t.Fatalf("preview = %+v, %v", prev, err)
+	}
+	counts, err := e.shelf.ApplyImport(prev.Token)
+	if err != nil || counts.AddedApps != 1 || len(e.shelf.Snapshot().Apps) != 2 {
+		t.Fatalf("import = %+v, %v", counts, err)
+	}
+	if _, err := e.shelf.ApplyImport(prev.Token); err == nil {
+		t.Error("imported twice")
+	}
+	e.file = ""
+	if prev, err := e.shelf.ReadImport(context.Background()); prev != nil || err != nil {
+		t.Errorf("canceled import = %+v, %v", prev, err)
+	}
+}
+
+func TestAbout(t *testing.T) {
+	e := newEnv(t)
+	info := e.about.Info()
+	if info.Version != "0.2.0" || info.CanUpdate || info.Theme != ThemeSystem || info.IconBase != "http://icon.localhost" || info.LogsDir == "" {
+		t.Errorf("info = %+v", info)
+	}
+	if err := e.about.CheckForUpdates(); err == nil {
+		t.Error("a copy that cannot update itself checked")
+	}
+	for _, bad := range []string{"file:///C:/Windows", "javascript:alert(1)", "ms-settings:", "https://"} {
+		if err := e.about.OpenURL(bad); err == nil {
+			t.Errorf("opened %q", bad)
+		}
+	}
+	if err := e.about.OpenURL("https://example.com/x"); err != nil || e.opened[len(e.opened)-1] != "https://example.com/x" {
+		t.Errorf("open url: %v %v", err, e.opened)
+	}
+	if err := e.about.SetTheme(ThemeDark); err != nil || e.theme != ThemeDark {
+		t.Fatal(err)
+	}
+	if LoadTheme(filepath.Join(e.dir, "settings.json")) != ThemeDark || e.about.Info().Theme != ThemeDark {
+		t.Error("theme not kept")
+	}
+	if err := e.about.SetTheme("purple"); err == nil {
+		t.Error("unknown theme set")
+	}
+	ov := e.sources.Overview()
+	if len(ov.Sources) != 2 || !ov.Sources[0].Checked || !ov.Sources[0].OK || ov.GitHubSearchRate.Remaining != 9 {
+		t.Errorf("overview = %+v", ov)
+	}
+}
+
+func TestNotifier(t *testing.T) {
+	var got []Change
+	var mu sync.Mutex
+	n := newNotifier(30*time.Millisecond, func(c Change) { mu.Lock(); got = append(got, c); mu.Unlock() })
+	n.mark(ChangedTasks)
+	n.mark(ChangedShelf, ChangedTasks)
+	n.mark()
+	time.Sleep(100 * time.Millisecond)
+	n.mark(ChangedInstalled)
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 2 || !slices.Equal(got[0].Kinds, []ChangeKind{ChangedShelf, ChangedTasks}) || got[1].Revision != 2 {
+		t.Errorf("changes = %+v", got)
+	}
+}
+
+func TestLoopPanics(t *testing.T) {
+	a := New(Hooks{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go a.loop.run(ctx, func() {})
+	close(a.ready)
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("panic lost")
+			}
+		}()
+		a.read(func() { panic("boom") })
+	}()
+	// The loop goes on.
+	ran := false
+	a.read(func() { ran = true })
+	if !ran {
+		t.Error("loop stopped")
+	}
+}

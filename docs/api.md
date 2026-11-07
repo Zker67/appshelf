@@ -2,7 +2,7 @@
 
 > 本文件维护项目 API、schema、事件合同和跨模块接口。
 
-AppShelf 是桌面应用，不对外提供网络 API。需要稳定维护的合同有两类：磁盘上的两份 JSON 文件，以及代码内部的来源接口。
+AppShelf 是桌面应用，不对外提供网络 API。需要稳定维护的合同有三类：磁盘上的 JSON 文件、前端调用的 Go 绑定服务，以及代码内部的来源接口。
 
 ## 数据文件
 
@@ -12,8 +12,16 @@ AppShelf 是桌面应用，不对外提供网络 API。需要稳定维护的合�
 |---|---|---|
 | `catalog.json` | 软件清单：分类、标签、软件和安装来源 | 是：导入导出就是这份格式 |
 | `state.json` | 本机状态：GitHub 软件的安装记录 | 否 |
+| `settings.json` | 界面设置：`{"theme": "system" \| "light" \| "dark"}`，读不出时按 `system` | 否 |
 
 winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时读取，不落盘。
+
+缓存放在 `%LocalAppData%\AppShelf\`（MyGo 的 `PathCache`），只用于展示，删掉后会重新下载或读取：
+
+| 目录 | 内容 |
+|---|---|
+| `icons/` | UniGetUI 图标库 `database.json`（每周检查一次更新）、下载的图标（按地址的 SHA-256 命名），以及失败标记 `.fail`（24 小时内不再重试） |
+| `details/` | 软件详情：winget 7 天、scoop 1 天、GitHub 1 小时；GitHub 读不到 release 时不缓存 |
 
 ### 软件清单 `catalog.json`（schemaVersion 1）
 
@@ -92,6 +100,43 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 
 `github` 以软件 `id` 为键，记录 AppShelf 最后一次为它安装的 release。软件的 GitHub 仓库改变或软件被删除时，对应记录一并删除。
 
+## 前端接口
+
+前端（`frontend/`）只通过 `internal/api` 绑定的服务使用 Go 的能力。`go tool mygo generate` 按 Go 类型生成带类型的客户端 `frontend/src/mygo.ts`，类型名和 JSON 字段以 `internal/api/dto.go` 为准；改了服务或类型后要重新生成。
+
+### 绑定服务
+
+| 服务 | 方法 | 说明 |
+|---|---|---|
+| `Shelf` | `Snapshot`、`Refresh` | 清单和每个软件的状态（`status` 为 `null` 表示还没读到）；`Refresh` 就是“检查更新”：检查来源、重读全部状态，再刷新本机已装 |
+| | `SaveApp`、`AddPackages`、`DeleteApps`、`UndoDelete` | 手动添加或编辑一个软件；批量加入搜索结果或本机程序（可同时新建分类和标签，每项单独成败）；删除返回撤销令牌，撤销时恢复软件和 GitHub 安装记录 |
+| | `SetCategory`、`SetTag`、`Add/Rename/DeleteCategory`、`Add/Rename/DeleteTag` | 批量设分类、加或去标签；分类和标签的管理 |
+| | `Export`、`ReadImport`、`ApplyImport` | 导出到用户选择的文件；导入先读文件返回合并预览和令牌，确认后再合并 |
+| `Tasks` | `Preview`、`Start` | 预览每个软件将安装、更新还是跳过及原因；`Start` 重新预览后只把可执行的加入队列，没有可执行的返回错误 |
+| | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列 |
+| `Sources` | `Overview`、`InstallModule`、`Search`、`CheckGitHub` | 来源是否可用和 GitHub 额度；安装 winget 的 PowerShell 模块；编辑软件时搜索 winget 或 scoop；检查 GitHub 仓库会装哪个文件 |
+| `Discover` | `Search(query, Channel<SearchBatch>)` | winget 和 scoop 并行搜索，每个来源的结果一到就发出；新的搜索取消上一次 |
+| | `SearchGitHub`、`Details`、`SuggestRules` | GitHub 搜索（按需）；软件详情（只用于展示）；GitHub 软件的检测规则建议（先本机已装的程序，最后是仓库名） |
+| `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的；第一次调用时开始读取 |
+| `About` | `Info`、`CheckForUpdates`、`OpenLogs`、`OpenDataDir`、`OpenURL`、`SetTheme` | 版本、自更新、目录、用默认浏览器打开链接（只允许 http/https）、外观 |
+
+### 事件
+
+只有一个事件 `changed`：`{ kinds: ("shelf" | "tasks" | "sources" | "installed")[], revision }`。80 毫秒内的多次变化合并成一次。前端收到后按 `kinds` 重新读取对应数据。
+
+### 图标协议
+
+图标由 Go 的 `icon` 协议提供，Windows 上地址是 `http://icon.localhost<路径>`（`About.Info` 的 `iconBase`）。路径由 Go 给出，前端不拼外部网址：
+
+| 路径 | 图标 |
+|---|---|
+| `/w/<winget ID>` | 图标库，其次本机已装程序的 DisplayIcon |
+| `/s/<scoop 软件名>` | 图标库 |
+| `/g/<owner>/<repo>` | 图标库，其次 GitHub 上 owner 的头像 |
+| `/i/<本机已装的 key>` | 按种类：winget 程序同 `/w/`，scoop 程序同 `/s/`，应用商店应用用开始菜单里的图标，其他程序用注册表的 DisplayIcon |
+
+找不到图标时返回 404，前端显示首字母图标。下载只允许公网的 http(s) 地址，最多 2 MB，只接受 PNG、JPEG、GIF、WebP、SVG、ICO；SVG 以禁止脚本的 CSP 返回。
+
 ## 内部接口
 
 | 接口/模块 | 职责 | 说明 |
@@ -99,7 +144,9 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `source.Source`（`internal/source`） | 一种安装来源 | `Type`、`Check`（可用性）、`Statuses`（批量读状态）、`Recheck`（单项复查）、`Install`、`Upgrade`；能搜索的来源再实现 `source.Searcher` |
 | `source.Status` | 一个软件在本机的状态 | `Unknown`（未知）、`NotInstalled`、`Installed`、`UpdateAvailable`、`Unavailable`（来源不可用）；`Blocked()` 为真时不允许安装或更新；`External` 表示由检测规则认出、不是从该来源装的 |
 | `queue.Executor`（`internal/queue`） | 队列执行一项所需的能力 | `Status`（执行前复查）、`Run`、`OpenLog`、`Finished`（执行后复查）；由 `internal/core` 实现 |
-| `core.Core`（`internal/core`） | 清单、状态、来源和队列的汇总 | 界面只通过它读写数据；后台结果通过 `Config.Post` 回到 UI 线程 |
+| `core.Core`（`internal/core`） | 清单、状态、来源和队列的汇总 | 只在 `internal/api` 的循环 goroutine 上调用；后台结果通过 `Config.Post` 交回这个 goroutine |
+| `api.App`（`internal/api`） | 绑定服务、事件 | 方法经循环 goroutine 读写 core，写完标记变化种类，由通知器合并后发 `changed` |
+| `inventory`、`discover`、`icons` | 本机已装、搜索排序与详情、图标 | 只提供展示信息，不参与安装判断 |
 
 ### 防误装流程
 

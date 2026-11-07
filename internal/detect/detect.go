@@ -19,6 +19,14 @@ type Entry struct {
 	DisplayVersion string
 	Publisher      string
 	Key            string // the registry key, for messages
+	// Name is the key's own name under Uninstall, which winget's IDs of
+	// programs of no source end with, and MSI product codes are.
+	Name string
+	// Scope is "Machine" or "User"; Arch the registry view, "X64" or "X86".
+	Scope, Arch string
+	// DisplayIcon is the program's icon: a file, maybe with ",index".
+	DisplayIcon     string
+	InstallLocation string
 }
 
 // Result is what a rule found.

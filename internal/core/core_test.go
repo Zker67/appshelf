@@ -338,3 +338,91 @@ func TestSearchAndCategoryErrors(t *testing.T) {
 		t.Error("a duplicate category was added")
 	}
 }
+
+func TestAddApps(t *testing.T) {
+	w := newFake(catalog.Winget)
+	w.state["winget:git.git"] = source.Status{State: source.Installed, Version: "2.0"}
+	h := newHarness(t, w)
+	c := h.c
+	if _, err := c.SaveApp(wingetApp("Existing", "Some.App")); err != nil {
+		t.Fatal(err)
+	}
+	h.until(func() bool { return !c.Checking(c.Catalog().Apps[0].ID) })
+	existing := c.Catalog().Apps[0]
+
+	added, errs := c.AddApps([]catalog.App{
+		wingetApp("Git", "Git.Git"),
+		wingetApp("", "No.Name"),      // not valid
+		wingetApp("Same", "some.app"), // the catalog has its source
+		{ID: existing.ID, Name: "Clash", Source: catalog.Source{Type: catalog.Winget, ID: "Other.Id"}},
+		{ID: "a_kept", Name: "Kept", Source: catalog.Source{Type: catalog.Winget, ID: "Kept.Id"}},
+	})
+	if len(added) != 2 || added[0].Name != "Git" || added[1].ID != "a_kept" {
+		t.Fatalf("added = %+v", added)
+	}
+	for i, want := range []bool{false, true, true, true, false} {
+		if (errs[i] != nil) != want {
+			t.Errorf("errs[%d] = %v", i, errs[i])
+		}
+	}
+	// Saved once with both, and their states read.
+	saved, err := catalog.Load(filepath.Join(h.dir, "catalog.json"))
+	if err != nil || len(saved.Apps) != 3 {
+		t.Fatalf("saved = %+v, %v", saved, err)
+	}
+	h.until(func() bool {
+		st, ok := c.Status(added[0].ID)
+		return ok && st.State == source.Installed
+	})
+
+	// Nothing valid: nothing saved.
+	if added, errs := c.AddApps([]catalog.App{wingetApp("", "x.y")}); added != nil || errs[0] == nil {
+		t.Errorf("invalid only: %v %v", added, errs)
+	}
+}
+
+func TestDeleteAndEditApps(t *testing.T) {
+	h := newHarness(t, newFake(catalog.Winget))
+	c := h.c
+	if err := c.AddCategory("工具"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.AddTag("常用"); err != nil {
+		t.Fatal(err)
+	}
+	cat, tag := c.Catalog().Categories[0], c.Catalog().Tags[0]
+	added, _ := c.AddApps([]catalog.App{wingetApp("A", "A.A"), wingetApp("B", "B.B"), wingetApp("C", "C.C")})
+	ids := []string{added[0].ID, added[1].ID}
+	c.Store().PutGitHub(added[0].ID, state.GitHubRecord{Tag: "v1"})
+
+	if err := c.EditApps(ids, func(a *catalog.App) {
+		a.CategoryID = cat.ID
+		a.TagIDs = append(a.TagIDs, tag.ID)
+		a.ID, a.Source = "changed", catalog.Source{} // ignored
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		a, ok := c.Catalog().App(id)
+		if !ok || a.CategoryID != cat.ID || len(a.TagIDs) != 1 || a.Source.ID == "" {
+			t.Errorf("edited app = %+v, %v", a, ok)
+		}
+	}
+	if err := c.EditApps(ids, func(a *catalog.App) { a.TagIDs = []string{"t_missing"} }); err == nil {
+		t.Error("an unknown tag saved")
+	}
+
+	if err := c.DeleteApps(ids); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Catalog().Apps) != 1 || c.Catalog().Apps[0].Name != "C" {
+		t.Errorf("apps left = %+v", c.Catalog().Apps)
+	}
+	if _, ok := c.Store().GitHub(added[0].ID); ok {
+		t.Error("record of a deleted app kept")
+	}
+	saved, _ := catalog.Load(filepath.Join(h.dir, "catalog.json"))
+	if len(saved.Apps) != 1 {
+		t.Errorf("saved %d apps", len(saved.Apps))
+	}
+}

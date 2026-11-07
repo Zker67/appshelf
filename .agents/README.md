@@ -12,6 +12,12 @@
     └── mygo-maintenance/   # mygo init 生成，升级 MyGo 时使用
 ```
 
+## 索引
+
+- [开发规则](./rules/dev.md)
+- [MyGo 维护 Skill](./skills/mygo-maintenance/SKILL.md)
+- [项目协作入口](../AGENTS.md)
+
 ## 规则文件格式
 
 ```markdown

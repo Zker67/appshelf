@@ -391,13 +391,89 @@ func (c *Core) SaveApp(a catalog.App) (catalog.App, error) {
 }
 
 // DeleteApp removes an app from the catalog.
-func (c *Core) DeleteApp(id string) error {
-	if err := c.edit(func(n *catalog.Catalog) error { n.DeleteApp(id); return nil }); err != nil {
+func (c *Core) DeleteApp(id string) error { return c.DeleteApps([]string{id}) }
+
+// DeleteApps removes apps from the catalog, saving it once, and forgets
+// what AppShelf installed of them.
+func (c *Core) DeleteApps(ids []string) error {
+	if err := c.edit(func(n *catalog.Catalog) error {
+		for _, id := range ids {
+			n.DeleteApp(id)
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
-	delete(c.statuses, id)
-	c.store.Forget(id)
+	for _, id := range ids {
+		delete(c.statuses, id)
+		c.store.Forget(id)
+	}
 	return nil
+}
+
+// AddApps adds apps to the catalog, each on its own: an app that is not
+// valid, or whose source the catalog has already, is left out, with its
+// error at its index. Apps keep their IDs when they have one, as when a
+// deletion is undone. The catalog is saved once; the states of a few apps
+// are read one by one, of more all at once.
+func (c *Core) AddApps(apps []catalog.App) ([]catalog.App, []error) {
+	errs := make([]error, len(apps))
+	n := c.cat.Clone()
+	var added []catalog.App
+	for i, a := range apps {
+		if a.ID != "" {
+			if _, ok := n.App(a.ID); ok {
+				errs[i] = &catalog.ValidationError{Where: "软件「" + a.Name + "」", Field: "id", Message: "ID 已存在"}
+				continue
+			}
+		}
+		saved, err := n.PutApp(a)
+		if err != nil {
+			errs[i] = err
+			continue
+		}
+		added = append(added, saved)
+	}
+	if len(added) == 0 {
+		return nil, errs
+	}
+	if err := n.Save(c.paths.Catalog); err != nil {
+		err = fmt.Errorf("保存清单失败：%w", err)
+		for i := range errs {
+			if errs[i] == nil {
+				errs[i] = err
+			}
+		}
+		return nil, errs
+	}
+	c.cat = n
+	if len(added) <= 3 {
+		for _, a := range added {
+			c.checkOne(a)
+		}
+	} else {
+		c.Refresh()
+	}
+	return added, errs
+}
+
+// EditApps changes apps of the catalog, as their category or tags, and
+// saves it once. fn must not change their IDs or sources.
+func (c *Core) EditApps(ids []string, fn func(a *catalog.App)) error {
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	return c.edit(func(n *catalog.Catalog) error {
+		for i := range n.Apps {
+			if want[n.Apps[i].ID] {
+				id, src := n.Apps[i].ID, n.Apps[i].Source
+				fn(&n.Apps[i])
+				n.Apps[i].ID, n.Apps[i].Source = id, src
+			}
+		}
+		return nil
+	})
 }
 
 // AddCategory adds a category.

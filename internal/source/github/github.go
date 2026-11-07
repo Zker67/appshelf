@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -35,11 +36,41 @@ const DefaultAPI = "https://api.github.com"
 
 // Release is a release as the API returns it.
 type Release struct {
-	Tag        string  `json:"tag_name"`
-	Name       string  `json:"name"`
-	Draft      bool    `json:"draft"`
-	Prerelease bool    `json:"prerelease"`
-	Assets     []Asset `json:"assets"`
+	Tag         string    `json:"tag_name"`
+	Name        string    `json:"name"`
+	Draft       bool      `json:"draft"`
+	Prerelease  bool      `json:"prerelease"`
+	PublishedAt time.Time `json:"published_at"`
+	HTMLURL     string    `json:"html_url"`
+	Assets      []Asset   `json:"assets"`
+}
+
+// Repo is a repository as the API returns it.
+type Repo struct {
+	FullName    string `json:"full_name"`
+	Description string `json:"description"`
+	Stars       int    `json:"stargazers_count"`
+	Homepage    string `json:"homepage"`
+	HTMLURL     string `json:"html_url"`
+	Archived    bool   `json:"archived"`
+	License     *struct {
+		SPDXID string `json:"spdx_id"`
+		Name   string `json:"name"`
+	} `json:"license"`
+	Owner struct {
+		Login string `json:"login"`
+	} `json:"owner"`
+}
+
+// LicenseName is the repository's license, as GitHub names it.
+func (r Repo) LicenseName() string {
+	if r.License == nil {
+		return ""
+	}
+	if r.License.SPDXID != "" && r.License.SPDXID != "NOASSERTION" {
+		return r.License.SPDXID
+	}
+	return r.License.Name
 }
 
 // Rate is the request quota GitHub reported last.
@@ -82,8 +113,9 @@ type Source struct {
 	scan     func() ([]detect.Entry, error)
 	shellRun func(file, params, dir string) (uint32, error)
 
-	mu   sync.Mutex
-	rate Rate
+	mu         sync.Mutex
+	rate       Rate // of the core API
+	searchRate Rate // of the search API, counted apart, 10 a minute without a token
 }
 
 // New returns the GitHub source.
@@ -126,12 +158,21 @@ func (s *Source) Rate() Rate {
 	return s.rate
 }
 
-// Latest returns the latest release of a repository, which GitHub chooses
-// among those neither drafts nor prereleases.
-func (s *Source) Latest(ctx context.Context, repo string) (Release, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.api+"/repos/"+repo+"/releases/latest", nil)
+// SearchRate returns the quota of the search API GitHub reported last.
+func (s *Source) SearchRate() Rate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.searchRate
+}
+
+// errNotFound is the API's 404, which callers word for what they asked.
+var errNotFound = errors.New("not found")
+
+// get asks the API for path and decodes its answer into out.
+func (s *Source) get(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.api+path, nil)
 	if err != nil {
-		return Release{}, err
+		return err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -141,29 +182,76 @@ func (s *Source) Latest(ctx context.Context, repo string) (Release, error) {
 	}
 	resp, err := s.apiClient.Do(req)
 	if err != nil {
-		return Release{}, fmt.Errorf("无法连接 GitHub：%w", err)
+		return fmt.Errorf("无法连接 GitHub：%w", err)
 	}
 	defer resp.Body.Close()
 	rate := s.noteRate(resp.Header)
 	switch {
 	case resp.StatusCode == http.StatusOK:
 	case resp.StatusCode == http.StatusNotFound:
-		return Release{}, errors.New("仓库不存在，或者没有正式版 release")
+		return errNotFound
 	case (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) && rate.Known && rate.Remaining == 0:
-		return Release{}, &RateLimitError{Reset: rate.Reset}
+		return &RateLimitError{Reset: rate.Reset}
 	case resp.StatusCode == http.StatusUnauthorized:
-		return Release{}, errors.New("GitHub token 无效")
+		return errors.New("GitHub token 无效")
+	case resp.StatusCode == http.StatusUnprocessableEntity:
+		return errors.New("GitHub 无法处理这个请求")
 	default:
-		return Release{}, fmt.Errorf("GitHub 返回 %d", resp.StatusCode)
+		return fmt.Errorf("GitHub 返回 %d", resp.StatusCode)
 	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out); err != nil {
+		return fmt.Errorf("GitHub 的回复无法解析：%w", err)
+	}
+	return nil
+}
+
+// Latest returns the latest release of a repository, which GitHub chooses
+// among those neither drafts nor prereleases.
+func (s *Source) Latest(ctx context.Context, repo string) (Release, error) {
 	var rel Release
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&rel); err != nil {
-		return Release{}, fmt.Errorf("GitHub 的回复无法解析：%w", err)
+	err := s.get(ctx, "/repos/"+repo+"/releases/latest", &rel)
+	if errors.Is(err, errNotFound) {
+		return Release{}, errors.New("仓库不存在，或者没有正式版 release")
+	}
+	if err != nil {
+		return Release{}, err
 	}
 	if rel.Tag == "" || rel.Draft || rel.Prerelease {
 		return Release{}, errors.New("没有正式版 release")
 	}
 	return rel, nil
+}
+
+// Repository reads a repository.
+func (s *Source) Repository(ctx context.Context, repo string) (Repo, error) {
+	var r Repo
+	err := s.get(ctx, "/repos/"+repo, &r)
+	if errors.Is(err, errNotFound) {
+		return Repo{}, errors.New("仓库不存在")
+	}
+	return r, err
+}
+
+// SearchRepos finds repositories by name and description, in GitHub's
+// order of relevance.
+func (s *Source) SearchRepos(ctx context.Context, query string, n int) ([]Repo, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	q := url.Values{}
+	q.Set("q", query+" in:name,description")
+	q.Set("per_page", strconv.Itoa(n))
+	var out struct {
+		Items []Repo `json:"items"`
+	}
+	if err := s.get(ctx, "/search/repositories?"+q.Encode(), &out); err != nil {
+		if errors.Is(err, errNotFound) {
+			return nil, errors.New("GitHub 搜索不可用")
+		}
+		return nil, err
+	}
+	return out.Items, nil
 }
 
 func (s *Source) noteRate(h http.Header) Rate {
@@ -172,10 +260,14 @@ func (s *Source) noteRate(h http.Header) Rate {
 	reset, err3 := strconv.ParseInt(h.Get("X-RateLimit-Reset"), 10, 64)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err1 == nil && err2 == nil && err3 == nil {
-		s.rate = Rate{Known: true, Limit: limit, Remaining: remaining, Reset: time.Unix(reset, 0)}
+	rate := &s.rate
+	if h.Get("X-RateLimit-Resource") == "search" {
+		rate = &s.searchRate
 	}
-	return s.rate
+	if err1 == nil && err2 == nil && err3 == nil {
+		*rate = Rate{Known: true, Limit: limit, Remaining: remaining, Reset: time.Unix(reset, 0)}
+	}
+	return *rate
 }
 
 // Describe returns the latest release of an app and the installer

@@ -17,13 +17,14 @@ const uninstallPath = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`
 // and updates of other programs.
 func Scan() ([]Entry, error) {
 	views := []struct {
-		root   registry.Key
-		name   string
-		access uint32
+		root        registry.Key
+		name        string
+		access      uint32
+		scope, arch string
 	}{
-		{registry.LOCAL_MACHINE, `HKLM`, registry.WOW64_64KEY},
-		{registry.LOCAL_MACHINE, `HKLM (32 位)`, registry.WOW64_32KEY},
-		{registry.CURRENT_USER, `HKCU`, 0},
+		{registry.LOCAL_MACHINE, `HKLM`, registry.WOW64_64KEY, "Machine", "X64"},
+		{registry.LOCAL_MACHINE, `HKLM (32 位)`, registry.WOW64_32KEY, "Machine", "X86"},
+		{registry.CURRENT_USER, `HKCU`, 0, "User", "X64"},
 	}
 	var out []Entry
 	seen := map[string]bool{}
@@ -53,6 +54,7 @@ func Scan() ([]Entry, error) {
 				continue
 			}
 			e.Key = v.name + `\` + name
+			e.Name, e.Scope, e.Arch = name, v.scope, v.arch
 			id := strings.ToLower(e.DisplayName + "\x00" + e.DisplayVersion + "\x00" + name)
 			if seen[id] {
 				continue
@@ -80,5 +82,13 @@ func readEntry(k registry.Key) (Entry, bool) {
 	}
 	ver, _, _ := k.GetStringValue("DisplayVersion")
 	pub, _, _ := k.GetStringValue("Publisher")
-	return Entry{DisplayName: strings.TrimSpace(name), DisplayVersion: strings.TrimSpace(ver), Publisher: strings.TrimSpace(pub)}, true
+	icon, _, _ := k.GetStringValue("DisplayIcon")
+	loc, _, _ := k.GetStringValue("InstallLocation")
+	return Entry{
+		DisplayName:     strings.TrimSpace(name),
+		DisplayVersion:  strings.TrimSpace(ver),
+		Publisher:       strings.TrimSpace(pub),
+		DisplayIcon:     strings.TrimSpace(icon),
+		InstallLocation: strings.TrimSpace(loc),
+	}, true
 }

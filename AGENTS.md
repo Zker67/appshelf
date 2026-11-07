@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-AppShelf：Windows 个人软件商城，桌面应用；自更新使用公开仓库 `Zker67/appshelf` 的 GitHub Release。软件清单支持分类和标签，可以导入导出；能检测本机已装软件，按分类或标签多选逐个批量安装，并检查更新（包括 AppShelf 自身）。安装来源为 winget、scoop、GitHub Releases。技术栈：Go + MyGo（`github.com/egoist/mygo`）原生 UI，版本以 `go.mod` 为准。
+AppShelf：Windows 个人软件商城，桌面应用；自更新使用公开仓库 `Zker67/appshelf` 的 GitHub Release。软件清单支持分类和标签，可以导入导出；能检测本机已装软件，按分类或标签多选逐个批量安装，并检查更新（包括 AppShelf 自身）。“发现”页统一搜索 winget、scoop、GitHub 并一键加入清单，“本机已装”页列出本机已有的程序。安装来源为 winget、scoop、GitHub Releases。技术栈：Go + MyGo（`github.com/egoist/mygo`）的 Web 页面窗口，界面是 `frontend/` 的 React 应用；版本以 `go.mod` 和 `frontend/package.json` 为准。
 
 ## 项目不变量
 
@@ -13,13 +13,15 @@ AppShelf：Windows 个人软件商城，桌面应用；自更新使用公开仓�
 - **批量安装逐个执行**：安装前先预览，确认后按队列逐项执行，每项单独记录结果，失败的可以单独重试。
 - **复用来源自身的能力**：安装、检测、更新都调用 winget、scoop 和 GitHub API 的官方能力，不自己实现安装器。
 - **不做离线安装包**：不缓存或管理本地 EXE/MSI 安装包。
-- **MyGo 原生 UI**：界面用 `ui` 包编写；只有原生 UI 确实做不到的部分才考虑 Web 页面窗口，并且先说明原因。
+- **MyGo Web 前端，前端只做展示**：界面是 `frontend/` 的 React 应用，只通过 `internal/api` 绑定的服务读写；安装判断、检测、队列、外部命令和网络请求都在 Go 端，token 不进前端。本机已装、搜索结果、软件详情和图标只用于展示，不参与是否已装的判断。
+- **只对清单里的软件安装和更新**：“本机已装”页只显示“可更新”标记和“加入清单”，不直接更新清单外的软件。
 
 ## 项目特有验证
 
-- `gofmt -l .`、`go vet ./...`、`go tool mygo vet .`、`go tool mygo vet ./internal/view` 和 `CGO_ENABLED=0 go test ./...`；视图用 MyGo 的 `ui.NewTester` 测试。
+- `gofmt -l .`、`go vet ./...`、`go tool mygo vet` 和 `CGO_ENABLED=0 go test ./...`；绑定服务在 `internal/api` 用假来源测试。
+- 前端：`bun run --cwd frontend check`（格式、lint、类型）和 `bun run --cwd frontend test`；改了 `internal/api` 的服务或类型后先 `go tool mygo generate`。最后 `go tool mygo build` 确认能打包。
 - 涉及安装或卸载的集成测试会真实修改本机，执行前必须获得用户授权，并使用用户认可的测试软件（`APPSHELF_INSTALL_TEST=1` 等变量见 `docs/operations.md`）。只读检测（list、search、检查更新）可以直接运行。
-- 界面效果不由 AI 截图自验；改完说明改了什么、怎么验证，由用户在真实窗口里检查。
+- 界面效果不由 AI 截图自验；改完说明改了什么、怎么验证，由用户在真实窗口里检查。前端界面遵循用户的 `zker67-ui-way` 约定。
 - 自更新的签名私钥（`%AppData%\mygo\update-keys\mygo-update.key`）绝不进入仓库、日志或输出。`go tool mygo build -upload`、创建或发布 GitHub Release 属于发布操作，需要用户明确授权。
 - 升级 MyGo 时参考 `.agents/skills/mygo-maintenance/`，并核对 [Releases](https://github.com/egoist/mygo/releases) 的变更说明。
 
@@ -38,7 +40,8 @@ AppShelf：Windows 个人软件商城，桌面应用；自更新使用公开仓�
 | `.agents/rules/` | 项目级 AI 规则 | 只读，除非任务要求维护规则 |
 | `.agents/README.md` | `.agents/` 使用说明 | 只读 |
 | `.agents/skills/mygo-maintenance/` | MyGo 官方生成的版本维护 Skill | 只读，升级 MyGo 时使用 |
-| `main.go`、`internal/` | 应用代码，分层见 `docs/architecture/project-structure.md` | 读写 |
+| `main.go`、`internal/` | Go 代码，分层见 `docs/architecture/project-structure.md` | 读写 |
+| `frontend/` | Web 前端，见 `frontend/README.md`；`src/mygo.ts` 和 `src/components/ui/` 是生成的 | 读写 |
 | `mygo.json` | MyGo 应用配置（含自更新公钥和仓库） | 读写 |
 | `CHANGELOG.md` | 每个版本的更新说明 | 读写 |
 | `docs/` | 当前代码和程序的长期文档 | 读写 |

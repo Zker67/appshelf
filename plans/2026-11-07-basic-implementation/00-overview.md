@@ -1,6 +1,6 @@
 # AppShelf 基本实现：总览
 
-状态：`[in-progress]`（7 个阶段已实现，等待用户测试）
+状态：`[partial]`（v0.1.0 已发布；界面由 [0.2.0 计划](../2026-11-07-web-ui-and-discovery/00-overview.md) 替代，真实安装、scoop 和跨版本自更新待实测）
 
 ## 背景与目标
 
@@ -52,7 +52,7 @@
 
 ## 用户决定（2026-11-07）
 
-1. **自更新的发布位置：公开仓库** `Zker67/appshelf`（`mygo.json` 的 `updates.github`）。创建远端仓库、上传和发布 Release 仍需用户另外授权；在那之前阶段 05 标为 `[partial]`。
+1. **自更新的发布位置：公开仓库** `Zker67/appshelf`（`mygo.json` 的 `updates.github`）。v0.1.0 已发布；当前验证边界见 [实施报告](./09-implementation-report.md)。
 2. **可以依赖 `Microsoft.WinGet.Client` PowerShell 模块**：本机没有时，AppShelf 提示并在用户确认后执行 `Install-Module -Scope CurrentUser`。
 
 ## 风险
@@ -73,7 +73,7 @@
 | 02 | [02-winget-and-queue.md](./02-winget-and-queue.md) | winget 来源、防误装检测、安装队列 | `[done]` |
 | 03 | [03-ui.md](./03-ui.md) | 主界面、清单编辑、设置页 | `[done]` |
 | 04 | [04-scoop.md](./04-scoop.md) | scoop 来源 | `[partial]`：本机没有 scoop，未实测 |
-| 05 | [05-import-export-and-self-update.md](./05-import-export-and-self-update.md) | 导入导出、AppShelf 自更新 | `[partial]`：自更新等待发布 |
+| 05 | [05-import-export-and-self-update.md](./05-import-export-and-self-update.md) | 导入导出、AppShelf 自更新 | `[partial]`：版本已发布，跨版本升级待实测 |
 | 06 | [06-github.md](./06-github.md) | GitHub Releases 来源 | `[done]` |
 | 07 | [07-acceptance.md](./07-acceptance.md) | 交付自测与用户测试清单 | `[in-progress]`：等待用户测试 |
 | 09 | [09-implementation-report.md](./09-implementation-report.md) | 实施报告 | - |

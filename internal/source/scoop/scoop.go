@@ -159,6 +159,86 @@ func (s *Source) Statuses(ctx context.Context, apps []catalog.App) (map[string]s
 	return buildStatuses(apps, exp, st, stErr), nil
 }
 
+// App is an app scoop installed.
+type App struct {
+	Name    string
+	Version string
+	Bucket  string // where it was installed from
+	Update  string // the newer version of the local buckets, when there is one
+}
+
+// Installed lists what scoop installed, with the updates the local buckets
+// know of: it does not bring the buckets up to date.
+func (s *Source) Installed(ctx context.Context) ([]App, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	exp, err := s.export(ctx)
+	if err != nil {
+		return nil, err
+	}
+	st, _ := s.status(ctx, false)
+	return installedApps(exp, st), nil
+}
+
+func installedApps(exp exported, st statusResult) []App {
+	latest := map[string]string{}
+	for _, r := range st.Rows {
+		if r.Latest != "" {
+			latest[strings.ToLower(r.Name)] = r.Latest
+		}
+	}
+	out := make([]App, 0, len(exp.Apps))
+	for _, a := range exp.Apps {
+		if a.Name == "" {
+			continue
+		}
+		out = append(out, App{Name: a.Name, Version: a.Version, Bucket: a.Source, Update: latest[strings.ToLower(a.Name)]})
+	}
+	return out
+}
+
+// Info is what a manifest says of an app.
+type Info struct {
+	Name        string
+	Description string
+	Version     string
+	Website     string
+	License     string
+}
+
+const infoScript = scoopPrelude + `
+$i = & scoop info ([string]$P.Ref) 6>$null | Select-Object -First 1
+if (-not $i) {
+  Write-Failure 'not-found'
+  exit 12
+}
+$license = $i.License
+if ($license -isnot [string]) { $license = [string]($license | Out-String).Trim() }
+Write-Result @{
+  Name = [string]$i.Name
+  Description = [string]$i.Description
+  Version = [string]$i.Version
+  Website = [string]$i.Website
+  License = [string]$license
+}
+`
+
+// Info reads the manifest of bucket/name with scoop info.
+func (s *Source) Info(ctx context.Context, bucket, name string) (Info, error) {
+	var out Info
+	_, err := runner.PowerShell(ctx, infoScript, map[string]any{"Ref": bucket + "/" + name}, &out, runner.Options{Timeout: queryTimeout})
+	var se *runner.ScriptError
+	switch {
+	case errors.As(err, &se) && se.ExitCode == codeMissing:
+		return Info{}, errors.New("未安装 scoop")
+	case errors.As(err, &se) && se.ExitCode == 12:
+		return Info{}, errors.New("scoop 找不到这个软件")
+	case err != nil:
+		return Info{}, fmt.Errorf("读取 scoop 软件信息失败：%w", err)
+	}
+	return out, nil
+}
+
 // Recheck reads one app's state with the local buckets.
 func (s *Source) Recheck(ctx context.Context, app catalog.App) (source.Status, error) {
 	s.mu.Lock()

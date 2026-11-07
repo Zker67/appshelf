@@ -1,8 +1,12 @@
 {
   "name": "AppShelf",
   "identifier": "io.github.zker67.appshelf",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "out": "build",
+  "devUrl": "http://localhost:5173",
+  "devCommand": "bun run --cwd frontend dev",
+  "buildCommand": "bun run --cwd frontend build",
+  "frontendDist": "frontend/dist",
   "updates": {
     "publicKey": "1IAp4m4IlyC1Va9tGqkMAd8u0YNogVN9nA5fFX7eEtY=",
     "github": "Zker67/appshelf"

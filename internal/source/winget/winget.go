@@ -30,6 +30,13 @@ type Source struct {
 	// installer at a time. The module's queries go through winget's COM
 	// server, which handles them alongside.
 	cli sync.Mutex
+
+	// list serializes the full queries of what is installed, and keeps the
+	// last one: the catalog's states and the list of installed software
+	// share it.
+	list     sync.Mutex
+	listed   []Package
+	listedAt time.Time
 }
 
 // New returns the winget source.
@@ -90,6 +97,7 @@ func (s *Source) InstallModule(ctx context.Context, log io.Writer) error {
 // row is a package as the module reports it.
 type row struct {
 	ID                string `json:"Id"`
+	Name              string
 	InstalledVersion  string
 	Source            string
 	IsUpdateAvailable bool
@@ -102,6 +110,7 @@ function ConvertTo-Row($pkg) {
   if ($pkg.IsUpdateAvailable) { $latest = [string](@($pkg.AvailableVersions)[0]) }
   [pscustomobject]@{
     Id = [string]$pkg.Id
+    Name = [string]$pkg.Name
     InstalledVersion = [string]$pkg.InstalledVersion
     Source = [string]$pkg.Source
     IsUpdateAvailable = [bool]$pkg.IsUpdateAvailable
@@ -111,14 +120,61 @@ function ConvertTo-Row($pkg) {
 Import-Module Microsoft.WinGet.Client
 `
 
+// listScript reads every installed package once. Reading AvailableVersions
+// costs time, so only packages with an update read it. With about 300
+// packages it takes 3 to 6 seconds, so the catalog's states use
+// statusesScript, which converts only the catalog's packages.
+const listScript = rowScript + `
+$rows = @(Get-WinGetPackage | ForEach-Object { ConvertTo-Row $_ })
+Write-Result $rows
+`
+
 // statusesScript reads every installed package once and keeps those of
-// the catalog: reading AvailableVersions costs time, so only for them.
+// the catalog.
 const statusesScript = rowScript + `
 $want = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($id in @($P.Ids)) { [void]$want.Add([string]$id) }
 $rows = @(Get-WinGetPackage | Where-Object { $want.Contains([string]$_.Id) } | ForEach-Object { ConvertTo-Row $_ })
 Write-Result $rows
 `
+
+// Package is an installed package as winget reports it: one of a source,
+// or a program of no source, whose ID starts with ARP\ (a program of the
+// registry) or MSIX\ (an app package).
+type Package struct {
+	ID      string
+	Name    string
+	Version string // "" when winget cannot read it
+	Source  string // "winget", "msstore", or "" for no source
+	Update  string // the newer version of the source, when there is one
+}
+
+// Installed lists what is installed, reading it again unless the last list
+// is younger than maxAge.
+func (s *Source) Installed(ctx context.Context, maxAge time.Duration) ([]Package, time.Time, error) {
+	s.list.Lock()
+	defer s.list.Unlock()
+	if !s.listedAt.IsZero() && time.Since(s.listedAt) < maxAge {
+		return s.listed, s.listedAt, nil
+	}
+	var rows []row
+	if _, err := runner.PowerShell(ctx, listScript, nil, &rows, runner.Options{Timeout: queryTimeout}); err != nil {
+		return nil, time.Time{}, fmt.Errorf("读取 winget 已装软件失败：%w", err)
+	}
+	pkgs := make([]Package, 0, len(rows))
+	for _, r := range rows {
+		if r.ID == "" {
+			continue
+		}
+		p := Package{ID: r.ID, Name: r.Name, Version: displayVersion(r.InstalledVersion), Source: r.Source}
+		if r.IsUpdateAvailable {
+			p.Update = r.Latest
+		}
+		pkgs = append(pkgs, p)
+	}
+	s.listed, s.listedAt = pkgs, time.Now()
+	return pkgs, s.listedAt, nil
+}
 
 // Statuses reads the state of the apps. A package installed outside
 // winget but recognized as one of its packages counts as installed; IDs
@@ -186,9 +242,11 @@ func displayVersion(v string) string {
 	return v
 }
 
+// searchScript finds packages. It reads no publisher: the metadata of a
+// version found takes about a second and a half a package.
 const searchScript = `
 Import-Module Microsoft.WinGet.Client
-$rows = @(Find-WinGetPackage -Query ([string]$P.Query) -Source winget | Select-Object -First 30 | ForEach-Object {
+$rows = @(Find-WinGetPackage -Query ([string]$P.Query) -Source winget | Select-Object -First 50 | ForEach-Object {
   [pscustomobject]@{ Id = [string]$_.Id; Name = [string]$_.Name; Version = [string]$_.Version; Source = [string]$_.Source }
 })
 Write-Result $rows
@@ -215,6 +273,32 @@ func (s *Source) Search(ctx context.Context, query string) ([]source.SearchResul
 	}
 	return out, nil
 }
+
+// LatestVersion returns the version of a package the winget source would
+// install now.
+func (s *Source) LatestVersion(ctx context.Context, id string) (string, error) {
+	var rows []struct {
+		ID      string `json:"Id"`
+		Version string
+	}
+	if _, err := runner.PowerShell(ctx, latestScript, map[string]any{"Id": id}, &rows, runner.Options{Timeout: queryTimeout}); err != nil {
+		return "", fmt.Errorf("winget 查询失败：%w", err)
+	}
+	for _, r := range rows {
+		if strings.EqualFold(r.ID, id) {
+			return r.Version, nil
+		}
+	}
+	return "", errors.New("winget 源中找不到这个 ID")
+}
+
+const latestScript = `
+Import-Module Microsoft.WinGet.Client
+$rows = @(Find-WinGetPackage -Id ([string]$P.Id) -MatchOption EqualsCaseInsensitive -Source winget | ForEach-Object {
+  [pscustomobject]@{ Id = [string]$_.Id; Version = [string]$_.Version }
+})
+Write-Result $rows
+`
 
 // Exit codes of winget, from its documentation (returnCodes.md).
 const (

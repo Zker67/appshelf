@@ -25,7 +25,7 @@ export function DetailPanel({
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
       <div className="anim-panel flex items-start gap-3 px-4 pt-4 pb-3">
-        {icon}
+        <div className="anim-rise shrink-0 [animation-delay:60ms]">{icon}</div>
         <div className="min-w-0 flex-1 pt-0.5">
           <div className="text-[15px] leading-snug font-semibold break-words select-text">
             {title}
@@ -48,12 +48,12 @@ export function DetailPanel({
         </Tooltip>
       </div>
       {actions && (
-        <div className="anim-panel flex flex-wrap items-center gap-1.5 border-b px-4 pb-3">
+        <div className="anim-panel flex flex-wrap items-center gap-1.5 border-b px-4 pb-3 [animation-delay:50ms]">
           {actions}
         </div>
       )}
       <ScrollArea className="min-h-0 flex-1">
-        <div className="anim-panel p-4">{children}</div>
+        <div className="anim-panel p-4 [animation-delay:100ms]">{children}</div>
       </ScrollArea>
     </div>
   );

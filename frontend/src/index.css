@@ -45,6 +45,12 @@
   --color-warning: var(--warning);
   --color-surface: var(--surface);
   --color-titlebar: var(--titlebar);
+  --color-brand-from: var(--brand-from);
+  --color-brand-to: var(--brand-to);
+  --color-brand-foreground: var(--brand-foreground);
+  --shadow-soft: 0 1px 2px var(--shadow-color), 0 4px 14px -6px var(--shadow-color);
+  --shadow-lift: 0 2px 4px var(--shadow-color), 0 14px 32px -12px var(--shadow-color);
+  --shadow-brand: inset 0 1px 0 var(--highlight), 0 6px 18px -6px var(--brand-glow);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -53,14 +59,26 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
 }
 
-/* Colors of the app icon: a deep cobalt square, light blue shapes. */
+/* Colors of the app icon: a deep cobalt square, light blue shapes. The
+   brand gradient runs from the icon's cobalt to its azure; the side bar and
+   the title bar are glass over the window's ambient light. */
 :root {
+  --brand-from: oklch(0.47 0.2 266);
+  --brand-to: oklch(0.64 0.16 250);
+  --brand-foreground: oklch(0.99 0 0);
+  --brand-glow: oklch(0.5 0.2 264 / 38%);
+  --highlight: oklch(1 0 0 / 24%);
+  --shadow-color: oklch(0.35 0.08 264 / 11%);
+  --scrim: oklch(0.3 0.06 266 / 18%);
+  --ambient-a: oklch(0.72 0.13 256 / 22%);
+  --ambient-b: oklch(0.78 0.1 232 / 16%);
   --background: oklch(0.972 0.007 260);
   --foreground: oklch(0.22 0.03 264);
   --surface: oklch(0.985 0.004 260);
-  --titlebar: oklch(0.955 0.012 262);
+  --titlebar: oklch(0.965 0.012 262 / 80%);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.22 0.03 264);
   --popover: oklch(1 0 0);
@@ -85,7 +103,7 @@
   --chart-4: oklch(0.68 0.15 70);
   --chart-5: oklch(0.58 0.22 27);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.004 260);
+  --sidebar: oklch(0.985 0.006 260 / 72%);
   --sidebar-foreground: oklch(0.22 0.03 264);
   --sidebar-primary: oklch(0.5 0.2 264);
   --sidebar-primary-foreground: oklch(0.99 0 0);
@@ -97,10 +115,19 @@
 }
 
 .dark {
+  --brand-from: oklch(0.5 0.2 266);
+  --brand-to: oklch(0.66 0.15 248);
+  --brand-foreground: oklch(0.99 0 0);
+  --brand-glow: oklch(0.55 0.2 262 / 45%);
+  --highlight: oklch(1 0 0 / 20%);
+  --shadow-color: oklch(0.08 0.03 266 / 45%);
+  --scrim: oklch(0.08 0.03 266 / 45%);
+  --ambient-a: oklch(0.48 0.17 264 / 30%);
+  --ambient-b: oklch(0.52 0.13 236 / 18%);
   --background: oklch(0.175 0.03 266);
   --foreground: oklch(0.95 0.01 255);
   --surface: oklch(0.2 0.033 266);
-  --titlebar: oklch(0.16 0.032 266);
+  --titlebar: oklch(0.16 0.032 266 / 78%);
   --card: oklch(0.215 0.036 266);
   --card-foreground: oklch(0.95 0.01 255);
   --popover: oklch(0.235 0.038 266);
@@ -124,7 +151,7 @@
   --chart-3: oklch(0.72 0.14 155);
   --chart-4: oklch(0.8 0.14 75);
   --chart-5: oklch(0.7 0.18 22);
-  --sidebar: oklch(0.2 0.033 266);
+  --sidebar: oklch(0.2 0.035 266 / 66%);
   --sidebar-foreground: oklch(0.95 0.01 255);
   --sidebar-primary: oklch(0.7 0.14 254);
   --sidebar-primary-foreground: oklch(0.18 0.05 266);
@@ -148,6 +175,11 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "tnum" 0;
+    /* Ambient light at the window's left, seen through the glass bars. */
+    background-image:
+      radial-gradient(52rem 36rem at -12% -18%, var(--ambient-a), transparent 62%),
+      radial-gradient(34rem 30rem at 4% 112%, var(--ambient-b), transparent 64%);
+    background-attachment: fixed;
   }
   html {
     @apply font-sans;
@@ -248,7 +280,7 @@
   animation: panel-in 0.3s var(--ease-out-soft) both;
 }
 .anim-bar {
-  animation: bar-in 0.28s var(--ease-out-soft) both;
+  animation: bar-in 0.42s var(--ease-spring) both;
 }
 .shimmer {
   background: linear-gradient(
@@ -401,6 +433,348 @@
 }
 .nav-tab[data-active="true"] .nav-icon-installed .glow {
   animation: screen-glow 2.6s ease-in-out infinite;
+}
+
+/* ---- Pages: the page chosen slides in from the side of its tab. ---- */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--page-from, 0)) scale(0.996);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.page-in {
+  animation: page-in 0.42s var(--ease-out-soft) both;
+}
+.page-in[data-dir="right"] {
+  --page-from: 32px;
+}
+.page-in[data-dir="left"] {
+  --page-from: -32px;
+}
+
+/* ---- Brand: the title bar's logo and the selected tab. ---- */
+.brand-logo {
+  transition: transform 0.5s var(--ease-spring);
+}
+.brand:hover .brand-logo {
+  transform: rotate(-8deg) scale(1.08);
+}
+.nav-pill {
+  background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+  box-shadow: var(--shadow-brand);
+  transition:
+    left 0.46s var(--ease-spring),
+    width 0.46s var(--ease-spring);
+}
+
+/* ---- Selection: a side bar's chosen row is a tinted pill with its count in
+   the brand gradient; a list's focused row lifts as an inset card. ---- */
+@keyframes row-select {
+  0% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes icon-hop {
+  0% {
+    transform: none;
+  }
+  40% {
+    transform: translateY(-2px) rotate(-8deg) scale(1.08);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes focus-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.side-row[aria-pressed="true"] {
+  animation: row-select 0.34s var(--ease-spring);
+}
+.side-row > svg:first-of-type {
+  transition: transform 0.3s var(--ease-spring);
+}
+.side-row[aria-pressed="true"] > svg:first-of-type {
+  transform: scale(1.12);
+}
+.side-row:hover:not([aria-pressed="true"]) > svg:first-of-type {
+  animation: icon-hop 0.5s var(--ease-spring);
+}
+.row-focus {
+  isolation: isolate;
+}
+.row-focus::before {
+  content: "";
+  position: absolute;
+  inset: 4px 6px;
+  z-index: -1;
+  border-radius: var(--radius-lg);
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--primary) 14%, transparent),
+    color-mix(in oklch, var(--primary) 5%, transparent)
+  );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--primary) 22%, transparent),
+    0 6px 16px -10px var(--brand-glow);
+  animation: focus-in 0.34s var(--ease-spring) both;
+}
+
+/* ---- Lists: the first rows come in one after another; an icon lifts on
+   hover. ---- */
+.list-stagger [data-row] {
+  animation: rise-in 0.42s var(--ease-out-soft) both;
+  animation-delay: calc(var(--i, 16) * 22ms);
+}
+.list-stagger [data-row]:nth-child(n + 17) {
+  animation: none;
+}
+.list-stagger [data-row]:nth-child(1) {
+  --i: 0;
+}
+.list-stagger [data-row]:nth-child(2) {
+  --i: 1;
+}
+.list-stagger [data-row]:nth-child(3) {
+  --i: 2;
+}
+.list-stagger [data-row]:nth-child(4) {
+  --i: 3;
+}
+.list-stagger [data-row]:nth-child(5) {
+  --i: 4;
+}
+.list-stagger [data-row]:nth-child(6) {
+  --i: 5;
+}
+.list-stagger [data-row]:nth-child(7) {
+  --i: 6;
+}
+.list-stagger [data-row]:nth-child(8) {
+  --i: 7;
+}
+.list-stagger [data-row]:nth-child(9) {
+  --i: 8;
+}
+.list-stagger [data-row]:nth-child(10) {
+  --i: 9;
+}
+.list-stagger [data-row]:nth-child(11) {
+  --i: 10;
+}
+.list-stagger [data-row]:nth-child(12) {
+  --i: 11;
+}
+.list-stagger [data-row]:nth-child(13) {
+  --i: 12;
+}
+.list-stagger [data-row]:nth-child(14) {
+  --i: 13;
+}
+.list-stagger [data-row]:nth-child(15) {
+  --i: 14;
+}
+.list-stagger [data-row]:nth-child(16) {
+  --i: 15;
+}
+[data-slot="app-icon"] {
+  transition: transform 0.36s var(--ease-spring);
+}
+[data-row]:hover [data-slot="app-icon"] {
+  transform: translateY(-1px) scale(1.07);
+}
+
+/* ---- Overview and empty states. ---- */
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.anim-grow-x {
+  transform-origin: left center;
+  animation: grow-x 0.8s var(--ease-out-soft) both;
+}
+.anim-float {
+  animation: float 3.6s ease-in-out infinite;
+}
+.sparkle {
+  animation: spark-twinkle 2.2s ease-in-out infinite;
+}
+
+/* ---- Shared controls, styled by their slots so that the generated
+   components keep their markup. A box-shadow set here also draws the ring
+   the utilities would have drawn. ---- */
+[data-slot="button"] {
+  transition-property:
+    color, background-color, border-color, box-shadow, transform, filter, opacity;
+  transition-duration: 0.2s;
+  transition-timing-function: var(--ease-out-soft);
+}
+[data-slot="button"]:active:not(:disabled):not([aria-haspopup]) {
+  translate: none;
+  transform: scale(0.96);
+}
+[data-slot="button"][data-variant="default"] {
+  background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+  color: var(--brand-foreground);
+}
+[data-slot="button"][data-variant="default"]:not(:focus-visible) {
+  box-shadow:
+    inset 0 1px 0 var(--highlight),
+    0 1px 2px var(--brand-glow),
+    0 4px 12px -5px var(--brand-glow);
+}
+[data-slot="button"][data-variant="default"]:hover:not(:disabled) {
+  filter: brightness(1.08) saturate(1.06);
+}
+[data-slot="button"][data-variant="default"]:hover:not(:disabled):not(:focus-visible) {
+  box-shadow:
+    inset 0 1px 0 var(--highlight),
+    0 1px 2px var(--brand-glow),
+    0 8px 20px -6px var(--brand-glow);
+}
+[data-slot="button"][data-variant="outline"]:not(:focus-visible) {
+  box-shadow: 0 1px 2px var(--shadow-color);
+}
+[data-slot="button"][data-variant="outline"]:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--primary) 35%, var(--border));
+}
+
+@keyframes check-pop {
+  from {
+    transform: scale(0.3) rotate(-20deg);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+[data-slot="checkbox"][data-state="checked"],
+[data-slot="checkbox"][data-state="indeterminate"] {
+  border-color: transparent;
+  background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+  color: var(--brand-foreground);
+}
+[data-slot="checkbox-indicator"] {
+  animation: check-pop 0.32s var(--ease-spring);
+}
+[data-slot="switch"][data-state="checked"] {
+  background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+}
+[data-slot="switch"][data-state="checked"] [data-slot="switch-thumb"] {
+  background-color: var(--brand-foreground);
+}
+[data-slot="switch-thumb"] {
+  transition-duration: 0.32s;
+  transition-timing-function: var(--ease-spring);
+}
+
+/* Menus and popovers: glass, opening with a little spring. */
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"],
+[data-slot="context-menu-content"],
+[data-slot="context-menu-sub-content"],
+[data-slot="popover-content"],
+[data-slot="select-content"] {
+  background-color: color-mix(in oklch, var(--popover) 84%, transparent);
+  backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 9%, transparent),
+    0 12px 32px -10px var(--shadow-color),
+    0 3px 8px -3px var(--shadow-color);
+}
+:is(
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="context-menu-content"],
+  [data-slot="context-menu-sub-content"],
+  [data-slot="popover-content"],
+  [data-slot="select-content"]
+)[data-state="open"] {
+  animation-duration: 0.22s;
+  animation-timing-function: var(--ease-spring);
+}
+
+/* Dialogs and the side sheet: the window dims and blurs behind them. */
+:is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"]) {
+  background-color: var(--scrim);
+  backdrop-filter: blur(6px) saturate(1.2);
+  animation-duration: 0.24s;
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 9%, transparent),
+    0 24px 60px -16px var(--shadow-color),
+    0 6px 16px -6px var(--shadow-color);
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])[data-state="open"] {
+  --tw-enter-scale: 0.94;
+  --tw-enter-translate-y: 10px;
+  animation-duration: 0.34s;
+  animation-timing-function: var(--ease-spring);
+}
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"])[data-state="closed"] {
+  animation-duration: 0.14s;
+}
+[data-slot="sheet-content"] {
+  box-shadow: -18px 0 48px -18px var(--shadow-color);
+}
+[data-slot="sheet-content"][data-state="open"] {
+  animation-duration: 0.4s;
+  animation-timing-function: var(--ease-out-soft);
+}
+
+/* Toasts are glass, as the menus. */
+.cn-toast {
+  backdrop-filter: blur(18px) saturate(1.5);
+}
+
+/* Loading placeholders: light sweeps across instead of a pulse. */
+[data-slot="skeleton"] {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--primary) 10%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* The line between panels lights up where it can be dragged. */
+[data-slot="resizable-handle"] {
+  transition: background-color 0.2s var(--ease-out-soft);
+}
+[data-slot="resizable-handle"]:hover,
+[data-slot="resizable-handle"]:active {
+  background-color: color-mix(in oklch, var(--primary) 55%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

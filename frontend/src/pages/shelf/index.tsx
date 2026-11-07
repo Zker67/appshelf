@@ -345,7 +345,7 @@ export function ShelfPage() {
                 <span className="w-[64px]" />
               </div>
               <ScrollArea className="min-h-0 flex-1" viewportRef={listRef}>
-                <div className="anim-fade pb-20">
+                <div className="list-stagger anim-fade pb-20">
                   {shown.map((a) => (
                     <ShelfRow
                       key={a.app.id}

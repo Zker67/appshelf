@@ -64,6 +64,7 @@ export function IconImage({
   const h = hue(name);
   return (
     <div
+      data-slot="app-icon"
       className={cn("relative shrink-0 select-none", className)}
       style={{ width: size, height: size }}
       aria-hidden

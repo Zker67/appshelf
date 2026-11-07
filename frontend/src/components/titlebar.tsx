@@ -37,8 +37,13 @@ export function Titlebar() {
         paddingRight: "calc(var(--mygo-titlebar-inset-right, 0px) + 8px)",
       }}
     >
-      <div className="flex shrink-0 items-center gap-2 pr-2">
-        <img src={logo} alt="" className="size-[22px] drop-shadow-sm" draggable={false} />
+      <div className="brand flex shrink-0 items-center gap-2 pr-2">
+        <img
+          src={logo}
+          alt=""
+          className="brand-logo size-[22px] drop-shadow-sm"
+          draggable={false}
+        />
         <span className="text-[13px] font-semibold tracking-[0.08em]">软件图书馆</span>
       </div>
       <NavTabs />
@@ -62,7 +67,7 @@ function NavTabs() {
     <nav className="app-no-drag relative flex items-center gap-0.5 rounded-xl bg-foreground/[0.045] p-[3px] dark:bg-white/[0.05]">
       {pill && (
         <div
-          className="absolute top-[3px] bottom-[3px] rounded-[9px] bg-card shadow-sm ring-1 ring-border/70 transition-[left,width] duration-300 ease-[var(--ease-out-soft)]"
+          className="nav-pill absolute top-[3px] bottom-[3px] rounded-[9px]"
           style={{ left: pill.left, width: pill.width }}
         />
       )}
@@ -80,14 +85,21 @@ function NavTabs() {
             className={cn(
               "nav-tab relative z-10 flex h-[30px] items-center gap-1.5 rounded-[9px] px-3 text-[13px] font-medium transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
               active
-                ? "text-foreground"
+                ? "text-brand-foreground"
                 : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
             )}
           >
-            <Icon className={cn("size-[18px] transition-colors", active && "text-primary")} />
+            <Icon className="size-[18px] transition-colors" />
             {label}
             {page === "shelf" && updates > 0 && (
-              <span className="ml-0.5 rounded-full bg-primary px-1.5 text-[10px] leading-4 font-semibold text-primary-foreground tabular-nums">
+              <span
+                className={cn(
+                  "ml-0.5 rounded-full px-1.5 text-[10px] leading-4 font-semibold tabular-nums transition-colors",
+                  active
+                    ? "bg-brand-foreground/25 text-brand-foreground"
+                    : "bg-primary text-primary-foreground",
+                )}
+              >
                 {updates}
               </span>
             )}

@@ -18,17 +18,7 @@ export default function App() {
       <ActionsProvider>
         <div className="flex h-full flex-col">
           <Titlebar />
-          <main className="relative min-h-0 flex-1">
-            <PageSlot page="shelf">
-              <ShelfPage />
-            </PageSlot>
-            <PageSlot page="discover">
-              <DiscoverPage />
-            </PageSlot>
-            <PageSlot page="installed">
-              <InstalledPage />
-            </PageSlot>
-          </main>
+          <Pages />
         </div>
         <OpeningNotes />
       </ActionsProvider>
@@ -36,18 +26,49 @@ export default function App() {
   );
 }
 
+/** The pages in the order of their tabs, which says the side a page enters from. */
+const order: Page[] = ["installed", "shelf", "discover"];
+
+type Direction = "none" | "left" | "right";
+
+/** Pages holds the pages; the one chosen slides in from the side of its tab. */
+function Pages() {
+  const nav = useNav();
+  const [shown, setShown] = useState(nav.page);
+  const [dir, setDir] = useState<Direction>("none");
+  if (shown !== nav.page) {
+    setDir(order.indexOf(nav.page) > order.indexOf(shown) ? "right" : "left");
+    setShown(nav.page);
+  }
+  return (
+    <main className="relative min-h-0 flex-1">
+      <PageSlot page="shelf" dir={dir}>
+        <ShelfPage />
+      </PageSlot>
+      <PageSlot page="discover" dir={dir}>
+        <DiscoverPage />
+      </PageSlot>
+      <PageSlot page="installed" dir={dir}>
+        <InstalledPage />
+      </PageSlot>
+    </main>
+  );
+}
+
 /**
  * PageSlot shows a page while it is chosen. A page mounts the first time it
  * is chosen, so that what it reads and its icons wait until then.
  */
-function PageSlot({ page, children }: { page: Page; children: ReactNode }) {
+function PageSlot({ page, dir, children }: { page: Page; dir: Direction; children: ReactNode }) {
   const nav = useNav();
   const [visited, setVisited] = useState(nav.page === page);
   if (nav.page === page && !visited) setVisited(true);
   if (!visited) return null;
   return (
     <Activity mode={nav.page === page ? "visible" : "hidden"}>
-      <div className="anim-fade absolute inset-0">{children}</div>
+      <div className="page-in absolute inset-0" data-dir={dir}>
+        {children}
+      </div>
     </Activity>
   );
 }

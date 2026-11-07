@@ -12,7 +12,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon, SearchIcon, XIcon, type LucideIcon } from "lucide-react";
-import { useState, type ReactNode, type Ref } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { toast } from "sonner";
 
 /** EmptyState fills its area, centered, with what to do next. */
@@ -36,8 +36,11 @@ export function EmptyState({
         className,
       )}
     >
-      <div className="relative mb-1 flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 text-primary ring-1 ring-primary/15">
-        <Icon className="size-7" strokeWidth={1.6} />
+      <div className="anim-float relative mb-1">
+        <div className="flex size-16 items-center justify-center rounded-2xl bg-linear-to-br from-brand-from to-brand-to text-brand-foreground shadow-brand">
+          <Icon className="size-7" strokeWidth={1.6} />
+        </div>
+        <Sparkle className="sparkle absolute -top-1.5 -right-1.5 size-3.5 text-brand-to" />
       </div>
       <div className="text-base font-semibold">{title}</div>
       {hint && <div className="max-w-sm text-sm text-muted-foreground">{hint}</div>}
@@ -46,6 +49,46 @@ export function EmptyState({
       )}
     </div>
   );
+}
+
+/** Sparkle is the four-pointed star of the app icon. */
+function Sparkle({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M8 0c.5 3.9 2.1 5.5 6 6-3.9.5-5.5 2.1-6 6-.5-3.9-2.1-5.5-6-6 3.9-.5 5.5-2.1 6-6Z"
+        transform="translate(0 2)"
+      />
+    </svg>
+  );
+}
+
+/** CountUp shows a number rolling from the one it showed to the new one. */
+export function CountUp({ value, duration = 700 }: { value: number; duration?: number }) {
+  const [shown, setShown] = useState(0);
+  const from = useRef(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      from.current = value;
+      setShown(value);
+      return;
+    }
+    const start = performance.now();
+    const begin = from.current;
+    let frame = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - (1 - t) ** 3;
+      const next = Math.round(begin + (value - begin) * eased);
+      from.current = next;
+      setShown(next);
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value, duration]);
+  return <>{shown}</>;
 }
 
 /** SelectionBar floats over the bottom of a list while items are selected. */

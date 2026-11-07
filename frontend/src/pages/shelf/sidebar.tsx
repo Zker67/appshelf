@@ -187,15 +187,12 @@ function NavRow({
         }
       }}
       className={cn(
-        "group/nav relative flex h-8 items-center gap-2 rounded-lg pr-2 pl-2.5 text-[13px] transition-colors duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "side-row group/nav relative flex h-8 items-center gap-2 rounded-lg pr-2 pl-2.5 text-[13px] transition-colors duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50",
         active
-          ? "bg-primary/10 font-medium text-foreground dark:bg-primary/15"
+          ? "bg-linear-to-r from-primary/14 to-primary/[0.03] font-medium text-foreground ring-1 ring-primary/10 ring-inset dark:from-primary/24 dark:to-primary/[0.05]"
           : "text-foreground/80 hover:bg-foreground/[0.05] hover:text-foreground",
       )}
     >
-      {active && (
-        <span className="anim-fade absolute top-1.5 bottom-1.5 left-0 w-[3px] rounded-full bg-primary" />
-      )}
       <Icon
         className={cn(
           "size-4 shrink-0 transition-colors",
@@ -210,8 +207,10 @@ function NavRow({
       )}
       <span
         className={cn(
-          "ml-auto shrink-0 text-xs tabular-nums",
-          active ? "text-primary" : "text-muted-foreground",
+          "ml-auto flex shrink-0 items-center text-xs tabular-nums transition-colors",
+          active
+            ? "min-w-5 justify-center rounded-full bg-linear-to-r from-brand-from to-brand-to px-1.5 leading-[18px] font-medium text-brand-foreground shadow-brand"
+            : "text-muted-foreground",
         )}
       >
         {count}

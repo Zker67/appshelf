@@ -87,16 +87,9 @@ export function ShelfRow({
           onClick={(e) => act.clickRow(app.id, e)}
           className={cn(
             "row-lazy group/row relative flex h-[60px] items-center gap-3 border-b border-border/60 pr-3 pl-3 transition-colors duration-150 select-none",
-            focused
-              ? "bg-primary/[0.09] dark:bg-primary/[0.13]"
-              : checked
-                ? "bg-primary/[0.05]"
-                : "hover:bg-foreground/[0.035]",
+            focused ? "row-focus" : checked ? "bg-primary/[0.05]" : "hover:bg-foreground/[0.035]",
           )}
         >
-          {focused && (
-            <span className="absolute top-2 bottom-2 left-0 w-[3px] rounded-r-full bg-primary" />
-          )}
           <Checkbox
             checked={checked}
             aria-label={`选择 ${app.name}`}

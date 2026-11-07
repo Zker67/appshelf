@@ -4,7 +4,7 @@
 
 import { AddTargetChip } from "@/components/add-target";
 import { AppIcon } from "@/components/app-icon";
-import { CopyButton, EmptyState, InfoRow, SearchBox, SelectionBar } from "@/components/common";
+import { CopyButton, EmptyState, SearchBox, SelectionBar } from "@/components/common";
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
 import { DetailPanel } from "@/components/detail-panel";
 import { PackageInfo } from "@/components/package-info";
@@ -34,7 +34,6 @@ import {
   ArrowRightIcon,
   CheckIcon,
   DownloadIcon,
-  FingerprintIcon,
   LayersIcon,
   LoaderCircleIcon,
   MergeIcon,
@@ -755,6 +754,12 @@ function HitDetail({
       onClose={onClose}
       icon={<AppIcon path={h.icon} name={h.name} size={40} />}
       title={h.name}
+      subtitle={
+        <>
+          <span className="truncate font-mono select-text">{h.id}</span>
+          <CopyButton text={h.id} what="ID" />
+        </>
+      }
       badges={
         <>
           {twin ? <TwinSwitch twin={twin} /> : <SourceBadge type={h.type} />}
@@ -805,14 +810,6 @@ function HitDetail({
           id: h.id,
           ...(h.type === "winget" && h.version ? { version: h.version } : {}),
         }}
-        before={
-          <InfoRow label="ID" icon={FingerprintIcon}>
-            <span className="flex min-w-0 items-center gap-1">
-              <span className="font-mono text-[13px] break-all">{h.id}</span>
-              <CopyButton text={h.id} what="ID" />
-            </span>
-          </InfoRow>
-        }
       />
     </DetailPanel>
   );

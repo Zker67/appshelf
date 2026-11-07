@@ -1,10 +1,11 @@
 // The details of an app of the catalog: what AppShelf knows of it first,
-// its groups changed in place, then what its source says.
+// its groups changed in place, then what its source says; how it installs
+// and is found in a tab of its own.
 
 import { AppIcon } from "@/components/app-icon";
 import { CopyButton, InfoCard, InfoRow } from "@/components/common";
 import { DetailPanel } from "@/components/detail-panel";
-import { PackageInfo, Version } from "@/components/package-info";
+import { PackageInfo, type Fact } from "@/components/package-info";
 import { CategoryPicker } from "@/components/pickers";
 import { SourceBadge } from "@/components/source-badge";
 import { StatusBadge } from "@/components/status-badge";
@@ -18,20 +19,20 @@ import {
   ChevronsUpDownIcon,
   DownloadIcon,
   FileArchiveIcon,
-  FingerprintIcon,
   FolderIcon,
   FolderSearchIcon,
   HashIcon,
   InfoIcon,
   LinkIcon,
-  PackageIcon,
   PencilIcon,
   PlusIcon,
   RegexIcon,
   ScanSearchIcon,
+  SlidersHorizontalIcon,
   TagsIcon,
   TerminalIcon,
   Trash2Icon,
+  type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { assignCategory } from "./ops";
@@ -67,12 +68,46 @@ export function ShelfDetail({
   const cat = app.categoryId ? categories.get(app.categoryId) : undefined;
   const tagList = (app.tagIds ?? []).map((t) => tags.get(t)).filter((t): t is TagInfo => !!t);
   const named = [{ id: app.id, name: app.name }];
+  const facts: Fact[] = [];
+  if (status?.version) {
+    facts.push({
+      label: "已装版本",
+      icon: BoxIcon,
+      value: status.version,
+      title: status.version,
+      mono: true,
+    });
+  }
+  if (status?.asset) {
+    facts.push({
+      label: "将安装的文件",
+      icon: FileArchiveIcon,
+      value: status.asset,
+      title: status.asset,
+      mono: true,
+      wide: true,
+    });
+  }
+  // What decides how it installs and how it is found: seldom looked at.
+  const rules = [
+    { label: "检测名称", icon: ScanSearchIcon, value: app.detect?.displayName },
+    { label: "检测路径", icon: FolderSearchIcon, value: app.detect?.exePath },
+    { label: "安装包匹配", icon: RegexIcon, value: src.assetPattern },
+    { label: "安装参数", icon: TerminalIcon, value: src.installerArgs },
+    { label: "bucket 地址", icon: LinkIcon, value: src.bucketUrl },
+  ].filter((r): r is { label: string; icon: LucideIcon; value: string } => !!r.value);
   return (
     <DetailPanel
       key={app.id}
       onClose={onClose}
       icon={<AppIcon path={item.icon} name={app.name} size={40} />}
       title={app.name}
+      subtitle={
+        <>
+          <span className="truncate font-mono select-text">{id}</span>
+          <CopyButton text={id} what="来源 ID" />
+        </>
+      }
       badges={
         <>
           <StatusBadge status={status} checking={item.checking} />
@@ -114,99 +149,77 @@ export function ShelfDetail({
         </>
       }
     >
-      <div className="flex flex-col gap-4">
-        <InfoCard>
-          <InfoRow label="来源" icon={FingerprintIcon}>
-            <span className="flex min-w-0 items-center gap-1">
-              <Mono>{id}</Mono>
-              <CopyButton text={id} what="来源 ID" />
-            </span>
-          </InfoRow>
-          <InfoRow label="分类" icon={FolderIcon}>
-            <CategoryPicker
-              value={{ id: app.categoryId ?? "" }}
-              onChange={(c) => void assignCategory(named, c, names)}
-            >
-              <button
-                type="button"
-                className="-mx-1.5 inline-flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors hover:bg-muted"
+      <PackageInfo
+        pkgRef={{ type: src.type, id }}
+        latest={status?.latest}
+        facts={facts}
+        overview={
+          <InfoCard>
+            <InfoRow label="分类" icon={FolderIcon}>
+              <CategoryPicker
+                value={{ id: app.categoryId ?? "" }}
+                onChange={(c) => void assignCategory(named, c, names)}
               >
-                <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{cat?.name ?? "未分类"}</span>
-                <ChevronsUpDownIcon className="size-3 shrink-0 text-muted-foreground" />
-              </button>
-            </CategoryPicker>
-          </InfoRow>
-          <InfoRow label="标签" icon={TagsIcon}>
-            <div className="flex flex-wrap items-center gap-1">
-              {tagList.map((t) => (
-                <span
-                  key={t.id}
-                  className="inline-flex h-6 items-center gap-0.5 rounded-md border px-1.5 text-xs"
-                >
-                  <HashIcon className="size-3 text-muted-foreground" />
-                  {t.name}
-                </span>
-              ))}
-              <TagMenu apps={[app]} align="start">
                 <button
                   type="button"
-                  className="inline-flex h-6 items-center gap-0.5 rounded-md border border-dashed px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="-mx-1.5 inline-flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors hover:bg-muted"
                 >
-                  <PlusIcon className="size-3" />
-                  标签
+                  <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{cat?.name ?? "未分类"}</span>
+                  <ChevronsUpDownIcon className="size-3 shrink-0 text-muted-foreground" />
                 </button>
-              </TagMenu>
-            </div>
-          </InfoRow>
-          {status?.version && (
-            <InfoRow label="已装版本" icon={BoxIcon}>
-              <Version>{status.version}</Version>
+              </CategoryPicker>
             </InfoRow>
-          )}
-          {status?.latest && status.latest !== status.version && (
-            <InfoRow label="最新版本" icon={PackageIcon}>
-              <Version>{status.latest}</Version>
+            <InfoRow label="标签" icon={TagsIcon}>
+              <div className="flex flex-wrap items-center gap-1">
+                {tagList.map((t) => (
+                  <span
+                    key={t.id}
+                    className="inline-flex h-6 items-center gap-0.5 rounded-md border px-1.5 text-xs"
+                  >
+                    <HashIcon className="size-3 text-muted-foreground" />
+                    {t.name}
+                  </span>
+                ))}
+                <TagMenu apps={[app]} align="start">
+                  <button
+                    type="button"
+                    className="inline-flex h-6 items-center gap-0.5 rounded-md border border-dashed px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <PlusIcon className="size-3" />
+                    标签
+                  </button>
+                </TagMenu>
+              </div>
             </InfoRow>
-          )}
-          {status?.asset && (
-            <InfoRow label="安装包" icon={FileArchiveIcon}>
-              <Mono>{status.asset}</Mono>
-            </InfoRow>
-          )}
-          {status?.note && (
-            <InfoRow label="说明" icon={InfoIcon}>
-              {status.note}
-            </InfoRow>
-          )}
-          {app.detect?.displayName && (
-            <InfoRow label="检测名称" icon={ScanSearchIcon}>
-              <Mono>{app.detect.displayName}</Mono>
-            </InfoRow>
-          )}
-          {app.detect?.exePath && (
-            <InfoRow label="检测路径" icon={FolderSearchIcon}>
-              <Mono>{app.detect.exePath}</Mono>
-            </InfoRow>
-          )}
-          {src.assetPattern && (
-            <InfoRow label="安装包匹配" icon={RegexIcon}>
-              <Mono>{src.assetPattern}</Mono>
-            </InfoRow>
-          )}
-          {src.installerArgs && (
-            <InfoRow label="安装参数" icon={TerminalIcon}>
-              <Mono>{src.installerArgs}</Mono>
-            </InfoRow>
-          )}
-          {src.bucketUrl && (
-            <InfoRow label="bucket 地址" icon={LinkIcon}>
-              <Mono>{src.bucketUrl}</Mono>
-            </InfoRow>
-          )}
-        </InfoCard>
-        <PackageInfo pkgRef={{ type: src.type, id }} />
-      </div>
+            {status?.note && (
+              <InfoRow label="说明" icon={InfoIcon}>
+                {status.note}
+              </InfoRow>
+            )}
+          </InfoCard>
+        }
+        tabs={
+          rules.length > 0
+            ? [
+                {
+                  value: "rules",
+                  label: "安装规则",
+                  icon: SlidersHorizontalIcon,
+                  content: (
+                    <InfoCard>
+                      {rules.map(({ label, icon, value }) => (
+                        <InfoRow key={label} label={label} icon={icon}>
+                          <Mono>{value}</Mono>
+                        </InfoRow>
+                      ))}
+                    </InfoCard>
+                  ),
+                },
+              ]
+            : []
+        }
+      />
     </DetailPanel>
   );
 }

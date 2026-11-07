@@ -1,5 +1,5 @@
 import logo from "@/assets/logo.png";
-import { DiscoverIcon, InstalledIcon, ShelfIcon } from "@/components/nav-icons";
+import { DiscoverIcon, InstalledIcon, ShelfIcon, UpdatesIcon } from "@/components/nav-icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { errorText, keys, queryClient, useAbout, useShelf, useTasks } from "@/lib/api";
+import { errorText, keys, queryClient, useAbout, useTasks, useUpdates } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { About, type ThemeSource } from "@/mygo";
 import { useActions } from "@/state/actions";
@@ -22,6 +22,7 @@ const pages: Array<{ page: Page; label: string; icon: ComponentType<SVGProps<SVG
   { page: "installed", label: "本机已装", icon: InstalledIcon },
   { page: "shelf", label: "我的清单", icon: ShelfIcon },
   { page: "discover", label: "发现", icon: DiscoverIcon },
+  { page: "updates", label: "更新", icon: UpdatesIcon },
 ];
 
 /**
@@ -55,8 +56,9 @@ export function Titlebar() {
 
 function NavTabs() {
   const nav = useNav();
-  const { data: shelf } = useShelf();
-  const updates = shelf?.apps.filter((a) => a.status?.state === "updateAvailable").length ?? 0;
+  const { data: list } = useUpdates();
+  // What the badge counts: the updates offered, AppShelf's own among them.
+  const updates = (list?.count ?? 0) + (list?.self.available ? 1 : 0);
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
   useLayoutEffect(() => {
@@ -91,7 +93,7 @@ function NavTabs() {
           >
             <Icon className="size-[18px] transition-colors" />
             {label}
-            {page === "shelf" && updates > 0 && (
+            {page === "updates" && updates > 0 && (
               <span
                 className={cn(
                   "ml-0.5 rounded-full px-1.5 text-[10px] leading-4 font-semibold tabular-nums transition-colors",

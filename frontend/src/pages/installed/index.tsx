@@ -1,6 +1,8 @@
 // Installed: the programs of this machine, from winget, scoop, the registry
 // and the Store, marked when the catalog has them or their source has a
 // newer version; added to the catalog from here, or their source searched.
+// They are filtered by three groups that combine: their source, their
+// updates and whether the catalog has them.
 
 import { AddTargetChip } from "@/components/add-target";
 import { AppIcon } from "@/components/app-icon";
@@ -16,20 +18,30 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { errorText, useInstalled } from "@/lib/api";
-import { sourceID } from "@/lib/shelf";
+import { UpdateMenu } from "@/components/update-menu";
+import { errorText, useInstalled, useUpdates } from "@/lib/api";
+import { sourceID, sourceKey } from "@/lib/shelf";
 import { formatDateTime, matches } from "@/lib/text";
+import {
+  allInstalled,
+  holdText,
+  installedMatches,
+  isAllInstalled,
+  type InstalledFilter,
+  type ShelfGroup,
+  type UpdateGroup,
+} from "@/lib/updates";
 import { revealRow, useList, usePageKeys } from "@/lib/use-list";
 import { cn } from "@/lib/utils";
-import { Installed, type InstalledEntry, type InstalledKind } from "@/mygo";
+import { Installed, type InstalledEntry, type InstalledKind, type UpdateItem } from "@/mygo";
 import { useActions } from "@/state/actions";
 import { useNav } from "@/state/nav";
 import { useQuickAdd } from "@/state/quick-add";
 import {
   ArrowUpCircleIcon,
+  BellOffIcon,
   CheckIcon,
   CircleDashedIcon,
-  CircleHelpIcon,
   LayoutDashboardIcon,
   LayersIcon,
   LayoutGridIcon,
@@ -39,15 +51,13 @@ import {
   SearchIcon,
   SearchXIcon,
   TriangleAlertIcon,
+  ZapIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
-import { InstalledOverview, type ListFilter } from "./overview";
-
-type KindFilter = "all" | InstalledKind;
-type StateFilter = "all" | "update" | "notInShelf" | "inShelf" | "noSource";
+import { InstalledOverview } from "./overview";
 
 const kindItems: Array<{ value: InstalledKind; label: string }> = [
   { value: "winget", label: "winget" },
@@ -56,62 +66,56 @@ const kindItems: Array<{ value: InstalledKind; label: string }> = [
   { value: "store", label: "应用商店" },
 ];
 
-const stateItems: Array<{
-  value: Exclude<StateFilter, "all">;
+interface GroupItem<T> {
+  value: T;
   label: string;
   icon: LucideIcon;
   tone: string;
-}> = [
+}
+
+const updateItems: Array<GroupItem<Exclude<UpdateGroup, "all">>> = [
   { value: "update", label: "可更新", icon: ArrowUpCircleIcon, tone: "text-primary" },
+  { value: "auto", label: "自动更新", icon: ZapIcon, tone: "text-primary" },
+  { value: "held", label: "已忽略", icon: BellOffIcon, tone: "text-muted-foreground" },
+];
+
+const shelfItems: Array<GroupItem<Exclude<ShelfGroup, "all">>> = [
+  { value: "inShelf", label: "已在清单", icon: CheckIcon, tone: "text-success" },
   {
     value: "notInShelf",
     label: "未加入清单",
     icon: CircleDashedIcon,
     tone: "text-muted-foreground",
   },
-  { value: "inShelf", label: "已在清单", icon: CheckIcon, tone: "text-success" },
-  { value: "noSource", label: "无来源", icon: CircleHelpIcon, tone: "text-muted-foreground" },
 ];
-
-function stateOf(e: InstalledEntry, s: StateFilter): boolean {
-  switch (s) {
-    case "update":
-      return !!e.update;
-    case "notInShelf":
-      return e.inShelf.length === 0;
-    case "inShelf":
-      return e.inShelf.length > 0;
-    case "noSource":
-      return !e.source;
-  }
-  return true;
-}
 
 export function InstalledPage() {
   const { data, isPending, isError, error } = useInstalled();
   const actions = useActions();
   const nav = useNav();
   const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<KindFilter>("all");
-  const [state, setState] = useState<StateFilter>("all");
+  const [filter, setFilter] = useState<InstalledFilter>(allInstalled);
   // The page opens on the overview; a filter or a search shows the list.
   const [overview, setOverview] = useState(true);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const entries = useMemo(() => data?.entries ?? [], [data]);
-  const ofKind = useMemo(
-    () => (kind === "all" ? entries : entries.filter((e) => e.kind === kind)),
-    [entries, kind],
-  );
   const shown = useMemo(
     () =>
-      ofKind.filter(
+      entries.filter(
         (e) =>
-          stateOf(e, state) &&
+          installedMatches(e, filter) &&
           matches(query, [e.name, e.publisher, e.source ? sourceID(e.source) : ""]),
       ),
-    [ofKind, state, query],
+    [entries, filter, query],
+  );
+  // What the updates know of the packages with an update, as whether they
+  // can update on their own.
+  const { data: updates } = useUpdates();
+  const updateOf = useMemo(
+    () => new Map<string, UpdateItem>((updates?.items ?? []).map((i) => [i.key, i])),
+    [updates],
   );
   const order = useMemo(() => shown.map((e) => e.key), [shown]);
   const byKey = useMemo(() => new Map(entries.map((e) => [e.key, e])), [entries]);
@@ -123,13 +127,23 @@ export function InstalledPage() {
   const updatable = selected.filter((e) => e.source && !!e.update);
   useEffect(() => revealRow(listRef, list.focus), [list.focus]);
 
-  const kindCount = (k: InstalledKind) => entries.filter((e) => e.kind === k).length;
-  const stateCount = (s: StateFilter) => ofKind.filter((e) => stateOf(e, s)).length;
+  // A row counts what the list would show with it chosen, the other groups
+  // as they are.
+  const countWith = (patch: Partial<InstalledFilter>) =>
+    entries.filter((e) => installedMatches(e, { ...filter, ...patch })).length;
   const loading = !data?.loaded;
 
-  const openList = (f: ListFilter) => {
-    setKind(f.kind ?? "all");
-    setState(f.state ?? "all");
+  const openList = (f: Partial<InstalledFilter>) => {
+    setFilter({ ...allInstalled, ...f });
+    setOverview(false);
+  };
+  /** choose turns a row of a group on, or off when active, showing the list. */
+  const choose = (patch: Partial<InstalledFilter>, active: boolean) => {
+    const off: Partial<InstalledFilter> = {};
+    if (patch.kinds) off.kinds = new Set();
+    if (patch.update) off.update = "all";
+    if (patch.shelf) off.shelf = "all";
+    setFilter((f) => ({ ...f, ...(active ? off : patch) }));
     setOverview(false);
   };
   const search = (q: string) => {
@@ -216,44 +230,64 @@ export function InstalledPage() {
                   icon={LayoutGridIcon}
                   label="全部程序"
                   count={entries.length}
-                  active={!overview && kind === "all" && state === "all"}
+                  active={!overview && isAllInstalled(filter)}
                   onClick={() => openList({})}
                 />
               </div>
               <SideGroup title="来源">
                 {kindItems
-                  .filter((k) => kindCount(k.value) > 0 || kind === k.value)
-                  .map((k) => (
-                    <SideRow
-                      key={k.value}
-                      icon={({ className }) => (
-                        <SourceIcon type={k.value} className={cn("size-4", className)} />
-                      )}
-                      label={k.label}
-                      count={kindCount(k.value)}
-                      active={!overview && kind === k.value}
-                      onClick={() => {
-                        setKind(!overview && kind === k.value ? "all" : k.value);
-                        setOverview(false);
-                      }}
-                    />
-                  ))}
+                  .filter(
+                    (k) => entries.some((e) => e.kind === k.value) || filter.kinds.has(k.value),
+                  )
+                  .map((k) => {
+                    const active = !overview && filter.kinds.has(k.value);
+                    return (
+                      <SideRow
+                        key={k.value}
+                        icon={({ className }) => (
+                          <SourceIcon type={k.value} className={cn("size-4", className)} />
+                        )}
+                        label={k.label}
+                        count={countWith({ kinds: new Set([k.value]) })}
+                        active={active}
+                        onClick={() =>
+                          choose({ kinds: new Set([k.value]) }, active && filter.kinds.size === 1)
+                        }
+                      />
+                    );
+                  })}
               </SideGroup>
-              <SideGroup title="状态">
-                {stateItems.map((s) => (
-                  <SideRow
-                    key={s.value}
-                    icon={s.icon}
-                    iconClass={s.tone}
-                    label={s.label}
-                    count={stateCount(s.value)}
-                    active={!overview && state === s.value}
-                    onClick={() => {
-                      setState(!overview && state === s.value ? "all" : s.value);
-                      setOverview(false);
-                    }}
-                  />
-                ))}
+              <SideGroup title="更新">
+                {updateItems.map((u) => {
+                  const active = !overview && filter.update === u.value;
+                  return (
+                    <SideRow
+                      key={u.value}
+                      icon={u.icon}
+                      iconClass={u.tone}
+                      label={u.label}
+                      count={countWith({ update: u.value })}
+                      active={active}
+                      onClick={() => choose({ update: u.value }, active)}
+                    />
+                  );
+                })}
+              </SideGroup>
+              <SideGroup title="清单">
+                {shelfItems.map((g) => {
+                  const active = !overview && filter.shelf === g.value;
+                  return (
+                    <SideRow
+                      key={g.value}
+                      icon={g.icon}
+                      iconClass={g.tone}
+                      label={g.label}
+                      count={countWith({ shelf: g.value })}
+                      active={active}
+                      onClick={() => choose({ shelf: g.value }, active)}
+                    />
+                  );
+                })}
               </SideGroup>
             </div>
           </ScrollArea>
@@ -339,8 +373,7 @@ export function InstalledPage() {
                 variant="outline"
                 onClick={() => {
                   setQuery("");
-                  setKind("all");
-                  setState("all");
+                  setFilter(allInstalled);
                 }}
               >
                 清除筛选
@@ -370,6 +403,7 @@ export function InstalledPage() {
                     onFind={() => findSource(e)}
                     onShow={() => nav.showInShelf(e.inShelf)}
                     onUpdate={() => actions.previewInstalledUpdates([e.key])}
+                    update={e.source ? updateOf.get(sourceKey(e.source)) : undefined}
                   />
                 ))}
               </div>
@@ -411,6 +445,7 @@ function EntryRow({
   onFind,
   onShow,
   onUpdate,
+  update,
 }: {
   entry: InstalledEntry;
   checked: boolean;
@@ -424,8 +459,12 @@ function EntryRow({
   onFind: () => void;
   onShow: () => void;
   onUpdate: () => void;
+  /** update is what the updates know of its package. */
+  update?: UpdateItem;
 }) {
   const inShelf = e.inShelf.length > 0;
+  const held = !!e.update && !!e.hold;
+  const hasMode = !!e.mode && e.mode !== "notify";
   return (
     <div
       data-row={e.key}
@@ -467,7 +506,13 @@ function EntryRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {e.update && (
+        {held && (
+          <Pill tone="muted">
+            <BellOffIcon />
+            {holdText(e.hold, { skip: update?.skip, until: update?.until })}
+          </Pill>
+        )}
+        {e.update && !held && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span>
@@ -483,7 +528,20 @@ function EntryRow({
           </Tooltip>
         )}
       </div>
-      {e.update && e.source && (
+      {e.source && (e.update || hasMode) && (
+        <UpdateMenu
+          target={{
+            key: sourceKey(e.source),
+            name: e.name,
+            mode: e.mode ?? "notify",
+            hold: e.hold,
+            latest: e.update,
+            canAuto: update?.canAuto,
+            autoNote: update?.autoNote,
+          }}
+        />
+      )}
+      {e.update && e.source && !held && (
         <Button
           size="xs"
           variant="outline"

@@ -405,6 +405,32 @@ const (
 	codeCanceledByUser      = 0x8A15010C
 )
 
+// codeTexts say in plain words why an install or update failed, for the
+// other exit codes of returnCodes.md that the user can act on.
+var codeTexts = map[uint32]string{
+	0x8A150011: "下载的安装程序与清单的校验值不一致，已停止。可能是发布方刚更新了文件，稍后再试",
+	0x8A15002D: "安装程序没有通过安全检查，已停止",
+	0x8A15002E: "下载的文件大小不对，可能是网络中断，请重试",
+	0x8A150049: "Windows Installer 运行失败，请查看日志",
+	0x8A150103: "有文件正被占用，请关闭这个软件后重试",
+	0x8A150104: "缺少这个软件需要的系统组件",
+	0x8A150105: "磁盘空间不足，请清理后重试",
+	0x8A150106: "内存不足，请关闭其他程序后重试",
+	0x8A150107: "需要联网，请连接网络后重试",
+	0x8A150108: "安装程序出错，请查看日志或联系软件作者",
+	0x8A15010A: "需要先重启电脑，再重试",
+	0x8A15010B: "电脑将重启以完成安装",
+	0x8A15010D: "已安装了这个软件的另一个版本",
+	0x8A15010E: "已安装了更高的版本",
+	0x8A15010F: "组织策略阻止了安装，请联系管理员",
+	0x8A150110: "依赖的软件包安装失败",
+	0x8A150111: "软件正被其他程序使用，请关闭后重试",
+	0x8A150112: "安装参数无效",
+	0x8A150113: "这台电脑的系统不支持这个软件",
+	0x8A150114: "这个软件的安装程序不支持直接更新，请卸载后重新安装",
+	0x8A150115: "安装程序报告了自定义错误，请查看日志",
+}
+
 // Install installs the app's package by its exact ID from the winget
 // source; an installed package is left as it is.
 func (s *Source) Install(ctx context.Context, app catalog.App, log io.Writer) (source.Result, error) {
@@ -457,6 +483,9 @@ func interpret(res runner.Result) (source.Result, error) {
 		return source.Result{}, errors.New("另一个安装正在进行，请稍后重试")
 	case codeCanceledByUser:
 		return source.Result{}, errors.New("安装被取消")
+	}
+	if text, ok := codeTexts[res.Code()]; ok {
+		return source.Result{}, fmt.Errorf("%s（winget 退出码 0x%08X）", text, res.Code())
 	}
 	msg := fmt.Sprintf("winget 退出码 0x%08X", res.Code())
 	if tail := res.Tail(2); tail != "" {

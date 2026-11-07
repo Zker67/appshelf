@@ -215,3 +215,14 @@ func TestInstall(t *testing.T) {
 		t.Errorf("installing again: %+v %v", res, err)
 	}
 }
+
+func TestInterpretSaysWhy(t *testing.T) {
+	_, err := interpret(runner.Result{ExitCode: int(uint32(0x8A150105))})
+	if err == nil || !strings.Contains(err.Error(), "磁盘空间不足") || !strings.Contains(err.Error(), "0x8A150105") {
+		t.Errorf("disk full: %v", err)
+	}
+	_, err = interpret(runner.Result{ExitCode: int(uint32(0x8A150114))})
+	if err == nil || !strings.Contains(err.Error(), "不支持直接更新") {
+		t.Errorf("upgrade not supported: %v", err)
+	}
+}

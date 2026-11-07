@@ -168,7 +168,7 @@ export function ShelfRow({
                 任务中
               </span>
             ) : (
-              <StatusBadge status={status} checking={item.checking} />
+              <StatusBadge status={status} checking={item.checking} hold={item.hold} />
             )}
           </div>
           <div className="flex w-[64px] shrink-0 justify-end">

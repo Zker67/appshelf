@@ -73,3 +73,15 @@ func Compare(a, b string) (cmp int, ok bool) {
 	}
 	return 0, true
 }
+
+// MajorUpgrade reports whether going from a to b raises the first number,
+// as 2.9 to 3.0: such updates may change what the user knows of the app.
+// Calendar versions, whose first number is a year, are not counted.
+func MajorUpgrade(a, b string) bool {
+	na, oka := numbers(Normalize(a))
+	nb, okb := numbers(Normalize(b))
+	if !oka || !okb || na[0] >= 1900 || nb[0] >= 1900 {
+		return false
+	}
+	return nb[0] > na[0]
+}

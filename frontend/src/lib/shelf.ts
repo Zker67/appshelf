@@ -1,6 +1,7 @@
 // What the catalog's apps are shown and filtered by.
 
-import type { AppStatus, ShelfApp, Source } from "@/mygo";
+import type { AppStatus, ShelfApp, Source, UpdateHold } from "@/mygo";
+import { holdText } from "./updates";
 import { matches } from "./text";
 
 export type SourceKind = "winget" | "scoop" | "github";
@@ -67,11 +68,24 @@ export interface StatusView {
   detail?: string;
 }
 
-/** statusView words an app's state for the list. */
-export function statusView(status: AppStatus | null, checking: boolean): StatusView {
+/**
+ * statusView words an app's state for the list. An update held back, as
+ * ignored, shows as such.
+ */
+export function statusView(
+  status: AppStatus | null,
+  checking: boolean,
+  hold?: UpdateHold,
+): StatusView {
   if (!status) return { label: checking ? "读取中" : "未读取", tone: "muted" };
   switch (status.state) {
     case "updateAvailable":
+      if (hold)
+        return {
+          label: holdText(hold, { skip: status.latest }),
+          tone: "muted",
+          detail: status.version || undefined,
+        };
       return {
         label: "可更新",
         tone: "primary",
@@ -92,13 +106,16 @@ export function statusView(status: AppStatus | null, checking: boolean): StatusV
 
 export type StatusFilter = "all" | "update" | "installed" | "notInstalled" | "problem";
 
-/** statusGroup puts an app in one of the status filters. */
+/**
+ * statusGroup puts an app in one of the status filters: one whose update
+ * is held back, as ignored, is installed.
+ */
 export function statusGroup(app: ShelfApp): Exclude<StatusFilter, "all"> | "pending" {
   const s = app.status;
   if (!s) return "pending";
   switch (s.state) {
     case "updateAvailable":
-      return "update";
+      return app.hold ? "installed" : "update";
     case "installed":
       return "installed";
     case "notInstalled":

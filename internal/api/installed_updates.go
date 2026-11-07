@@ -70,7 +70,9 @@ func (s *Installed) PreviewUpdates(ctx context.Context, keys []string) ([]Previe
 	if err != nil {
 		return nil, err
 	}
-	return updateEntries(s.a.core.PreviewUpdates(ctx, apps)), nil
+	out := updateEntries(s.a.core.PreviewUpdates(ctx, apps))
+	s.a.markRunning(out)
+	return out, nil
 }
 
 func updateEntries(items []core.PreviewItem) []PreviewEntry {

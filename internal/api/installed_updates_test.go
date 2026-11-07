@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -45,10 +46,28 @@ func TestInstalledUpdateDoesNotAddToCatalog(t *testing.T) {
 	if len(e.shelf.Snapshot().Apps) != 0 {
 		t.Fatal("direct update added an app to the catalog")
 	}
-	for _, name := range []string{"catalog.json", "state.json"} {
-		if _, err := os.Stat(filepath.Join(e.dir, name)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("direct update wrote %s", name)
-		}
+	if _, err := os.Stat(filepath.Join(e.dir, "catalog.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("direct update wrote catalog.json")
+	}
+	// The state records the update in the history, and nothing else.
+	e.until(func() bool { return len(e.core.Store().History()) == 1 })
+	data, err := os.ReadFile(filepath.Join(e.dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st struct {
+		GitHub  map[string]any `json:"github"`
+		Updates map[string]any `json:"updates"`
+		History []struct {
+			Key, From, To, Result string
+		} `json:"history"`
+	}
+	if err := json.Unmarshal(data, &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.GitHub) != 0 || len(st.Updates) != 0 || len(st.History) != 1 ||
+		st.History[0].Key != installedObsidian || st.History[0].From != "1.8" || st.History[0].To != "1.9" || st.History[0].Result != "succeeded" {
+		t.Fatalf("state after a direct update: %s", data)
 	}
 	e.winget.mu.Lock()
 	defer e.winget.mu.Unlock()

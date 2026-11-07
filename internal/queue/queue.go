@@ -69,6 +69,8 @@ type Item struct {
 	LogPath string
 	Started time.Time
 	Ended   time.Time
+	// From and To are the versions read before and after it ran, when known.
+	From, To string
 }
 
 // Executor does the work of the items. Its methods run on the queue's
@@ -149,6 +151,7 @@ func (q *Queue) Retry(id int) bool {
 	it := q.items[i]
 	q.items = slices.Delete(q.items, i, i+1)
 	it.State, it.Message, it.LogPath = Waiting, "", ""
+	it.From, it.To = "", ""
 	it.Started, it.Ended = time.Time{}, time.Time{}
 	q.items = append(q.items, it)
 	q.startLocked()
@@ -261,19 +264,21 @@ func (q *Queue) work() {
 		q.mu.Unlock()
 		q.notify()
 
-		state, msg, logPath := q.runItem(snapshot)
+		state, msg, logPath := q.runItem(&snapshot)
 
 		q.mu.Lock()
 		it.State, it.Message, it.LogPath, it.Ended = state, msg, logPath, time.Now()
+		it.From, it.To = snapshot.From, snapshot.To
 		q.mu.Unlock()
 		q.notify()
 	}
 }
 
 // runItem does one item: check, run, check again.
-func (q *Queue) runItem(it Item) (ItemState, string, string) {
+func (q *Queue) runItem(it *Item) (ItemState, string, string) {
 	ctx := q.ctx
 	before := q.exec.Status(ctx, it.App)
+	it.From = before.Version
 	switch {
 	case before.Blocked():
 		return Failed, "无法确认安装状态，没有执行：" + noteOr(before, "原因未知"), ""
@@ -294,7 +299,7 @@ func (q *Queue) runItem(it Item) (ItemState, string, string) {
 		return Skipped, "已是最新版本", ""
 	}
 
-	log, logPath, err := q.exec.OpenLog(it)
+	log, logPath, err := q.exec.OpenLog(*it)
 	if err != nil {
 		return Failed, "无法创建日志：" + err.Error(), ""
 	}
@@ -304,7 +309,8 @@ func (q *Queue) runItem(it Item) (ItemState, string, string) {
 	}
 	after := q.exec.Status(ctx, it.App)
 	it.LogPath = logPath
-	after = q.exec.Finished(it, after, res)
+	after = q.exec.Finished(*it, after, res)
+	it.To = after.Version
 	fmt.Fprintf(log, "\n[AppShelf] 之后的状态：%s %s %s\n", after.State, after.Version, after.Note)
 	log.Close()
 

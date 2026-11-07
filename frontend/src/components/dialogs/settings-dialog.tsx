@@ -1,4 +1,5 @@
-// The settings: the sources and GitHub's quotas, and AppShelf itself.
+// The settings: the sources and GitHub's quotas, the updates, and
+// AppShelf itself.
 
 import logo from "@/assets/logo.png";
 import { CopyButton } from "@/components/common";
@@ -18,11 +19,30 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { errorText, useAbout, useShelf, useSources } from "@/lib/api";
+import {
+  errorText,
+  keys,
+  queryClient,
+  useAbout,
+  useShelf,
+  useSources,
+  useUpdateSettings,
+} from "@/lib/api";
 import { sourceLabel } from "@/lib/shelf";
 import { formatDateTime } from "@/lib/text";
-import { About, Shelf, Sources, type RateInfo, type SourceInfo } from "@/mygo";
 import {
+  About,
+  Shelf,
+  Sources,
+  Updates,
+  type CheckInterval,
+  type RateInfo,
+  type SourceInfo,
+  type UpdateSettings,
+} from "@/mygo";
+import {
+  ArrowUpCircleIcon,
+  BellRingIcon,
   CheckCircle2Icon,
   CircleDashedIcon,
   DownloadCloudIcon,
@@ -31,17 +51,30 @@ import {
   InfoIcon,
   KeyRoundIcon,
   LoaderCircleIcon,
+  MonitorDownIcon,
+  PanelBottomIcon,
   PlugIcon,
+  PowerIcon,
   RefreshCwIcon,
   SearchIcon,
   SettingsIcon,
+  TimerIcon,
   TriangleAlertIcon,
   WrenchIcon,
+  ZapIcon,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
-export type SettingsTab = "sources" | "about";
+export type SettingsTab = "sources" | "updates" | "about";
 
 export function SettingsDialog({
   open,
@@ -66,6 +99,10 @@ export function SettingsDialog({
                 <PlugIcon />
                 安装来源
               </TabsTrigger>
+              <TabsTrigger value="updates" className="px-3">
+                <ArrowUpCircleIcon />
+                更新
+              </TabsTrigger>
               <TabsTrigger value="about" className="px-3">
                 <InfoIcon />
                 关于
@@ -75,6 +112,9 @@ export function SettingsDialog({
           <ScrollArea className="min-h-0 flex-1">
             <TabsContent value="sources" className="anim-fade px-5 py-4">
               <SourcesTab />
+            </TabsContent>
+            <TabsContent value="updates" className="anim-fade px-5 py-4">
+              <UpdatesTab />
             </TabsContent>
             <TabsContent value="about" className="anim-fade px-5 py-4">
               <AboutTab />
@@ -288,6 +328,150 @@ function RateRow({
       ) : (
         <span className="text-xs text-muted-foreground">还没有请求过</span>
       )}
+    </div>
+  );
+}
+
+const intervals: Array<{ value: CheckInterval; label: string }> = [
+  { value: "1h", label: "每小时" },
+  { value: "3h", label: "每 3 小时" },
+  { value: "6h", label: "每 6 小时" },
+  { value: "12h", label: "每 12 小时" },
+  { value: "24h", label: "每天" },
+  { value: "off", label: "只在启动时" },
+];
+
+function UpdatesTab() {
+  const { data } = useUpdateSettings();
+  const key = [...keys.updates, "settings"];
+  const save = async (patch: Partial<UpdateSettings>) => {
+    if (!data) return;
+    const next = { ...data, ...patch };
+    queryClient.setQueryData(key, next);
+    try {
+      await Updates.setSettings(next);
+    } catch (err) {
+      toast.error("设置没有保存", { description: errorText(err) });
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: key });
+    }
+  };
+  if (!data) return null;
+  return (
+    <div className="flex flex-col gap-6">
+      <Section title="检查更新" icon={RefreshCwIcon}>
+        <div className="flex flex-col divide-y rounded-xl border bg-card">
+          <SettingRow icon={TimerIcon} label="自动检查" hint="软件图书馆运行时按这个间隔检查一次">
+            <Select
+              value={data.checkEvery}
+              onValueChange={(v) => void save({ checkEvery: v as CheckInterval })}
+            >
+              <SelectTrigger size="sm" className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {intervals.map((i) => (
+                  <SelectItem key={i.value} value={i.value}>
+                    {i.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+          <SettingRow
+            icon={BellRingIcon}
+            label="发现更新时通知"
+            hint="窗口不在前面时发系统通知，自动更新完成后也会告诉你"
+          >
+            <Switch checked={data.notify} onCheckedChange={(on) => void save({ notify: on })} />
+          </SettingRow>
+        </div>
+        <p className="flex items-start gap-1.5 px-1 text-xs leading-relaxed text-muted-foreground">
+          <ZapIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
+          自动更新在每个软件的更新方式里开启。只有 scoop 和为当前用户安装的 winget
+          软件能自动更新，正在运行的会等它关闭；其余的只提醒。
+        </p>
+      </Section>
+      <Section title="后台运行" icon={PanelBottomIcon}>
+        <div className="flex flex-col divide-y rounded-xl border bg-card">
+          <SettingRow
+            icon={PanelBottomIcon}
+            label="关闭窗口后留在托盘"
+            hint={
+              data.canBackground
+                ? "在任务栏右下角继续定期检查，单击图标打开窗口"
+                : "这个版本不支持托盘"
+            }
+          >
+            <Switch
+              checked={data.background}
+              disabled={!data.canBackground}
+              onCheckedChange={(on) => void save({ background: on })}
+            />
+          </SettingRow>
+          <SettingRow
+            icon={PowerIcon}
+            label="开机时启动"
+            hint={data.background ? "启动后留在托盘，不打开窗口" : "开机后打开软件图书馆"}
+          >
+            <Switch
+              checked={data.openAtLogin}
+              disabled={!data.canBackground}
+              onCheckedChange={(on) => void save({ openAtLogin: on })}
+            />
+          </SettingRow>
+        </div>
+      </Section>
+      <Section title="软件图书馆自身" icon={MonitorDownIcon}>
+        {data.canSelfUpdate ? (
+          <div className="flex flex-col divide-y rounded-xl border bg-card">
+            <SettingRow icon={RefreshCwIcon} label="每天检查新版本">
+              <Switch
+                checked={data.selfChecks}
+                onCheckedChange={(on) => void save({ selfChecks: on })}
+              />
+            </SettingRow>
+            <SettingRow
+              icon={DownloadCloudIcon}
+              label="自动下载新版本"
+              hint="下次启动时安装，不再询问"
+            >
+              <Switch
+                checked={data.selfDownloads}
+                disabled={!data.selfChecks}
+                onCheckedChange={(on) => void save({ selfDownloads: on })}
+              />
+            </SettingRow>
+          </div>
+        ) : (
+          <div className="rounded-xl border bg-card px-4 py-3 text-xs text-muted-foreground">
+            自更新只在用安装包安装的版本里可用
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+function SettingRow({
+  icon: Icon,
+  label,
+  hint,
+  children,
+}: {
+  icon: typeof InfoIcon;
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm">{label}</div>
+        {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+      </div>
+      {children}
     </div>
   );
 }

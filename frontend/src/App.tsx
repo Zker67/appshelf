@@ -3,9 +3,11 @@
 
 import { Titlebar } from "@/components/titlebar";
 import { listenForChanges, useShelf } from "@/lib/api";
+import { events } from "@/mygo";
 import { DiscoverPage } from "@/pages/discover";
 import { InstalledPage } from "@/pages/installed";
 import { ShelfPage } from "@/pages/shelf";
+import { UpdatesPage } from "@/pages/updates";
 import { ActionsProvider } from "@/state/actions";
 import { NavProvider, useNav, type Page } from "@/state/nav";
 import { Activity, useEffect, useRef, useState, type ReactNode } from "react";
@@ -21,13 +23,14 @@ export default function App() {
           <Pages />
         </div>
         <OpeningNotes />
+        <Navigation />
       </ActionsProvider>
     </NavProvider>
   );
 }
 
 /** The pages in the order of their tabs, which says the side a page enters from. */
-const order: Page[] = ["installed", "shelf", "discover"];
+const order: Page[] = ["installed", "shelf", "discover", "updates"];
 
 type Direction = "none" | "left" | "right";
 
@@ -51,6 +54,9 @@ function Pages() {
       <PageSlot page="installed" dir={dir}>
         <InstalledPage />
       </PageSlot>
+      <PageSlot page="updates" dir={dir}>
+        <UpdatesPage />
+      </PageSlot>
     </main>
   );
 }
@@ -71,6 +77,22 @@ function PageSlot({ page, dir, children }: { page: Page; dir: Direction; childre
       </div>
     </Activity>
   );
+}
+
+const pages: ReadonlySet<string> = new Set<Page>(order);
+
+/** Navigation shows the page Go asks for, as after a click on a notification. */
+function Navigation() {
+  const nav = useNav();
+  const go = nav.go;
+  useEffect(
+    () =>
+      events.navigate.on((page) => {
+        if (pages.has(page)) go(page as Page);
+      }),
+    [go],
+  );
+  return null;
 }
 
 /** OpeningNotes says once what went wrong opening, as a file not read. */

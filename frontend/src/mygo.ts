@@ -82,7 +82,10 @@ export interface Change {
 }
 
 /** ChangeKind names what changed, for the page to read it again. */
-export type ChangeKind = "shelf" | "tasks" | "sources" | "installed";
+export type ChangeKind = "shelf" | "tasks" | "sources" | "installed" | "updates";
+
+/** CheckInterval is how often the updates are checked while AppShelf runs. */
+export type CheckInterval = "off" | "1h" | "3h" | "6h" | "12h" | "24h";
 
 export interface Detect {
   displayName?: string;
@@ -127,6 +130,10 @@ export interface InstalledEntry {
    * a source found by searching.
    */
   rule: string;
+  /** Mode is how its updates are handled, of a program with a source. */
+  mode?: UpdateMode;
+  /** Hold is why its update is not offered. */
+  hold?: UpdateHold;
 }
 
 /** InstalledKind is where an installed program comes from. */
@@ -187,6 +194,8 @@ export interface PreviewEntry {
   release?: string;
   /** Note is what the source said of the app, as a limit it reached. */
   note?: string;
+  /** Running means a program of the app runs: updating may close it. */
+  running?: boolean;
 }
 
 /** RateInfo is a GitHub request quota as last reported. */
@@ -243,6 +252,15 @@ export interface SearchHit {
   installed?: boolean;
 }
 
+/** SelfUpdate is AppShelf's own update, as its update window found it. */
+export interface SelfUpdate {
+  /** CanUpdate means this copy can update itself. */
+  canUpdate: boolean;
+  version: string;
+  /** Available is the newer version found, or "". */
+  available?: string;
+}
+
 /** ShelfApp is an app of the catalog with its state. */
 export interface ShelfApp {
   app: App;
@@ -254,6 +272,8 @@ export interface ShelfApp {
   pending: boolean;
   /** Icon is the app's path on the icon scheme. */
   icon: string;
+  /** Hold is why its update is not offered: ignored, skipped or put off. */
+  hold?: UpdateHold;
 }
 
 /** ShelfSnapshot is the catalog and what is known of its apps. */
@@ -345,6 +365,132 @@ export type TaskState = "waiting" | "running" | "succeeded" | "skipped" | "faile
 /** ThemeSource is the appearance chosen. */
 export type ThemeSource = "system" | "light" | "dark";
 
+/** UpdateHold is why an available update is not offered. */
+export type UpdateHold = "" | "ignore" | "skip" | "snooze";
+
+/**
+ * UpdateItem is a package with an update: an app of the catalog, an
+ * installed winget or scoop package, or both, once.
+ */
+export interface UpdateItem {
+  /**
+   * Key is the package's source key, as "winget:git.git": what the
+   * other methods of Updates take.
+   */
+  key: string;
+  name: string;
+  icon: string;
+  source: Source;
+  version?: string;
+  latest: string;
+  /** Major means the first number of the version goes up. */
+  major?: boolean;
+  mode: UpdateMode;
+  hold?: UpdateHold;
+  /** Skip is the version skipped; Until when updates are put off to. */
+  skip?: string;
+  until?: string;
+  /**
+   * CanAuto means AppShelf can update it on its own; AutoNote says why
+   * not.
+   */
+  canAuto: boolean;
+  autoNote?: string;
+  /** Running means a program of it runs: updating may close it. */
+  running?: boolean;
+  /** Pending means it waits or runs in the tasks. */
+  pending?: boolean;
+  /** AppID is the catalog's app of the package, when there is one. */
+  appId?: string;
+  /** Note is what its source said of it. */
+  note?: string;
+}
+
+/** UpdateList is the updates and how they are checked. */
+export interface UpdateList {
+  items: UpdateItem[];
+  rules: UpdateRule[];
+  /** Count is how many updates are offered: held ones are not. */
+  count: number;
+  /**
+   * Loaded means the catalog's states and the installed programs were
+   * read; Checking that a check is under way.
+   */
+  loaded: boolean;
+  checking: boolean;
+  checkedAt?: string;
+  nextCheck?: string;
+  self: SelfUpdate;
+}
+
+/** UpdateMode is how the updates of a package are handled. */
+export type UpdateMode = "notify" | "auto" | "ignore";
+
+/** UpdateRecord is an update done. */
+export interface UpdateRecord {
+  key: string;
+  name: string;
+  icon: string;
+  from?: string;
+  to?: string;
+  /** Result is "succeeded", "skipped" or "failed". */
+  result: TaskState;
+  message?: string;
+  /** Auto means AppShelf started it after a check. */
+  auto?: boolean;
+  at: string;
+}
+
+/**
+ * UpdateRule is a package whose updates are not handled the default way:
+ * updated on its own, ignored, a version skipped or put off.
+ */
+export interface UpdateRule {
+  key: string;
+  name: string;
+  icon: string;
+  source: Source;
+  mode: UpdateMode;
+  skip?: string;
+  until?: string;
+  /** Installed means found on this machine or in the catalog. */
+  installed: boolean;
+  canAuto: boolean;
+  autoNote?: string;
+}
+
+/** UpdateSettings are the user's choices for updates. */
+export interface UpdateSettings {
+  checkEvery: CheckInterval;
+  /**
+   * Notify shows a system notification when a check finds updates, or
+   * updates ran on their own, while the window is not in front.
+   */
+  notify: boolean;
+  /**
+   * Background keeps AppShelf in the notification area when its window
+   * closes, checking as it runs.
+   */
+  background: boolean;
+  /**
+   * OpenAtLogin starts AppShelf when the user logs in: in the
+   * notification area with Background, else with its window.
+   */
+  openAtLogin: boolean;
+  /**
+   * CanBackground means this build has the notification area icon and
+   * starting at login.
+   */
+  canBackground: boolean;
+  /**
+   * SelfChecks checks for a newer AppShelf every day; SelfDownloads
+   * installs it the next time AppShelf starts, without asking.
+   */
+  selfChecks: boolean;
+  selfDownloads: boolean;
+  canSelfUpdate: boolean;
+}
+
 // ---- Services ----
 
 /**
@@ -407,7 +553,7 @@ export const Shelf = {
   },
   /**
    * Refresh checks the sources and reads the state of every app again, then
-   * what is installed: "检查更新".
+   * what is installed: "检查更新", a check for updates as Updates.Check.
    */
   refresh(): Promise<void> {
     return call("Shelf.Refresh");
@@ -602,6 +748,85 @@ export const Installed = {
 } as const;
 
 /**
+ * Updates is the updates of what AppShelf can update, one entry per
+ * package: the catalog's apps and the installed winget and scoop
+ * packages, how each is to be updated, the checks and their settings.
+ *
+ * The page names packages by their source keys only: Go finds their
+ * sources again, as Installed does, and the queue checks each again
+ * before and after it runs.
+ */
+export const Updates = {
+  /**
+   * Check checks for updates now: the catalog's states and the installed
+   * programs are read again.
+   */
+  check(): Promise<void> {
+    return call("Updates.Check");
+  },
+  /** ClearHistory forgets the updates done. */
+  clearHistory(): Promise<void> {
+    return call("Updates.ClearHistory");
+  },
+  /** History returns the updates done, newest first. */
+  history(): Promise<UpdateRecord[]> {
+    return call("Updates.History");
+  },
+  /**
+   * List returns the updates, those held back included, and the packages
+   * whose updates are not handled the default way.
+   */
+  list(): Promise<UpdateList> {
+    return call("Updates.List");
+  },
+  /** Preview says what updating the packages would do. Nothing runs. */
+  preview(keys: string[]): Promise<PreviewEntry[]> {
+    return call("Updates.Preview", keys);
+  },
+  /**
+   * Restore offers the package's updates again: no version skipped, nothing
+   * put off, not ignored. Updating on its own stays as it was.
+   */
+  restore(key: string): Promise<void> {
+    return call("Updates.Restore", key);
+  },
+  /**
+   * SetMode sets how the updates of a package are handled. A package is
+   * updated on its own only when AppShelf can do it without a window or an
+   * administrator prompt; turning it on updates it now if it has an update.
+   */
+  setMode(key: string, mode: UpdateMode): Promise<void> {
+    return call("Updates.SetMode", key, mode);
+  },
+  /** SetSettings changes the user's choices for updates and keeps them. */
+  setSettings(choices: UpdateSettings): Promise<void> {
+    return call("Updates.SetSettings", choices);
+  },
+  /** Settings returns the user's choices for updates. */
+  settings(): Promise<UpdateSettings> {
+    return call("Updates.Settings");
+  },
+  /**
+   * Skip stops offering the package's current update: its next version is
+   * offered again.
+   */
+  skip(key: string): Promise<void> {
+    return call("Updates.Skip", key);
+  },
+  /** Snooze puts off offering the package's updates for days, from 1 to 90. */
+  snooze(key: string, days: number): Promise<void> {
+    return call("Updates.Snooze", key, days);
+  },
+  /**
+   * Start queues the updates of the packages that can run, after previewing
+   * them again, and returns how many.
+   */
+  start(keys: string[]): Promise<number> {
+    return call("Updates.Start", keys);
+  },
+} as const;
+
+/**
  * About is AppShelf itself: its version and updates, its files, its
  * appearance, and opening web pages.
  */
@@ -644,4 +869,9 @@ export const About = {
 export const events = {
   /** Changed tells the pages what changed, for them to read it again. */
   changed: event<Change>("changed"),
+  /**
+   * Navigate asks the page to show one of its pages, as "updates" after a
+   * click on a notification.
+   */
+  navigate: event<string>("navigate"),
 } as const;

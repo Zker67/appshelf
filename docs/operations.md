@@ -38,8 +38,9 @@ AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\Syst
 | 路径 | 内容 |
 |---|---|
 | `%AppData%\AppShelf\catalog.json` | 软件清单，格式见 [API 与接口说明](./api.md) |
-| `%AppData%\AppShelf\state.json` | 本机状态（GitHub 安装记录） |
-| `%AppData%\AppShelf\settings.json` | 外观（跟随系统、浅色、深色） |
+| `%AppData%\AppShelf\state.json` | 本机状态（GitHub 安装记录、每个软件的更新方式、最近更新记录） |
+| `%AppData%\AppShelf\settings.json` | 外观（跟随系统、浅色、深色）；更新设置 `updates`：`checkEvery`（`off`、`1h`、`3h`、`6h`、`12h`、`24h`，默认 `6h`）、`quiet`（不发通知）、`background`（关闭窗口后留在托盘） |
+| 当前用户的 `HKCU\...\Run` 启动项 | 打开“开机时启动”后由 MyGo 写入，可在设置里关闭，或在任务管理器的“启动应用”里禁用 |
 | `%AppData%\AppShelf\logs\` | 每次安装或更新一份日志，`YYYYMMDD-HHMMSS-<install|upgrade>-<软件 ID>.log`；任务面板的“日志”按钮直接打开 |
 | `%AppData%\AppShelf\updater.json` | MyGo 更新器的设置 |
 | `%AppData%\AppShelf\window-state.json` | MyGo 记住的窗口位置和大小 |

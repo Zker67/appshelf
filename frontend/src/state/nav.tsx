@@ -3,7 +3,7 @@
 
 import { createContext, use, useCallback, useMemo, useState, type ReactNode } from "react";
 
-export type Page = "shelf" | "discover" | "installed";
+export type Page = "shelf" | "discover" | "installed" | "updates";
 
 /** A program installed outside any source, whose source is searched for. */
 export interface FindSource {

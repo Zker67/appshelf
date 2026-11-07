@@ -17,11 +17,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorText, useShelf } from "@/lib/api";
 import { sourceID } from "@/lib/shelf";
-import { Installed, Tasks, type PreviewEntry, type TaskAction } from "@/mygo";
+import { Installed, Tasks, Updates, type PreviewEntry, type TaskAction } from "@/mygo";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUpCircleIcon,
   BanIcon,
+  CirclePlayIcon,
   CircleSlashIcon,
   DownloadIcon,
   FileArchiveIcon,
@@ -37,7 +38,10 @@ export interface PreviewRequest {
   action: TaskAction;
   seq: number;
   open: boolean;
+  /** installed means ids are keys of the installed list; updates that
+   * they are source keys of the updates. */
   installed?: boolean;
+  updates?: boolean;
 }
 
 export function PreviewDialog({
@@ -55,11 +59,17 @@ export function PreviewDialog({
   const preview = useQuery({
     // Under the shelf's key: read again while the states of apps just
     // added arrive.
-    queryKey: [request?.installed ? "installed" : "shelf", "preview", request?.seq ?? 0],
+    queryKey: [
+      request?.installed || request?.updates ? "installed" : "shelf",
+      "preview",
+      request?.seq ?? 0,
+    ],
     queryFn: () =>
-      request?.installed
-        ? Installed.previewUpdates(request.ids)
-        : Tasks.preview(request?.ids ?? [], action),
+      request?.updates
+        ? Updates.preview(request.ids)
+        : request?.installed
+          ? Installed.previewUpdates(request.ids)
+          : Tasks.preview(request?.ids ?? [], action),
     enabled: open && !!request,
   });
   const { data: shelf } = useShelf();
@@ -68,15 +78,18 @@ export function PreviewDialog({
   const run = entries.filter((e) => e.runnable);
   const reading = entries.filter((e) => !e.runnable && checking.has(e.appId));
   const skipped = entries.filter((e) => !e.runnable && !checking.has(e.appId));
+  const running = run.filter((e) => e.running).length;
   const [busy, setBusy] = useState(false);
 
   const start = async () => {
     if (!request) return;
     setBusy(true);
     try {
-      const n = request.installed
-        ? await Installed.startUpdates(request.ids)
-        : await Tasks.start(request.ids, action);
+      const n = request.updates
+        ? await Updates.start(request.ids)
+        : request.installed
+          ? await Installed.startUpdates(request.ids)
+          : await Tasks.start(request.ids, action);
       toast.success(`已开始${verb} ${n} 个软件`);
       onClose();
       onStarted();
@@ -157,7 +170,11 @@ export function PreviewDialog({
         </ScrollArea>
         <DialogFooter className="mx-0 mb-0 items-center rounded-b-xl px-5 py-3.5">
           <span className="mr-auto text-xs text-muted-foreground">
-            {reading.length > 0 && run.length === 0 ? "读到状态后即可开始" : "开始前会再核对一次"}
+            {reading.length > 0 && run.length === 0
+              ? "读到状态后即可开始"
+              : running > 0
+                ? `${running} 个正在运行，更新时可能被关闭，请先保存工作`
+                : "开始前会再核对一次"}
           </span>
           <Button variant="outline" onClick={onClose}>
             取消
@@ -235,6 +252,19 @@ function Row({ entry: e, kind }: { entry: PreviewEntry; kind: "run" | "reading" 
               <span className="truncate font-mono select-text">{e.asset}</span>
               {e.release && <span className="shrink-0">（{e.release}）</span>}
             </span>
+          )}
+          {e.running && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex shrink-0 items-center gap-1 text-warning">
+                  <CirclePlayIcon className="size-3.5" />
+                  正在运行
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-72">
+                更新时它可能被关闭，请先保存正在编辑的内容
+              </TooltipContent>
+            </Tooltip>
           )}
           {e.note && (
             <Tooltip>

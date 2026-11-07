@@ -62,6 +62,15 @@ func (s *inventoryState) run(maxAge time.Duration) {
 		s.mu.Unlock()
 	}
 	s.app.note.mark(ChangedInstalled)
+	// The loop sees the reading end, as a check waits for it.
+	s.app.loop.post(func() {})
+}
+
+// busy reports whether the list is being read.
+func (s *inventoryState) busy() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loading
 }
 
 // get returns the list, and whether it was read and is being read. A list
@@ -110,9 +119,18 @@ func (s *Installed) List() InstalledList {
 	var apps []catalog.App
 	a.read(func() { apps = a.core.Catalog().Apps })
 	match := inventory.Match(list.Entries, apps)
+	pol := a.core.Store().Policies()
+	now := time.Now()
 	out := InstalledList{Entries: make([]InstalledEntry, 0, len(list.Entries)), Loaded: loaded, Loading: loading, At: list.At, Notes: list.Notes}
 	for _, e := range list.Entries {
 		entry := entryOf(e, match[e.Key])
+		if entry.Source != nil {
+			p := pol[entry.Source.Key()]
+			entry.Mode = modeOf(p.Mode)
+			if entry.Update != "" {
+				entry.Hold = holdOf(p.Hold(entry.Update, now))
+			}
+		}
 		// Refresh also retries icons which were unavailable on the previous scan.
 		entry.Icon += "?v=" + url.QueryEscape(list.At.Format(time.RFC3339Nano))
 		out.Entries = append(out.Entries, entry)

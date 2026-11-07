@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"appshelf/internal/catalog"
 	"appshelf/internal/core"
+	"appshelf/internal/source"
 	"appshelf/internal/state"
 )
 
@@ -20,6 +22,9 @@ type Shelf struct{ a *App }
 func (s *Shelf) Snapshot() ShelfSnapshot {
 	a := s.a
 	var out ShelfSnapshot
+	<-a.ready
+	pol := a.core.Store().Policies()
+	now := time.Now()
 	a.read(func() {
 		c := a.core
 		cat := c.Catalog()
@@ -28,6 +33,9 @@ func (s *Shelf) Snapshot() ShelfSnapshot {
 			sa := ShelfApp{App: app.Clone(), Checking: c.Checking(app.ID), Pending: c.Queue.Pending(app.ID), Icon: iconOf(app.Source)}
 			if st, ok := c.Status(app.ID); ok {
 				sa.Status = statusOf(st)
+				if st.State == source.UpdateAvailable {
+					sa.Hold = holdOf(pol[app.Source.Key()].Hold(st.Latest, now))
+				}
 			}
 			if app.CategoryID == "" {
 				out.Uncategorized++
@@ -48,9 +56,10 @@ func (s *Shelf) Snapshot() ShelfSnapshot {
 }
 
 // Refresh checks the sources and reads the state of every app again, then
-// what is installed: "检查更新".
+// what is installed: "检查更新", a check for updates as Updates.Check.
 func (s *Shelf) Refresh() {
-	s.a.write([]ChangeKind{ChangedShelf}, func() { s.a.core.Refresh() })
+	<-s.a.ready
+	s.a.checkNow()
 }
 
 // SaveApp adds an app, when its ID is empty, or changes one, and returns it

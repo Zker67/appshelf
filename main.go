@@ -41,7 +41,19 @@ func main() {
 	// Development builds, and copies not installed where they can be
 	// replaced, cannot update themselves.
 	var canUpdate atomic.Bool
-	shelf := api.New(api.Hooks{
+	// The window, once made: the notification area icon and notifications
+	// show it again.
+	var win atomic.Pointer[mygo.Window]
+	showWindow := func() {
+		if w := win.Load(); w != nil {
+			w.Restore()
+			w.Show()
+			w.Focus()
+		}
+	}
+	var shelf *api.App
+	bg := &tray{open: showWindow, check: func() { shelf.CheckUpdates() }}
+	shelf = api.New(api.Hooks{
 		SaveFile: func(ctx context.Context, title, name string) (string, error) {
 			return mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: mygo.CallerWindow(ctx), Title: title, DefaultPath: name, Filters: catalogFiles})
 		},
@@ -57,6 +69,27 @@ func main() {
 		CanUpdate:    canUpdate.Load,
 		CheckUpdates: updater.CheckForUpdates,
 		SetTheme:     func(t api.ThemeSource) { mygo.Theme.SetSource(mygo.ThemeSource(t)) },
+		Notify: func(title, body string) {
+			// One notification of updates at a time: a newer one replaces it.
+			n := mygo.NewNotification(mygo.NotificationOptions{ID: "appshelf-updates", Title: title, Body: body})
+			n.OnClick(func() {
+				showWindow()
+				shelf.ShowPage("updates")
+			})
+			if err := n.Show(); err != nil {
+				log.Println("notification:", err)
+			}
+		},
+		Active:         app.IsActive,
+		SetBackground:  bg.set,
+		OpenAtLogin:    app.OpenAtLogin,
+		SetOpenAtLogin: app.SetOpenAtLogin,
+		SelfAvailable:  updater.AvailableVersion,
+		SelfChecks:     func() (bool, bool) { return updater.AutomaticChecks(), updater.AutomaticDownloads() },
+		SetSelfChecks: func(checks, downloads bool) {
+			updater.SetAutomaticChecks(checks)
+			updater.SetAutomaticDownloads(downloads)
+		},
 	})
 	mygo.Bind(shelf.Services()...)
 
@@ -141,7 +174,10 @@ func main() {
 			IconBase: iconBase,
 		})
 
-		win := mygo.NewWindow(mygo.WindowOptions{
+		// Staying in the notification area, AppShelf started at login starts
+		// there, its window hidden.
+		background := api.LoadBackground(settings)
+		window := mygo.NewWindow(mygo.WindowOptions{
 			Title:           "AppShelf 软件图书馆",
 			URL:             "/",
 			Width:           1240,
@@ -152,21 +188,30 @@ func main() {
 			TitleBarStyle:   mygo.TitleBarHidden,
 			TitleBarHeight:  44,
 			BackgroundColor: "light-dark(#f4f6fb, #0b1020)",
+			Hidden:          background && app.WasOpenedAtLogin(),
 		})
+		win.Store(window)
+		bg.set(background)
+		// With the icon, closing the window hides it; quitting closes it.
+		var quitting atomic.Bool
+		app.OnBeforeQuit(func(*mygo.QuitEvent) { quitting.Store(true) })
+		window.OnClose(func(e *mygo.CloseEvent) {
+			if !quitting.Load() && bg.enabled() {
+				e.PreventDefault()
+				window.Hide()
+			}
+		})
+		updater.OnChange(shelf.SelfChanged)
 		// The page's lists have menus of their own; elsewhere only text has
 		// one, to copy and paste: a store window has no Back or Reload.
-		win.Page().OnContextMenu(func(e *mygo.ContextMenuEvent) {
+		window.Page().OnContextMenu(func(e *mygo.ContextMenuEvent) {
 			if !e.Editable && e.SelectionText == "" {
 				e.PreventDefault()
 				return
 			}
 			e.Menu.Remove(mygo.ContextMenuBack, mygo.ContextMenuForward, mygo.ContextMenuReload, mygo.ContextMenuStop, mygo.ContextMenuPrint)
 		})
-		app.OnSecondInstance(func([]string, string) {
-			win.Restore()
-			win.Show()
-			win.Focus()
-		})
+		app.OnSecondInstance(func([]string, string) { showWindow() })
 	})
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

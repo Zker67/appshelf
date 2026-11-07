@@ -20,6 +20,8 @@ interface Actions {
   /** preview shows what installing or updating apps would do, to start it. */
   preview: (ids: string[], action: TaskAction) => void;
   previewInstalledUpdates: (keys: string[]) => void;
+  /** previewUpdates previews updates of packages, by source key. */
+  previewUpdates: (keys: string[]) => void;
   /** add adds packages to the catalog with a category and tags. */
   add: (items: AddCandidate[], opts?: { install?: boolean; target?: AddTarget }) => void;
   /** edit edits an app, or adds one by hand with what is known of it. */
@@ -57,6 +59,8 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
       preview: (ids, action) => setPreview({ ids, action, seq: next(), open: true }),
       previewInstalledUpdates: (keys) =>
         setPreview({ ids: keys, action: "upgrade", installed: true, seq: next(), open: true }),
+      previewUpdates: (keys) =>
+        setPreview({ ids: keys, action: "upgrade", updates: true, seq: next(), open: true }),
       add: (items, opts) =>
         setAdd({
           items,

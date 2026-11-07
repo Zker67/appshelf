@@ -104,6 +104,11 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 
 `github` 以软件 `id` 为键，记录 AppShelf 最后一次为它安装的 release。软件的 GitHub 仓库改变或软件被删除时，对应记录一并删除。
 
+可省略的字段（按兼容规则不升级 `schemaVersion`，旧版本读取时忽略）：
+
+- `updates`：以来源 key（`winget:<id>`、`scoop:<bucket>/<name>`、`github:<owner>/<repo>`，小写）为键的更新方式 `{ "mode": "auto" | "ignore", "skip": "<跳过的版本>", "until": "<暂缓到的时间>", "name": "<名称>" }`；`mode` 省略即“提醒我”，全为默认时删除该键。按来源而不是软件 ID 记录，未加入清单的本机软件也能设置；软件从清单删除时保留。
+- `history`：最近 200 条更新记录，新的在前：`{ key, name, from, to, result: "succeeded" | "skipped" | "failed", message, auto, at }`。
+
 ## 前端接口
 
 前端（`frontend/`）只通过 `internal/api` 绑定的服务使用 Go 的能力。`go tool mygo generate` 按 Go 类型生成带类型的客户端 `frontend/src/mygo.ts`，类型名和 JSON 字段以 `internal/api/dto.go` 为准；改了服务或类型后要重新生成。
@@ -125,11 +130,17 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | | `SearchGitHub`、`Details`、`SuggestRules` | GitHub 搜索（按需）；软件详情（只用于展示）；GitHub 软件的检测规则建议（先本机已装的程序，最后是仓库名） |
 | `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的；第一次调用时开始读取 |
 | | `PreviewUpdates`、`StartUpdates` | 按已识别的本机 key 批量预览、确认后直接更新 winget / scoop 软件，不要求先加入清单 |
+| `Updates` | `List`、`Check` | 清单软件和本机 winget / scoop 软件按来源 key 合并的更新（含被搁置的，`count` 只数提供的）、更新方式不是默认的软件（`rules`）、检查时间和 AppShelf 自身的新版本；`Check` 立即检查 |
+| | `Preview`、`Start` | 按来源 key 预览和开始更新：清单里已读到状态的走 `Tasks` 的路径，其余走 `Installed` 的路径；前端只传 key，Go 重新解析来源 |
+| | `SetMode`、`Skip`、`Snooze`、`Restore` | 设为提醒 / 自动更新 / 忽略（不能自动更新时返回原因；开启时有更新立即排队）；跳过当前最新版本；暂缓 1–90 天；恢复提醒 |
+| | `History`、`ClearHistory`、`Settings`、`SetSettings` | 更新记录；检查间隔、通知、托盘、开机启动、AppShelf 自身的检查和自动下载 |
 | `About` | `Info`、`CheckForUpdates`、`OpenLogs`、`OpenDataDir`、`OpenURL`、`SetTheme` | 版本、自更新、目录、用默认浏览器打开链接（只允许 http/https）、外观 |
 
 ### 事件
 
-只有一个事件 `changed`：`{ kinds: ("shelf" | "tasks" | "sources" | "installed")[], revision }`。80 毫秒内的多次变化合并成一次。前端收到后按 `kinds` 重新读取对应数据。
+`changed`：`{ kinds: ("shelf" | "tasks" | "sources" | "installed" | "updates")[], revision }`。80 毫秒内的多次变化合并成一次。前端收到后按 `kinds` 重新读取对应数据；`shelf`、`tasks`、`installed` 也会让更新列表重新读取。
+
+`navigate`：页面名（目前只有 `"updates"`），点击系统通知后由 Go 发出，前端切到该页。
 
 ### 图标协议
 
@@ -176,3 +187,10 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 - 已在清单的软件复用原 App ID；其他目标使用由来源 key 派生的临时 ID，任务按来源身份去重，避免清单入口与本机入口重复排队。
 - 未安装、状态未知、来源不可用、来源外安装或无更新时跳过；来源不明确的本机 / 商店项不接受直接更新。原有安装入口仍要求软件在清单里。
 - 不自动创建 catalog.json、添加软件、分类或标签；更新完成后通过现有队列通知重新读取本机状态。
+
+### 自动更新
+
+- 只对更新方式为“自动更新”的软件，在一次检查结束后（或刚开启时）排队，走与手动更新相同的预览、`Upgrade` 和执行前后复查。
+- 能自动更新的条件（`autoBlock`）：来源是 winget 或 scoop；不是来源外安装；本机列表里找得到；安装范围是当前用户（注册表 HKCU；scoop 非 `--global`），同一软件同时有机器和用户两份时视为不确定；版本已知；能确定安装目录（`InstallLocation`，否则 `DisplayIcon` 所在目录，排除 Program Files、系统目录等共享目录；scoop 为 `<SCOOP>\apps\<name>`）。
+- 安装目录下有进程在运行时不排队，等下次检查；手动更新的预览会标出“正在运行”。
+- 被忽略、跳过或暂缓的更新不自动执行、不发通知；同一版本只通知一次；窗口在前台或关闭了通知时不发系统通知。

@@ -46,3 +46,23 @@ func TestCompare(t *testing.T) {
 		}
 	}
 }
+
+func TestMajorUpgrade(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"2.9.1", "3.0", true},
+		{"v1.2", "v2.0.0", true},
+		{"1.2", "1.3", false},
+		{"3.0", "2.9", false},
+		{"2025.10.1", "2026.1.0", false}, // a calendar version
+		{"", "2.0", false},
+		{"nightly", "2.0", false},
+	}
+	for _, c := range cases {
+		if got := MajorUpgrade(c.a, c.b); got != c.want {
+			t.Errorf("MajorUpgrade(%q, %q) = %v", c.a, c.b, got)
+		}
+	}
+}

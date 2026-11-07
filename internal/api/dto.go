@@ -25,6 +25,9 @@ const (
 	ChangedSources ChangeKind = "sources"
 	// ChangedInstalled is the list of installed programs.
 	ChangedInstalled ChangeKind = "installed"
+	// ChangedUpdates is the update checks, the packages' update modes and
+	// the history; the page also reads the updates again on the kinds above.
+	ChangedUpdates ChangeKind = "updates"
 )
 
 // Change tells the page what changed. Changes close together come as one.
@@ -81,6 +84,8 @@ type ShelfApp struct {
 	Pending bool `json:"pending"`
 	// Icon is the app's path on the icon scheme.
 	Icon string `json:"icon"`
+	// Hold is why its update is not offered: ignored, skipped or put off.
+	Hold UpdateHold `json:"hold,omitempty"`
 }
 
 // CategoryInfo is a category and how many apps it has.
@@ -187,6 +192,8 @@ type PreviewEntry struct {
 	Release string `json:"release,omitempty"`
 	// Note is what the source said of the app, as a limit it reached.
 	Note string `json:"note,omitempty"`
+	// Running means a program of the app runs: updating may close it.
+	Running bool `json:"running,omitempty"`
 }
 
 // TaskState is where a task is.
@@ -321,6 +328,10 @@ type InstalledEntry struct {
 	// Rule is a detection rule that finds this program, for adding it with
 	// a source found by searching.
 	Rule string `json:"rule"`
+	// Mode is how its updates are handled, of a program with a source.
+	Mode UpdateMode `json:"mode,omitempty"`
+	// Hold is why its update is not offered.
+	Hold UpdateHold `json:"hold,omitempty"`
 }
 
 // InstalledList is what is installed.

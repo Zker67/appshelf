@@ -112,7 +112,7 @@ export function ShelfDetail({
       }
       badges={
         <>
-          <StatusBadge status={status} checking={item.checking} />
+          <StatusBadge status={status} checking={item.checking} hold={item.hold} />
           <SourceBadge type={src.type} />
         </>
       }

@@ -165,6 +165,9 @@ type App struct {
 	Version string
 	Bucket  string // where it was installed from
 	Update  string // the newer version of the local buckets, when there is one
+	// Global means installed for all users, which needs administrator rights
+	// to update.
+	Global bool
 }
 
 // Installed lists what scoop installed, with the updates the local buckets
@@ -192,7 +195,8 @@ func installedApps(exp exported, st statusResult) []App {
 		if a.Name == "" {
 			continue
 		}
-		out = append(out, App{Name: a.Name, Version: a.Version, Bucket: a.Source, Update: latest[strings.ToLower(a.Name)]})
+		global := strings.Contains(strings.ToLower(a.Info), "global install")
+		out = append(out, App{Name: a.Name, Version: a.Version, Bucket: a.Source, Update: latest[strings.ToLower(a.Name)], Global: global})
 	}
 	return out
 }

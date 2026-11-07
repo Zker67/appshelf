@@ -29,6 +29,9 @@ func (t *Tasks) Preview(ids []string, action TaskAction) []PreviewEntry {
 			out = append(out, e)
 		}
 	})
+	if action == ActionUpgrade {
+		a.markRunning(out)
+	}
 	return out
 }
 

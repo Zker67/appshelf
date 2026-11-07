@@ -146,7 +146,9 @@ func (w *fakeWinget) Search(ctx context.Context, q string) ([]source.SearchResul
 	return w.results, nil
 }
 func (w *fakeWinget) Installed(context.Context, time.Duration) ([]winget.Package, time.Time, error) {
-	return w.pkgs, time.Now(), nil
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.pkgs), time.Now(), nil
 }
 func (w *fakeWinget) LatestVersion(context.Context, string) (string, error) { return "1.0", nil }
 
@@ -196,7 +198,15 @@ type env struct {
 	sources   *Sources
 	discover  *Discover
 	installed *Installed
+	updates   *Updates
 	about     *About
+
+	// notified are the notifications shown, as "title|body"; active is
+	// whether the window is in front.
+	notified []string
+	active   bool
+	// registry are entries the registry has beside Tool's.
+	registry []detect.Entry
 }
 
 func newEnv(t *testing.T) *env {
@@ -213,9 +223,21 @@ func newEnv(t *testing.T) *env {
 		SaveFile: func(context.Context, string, string) (string, error) { return e.file, nil },
 		OpenFile: func(context.Context, string) (string, error) { return e.file, nil },
 		SetTheme: func(t ThemeSource) { e.theme = t },
+		Notify: func(title, body string) {
+			e.mu.Lock()
+			e.notified = append(e.notified, title+"|"+body)
+			e.mu.Unlock()
+		},
+		Active: func() bool {
+			e.mu.Lock()
+			defer e.mu.Unlock()
+			return e.active
+		},
 	})
 	for _, s := range e.app.Services() {
 		switch s := s.(type) {
+		case *Updates:
+			e.updates = s
 		case *Shelf:
 			e.shelf = s
 		case *Tasks:
@@ -251,7 +273,10 @@ func newEnv(t *testing.T) *env {
 		Sources: SourceAPIs{Winget: e.wapi, Scoop: fakeScoop{}, GitHub: fakeGitHub{repos: []github.Repo{{FullName: "localsend/localsend", Description: "Share files", Stars: 50000}}}},
 		Details: discover.NewDetails(discover.Fetchers{}, "", ""),
 		Scan: func() ([]detect.Entry, error) {
-			return []detect.Entry{{DisplayName: "Tool 2.1 (x64)", DisplayVersion: "2.1", Publisher: "Tool Co", Name: "Tool", Scope: "Machine", Arch: "X64", Key: `HKLM\Tool`}}, nil
+			entries := []detect.Entry{{DisplayName: "Tool 2.1 (x64)", DisplayVersion: "2.1", Publisher: "Tool Co", Name: "Tool", Scope: "Machine", Arch: "X64", Key: `HKLM\Tool`}}
+			e.mu.Lock()
+			defer e.mu.Unlock()
+			return append(entries, e.registry...), nil
 		},
 		Version:  "0.2.0",
 		DataDir:  e.dir,

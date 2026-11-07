@@ -435,6 +435,56 @@
   animation: screen-glow 2.6s ease-in-out infinite;
 }
 
+/* Updates: an arrow out of a ring. Hover lifts the arrow; selected, it
+   rises again and again and the ring turns a little. */
+@keyframes arrow-lift {
+  0% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-2.4px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+@keyframes arrow-rise {
+  0%,
+  35% {
+    transform: translateY(1.6px);
+    opacity: 0.4;
+  }
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes ring-turn {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  50% {
+    transform: rotate(-18deg);
+  }
+}
+.nav-icon-updates .ring,
+.nav-icon-updates .ring-tip {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+}
+.nav-tab:hover:not([data-active="true"]) .nav-icon-updates .arrow {
+  animation: arrow-lift 0.45s var(--ease-out-soft);
+}
+.nav-tab[data-active="true"] .nav-icon-updates .arrow {
+  animation: arrow-rise 2.2s ease-in-out infinite;
+}
+.nav-tab[data-active="true"] .nav-icon-updates .ring,
+.nav-tab[data-active="true"] .nav-icon-updates .ring-tip {
+  animation: ring-turn 2.2s ease-in-out infinite;
+}
+
 /* ---- Pages: the page chosen slides in from the side of its tab. ---- */
 @keyframes page-in {
   from {

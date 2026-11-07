@@ -136,3 +136,18 @@ func TestInstallReal(t *testing.T) {
 		t.Fatalf("after installing: %+v %v", st, err)
 	}
 }
+
+func TestInstalledAppsGlobal(t *testing.T) {
+	exp, err := parseExport(exportSample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apps := installedApps(exp, statusResult{Rows: []statusRow{{Name: "git", Installed: "2.55.0", Latest: "2.56.0"}}})
+	got := map[string]App{}
+	for _, a := range apps {
+		got[a.Name] = a
+	}
+	if got["vscode"].Global != true || got["git"].Global || got["git"].Update != "2.56.0" {
+		t.Errorf("apps: %+v", apps)
+	}
+}

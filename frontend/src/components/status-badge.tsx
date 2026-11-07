@@ -1,11 +1,12 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { statusView, type Tone } from "@/lib/shelf";
-import type { AppStatus } from "@/mygo";
+import type { AppStatus, UpdateHold } from "@/mygo";
 import type { ReactNode } from "react";
 import {
   ArrowUpCircleIcon,
   BanIcon,
+  BellOffIcon,
   CheckCircle2Icon,
   CircleDashedIcon,
   CircleIcon,
@@ -48,19 +49,26 @@ export function Pill({
 export function StatusBadge({
   status,
   checking,
+  hold,
   className,
 }: {
   status: AppStatus | null;
   checking: boolean;
+  /** hold is why the app's update is held back. */
+  hold?: UpdateHold;
   className?: string;
 }) {
-  const v = statusView(status, checking);
+  const v = statusView(status, checking, hold);
   const icon = checking ? (
     <LoaderCircleIcon className="animate-spin" />
   ) : !status ? (
     <CircleDashedIcon />
   ) : status.state === "updateAvailable" ? (
-    <ArrowUpCircleIcon />
+    hold ? (
+      <BellOffIcon />
+    ) : (
+      <ArrowUpCircleIcon />
+    )
   ) : status.state === "installed" ? (
     <CheckCircle2Icon />
   ) : status.state === "notInstalled" ? (

@@ -1,5 +1,6 @@
 // The overview of Installed: how many programs, from which sources, how
-// many have updates, how many the catalog has, and how many have no source.
+// many have updates offered, how many the catalog has, and how many have no
+// source.
 // Each part opens the list on what it counts.
 
 import { AppIcon } from "@/components/app-icon";
@@ -8,6 +9,7 @@ import { SourceBadge, SourceIcon } from "@/components/source-badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { noSourceKinds, type InstalledFilter } from "@/lib/updates";
 import type { InstalledEntry, InstalledKind } from "@/mygo";
 import {
   ArrowRightIcon,
@@ -21,11 +23,8 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-/** The list an overview part opens: a source, a state, or everything. */
-export interface ListFilter {
-  kind?: InstalledKind;
-  state?: "update" | "notInShelf" | "inShelf" | "noSource";
-}
+/** The list an overview part opens: a source, a group, or everything. */
+export type ListFilter = Partial<InstalledFilter>;
 
 const kindLabels: Array<{ value: InstalledKind; label: string }> = [
   { value: "winget", label: "winget" },
@@ -52,7 +51,9 @@ export function InstalledOverview({
   onAdd: (entries: InstalledEntry[]) => void;
 }) {
   const total = entries.length;
-  const updates = entries.filter((e) => !!e.update);
+  // Updates held back, ignored or skipped, are not offered.
+  const updates = entries.filter((e) => !!e.update && !e.hold);
+  const held = entries.filter((e) => !!e.update && !!e.hold).length;
   const updatable = updates.filter((e) => e.source);
   const inShelf = entries.filter((e) => e.inShelf.length > 0).length;
   const notInShelf = entries.filter((e) => e.inShelf.length === 0);
@@ -80,9 +81,15 @@ export function InstalledOverview({
             brand
             label="可更新"
             value={updates.length}
-            hint={updates.length === 0 ? "都是最新版本" : `其中 ${updatable.length} 个可直接更新`}
+            hint={
+              updates.length > 0
+                ? `其中 ${updatable.length} 个可直接更新`
+                : held > 0
+                  ? `另有 ${held} 个已忽略`
+                  : "都是最新版本"
+            }
             index={1}
-            onClick={() => onOpen({ state: "update" })}
+            onClick={() => onOpen({ update: "update" })}
           />
           <StatTile
             icon={CircleDashedIcon}
@@ -90,7 +97,7 @@ export function InstalledOverview({
             value={notInShelf.length}
             hint={`其中 ${addable.length} 个有来源，可直接加入`}
             index={2}
-            onClick={() => onOpen({ state: "notInShelf" })}
+            onClick={() => onOpen({ shelf: "notInShelf" })}
           />
           <StatTile
             icon={CircleHelpIcon}
@@ -98,7 +105,7 @@ export function InstalledOverview({
             value={noSource}
             hint="没有 winget / scoop 来源，可查找来源"
             index={3}
-            onClick={() => onOpen({ state: "noSource" })}
+            onClick={() => onOpen({ kinds: noSourceKinds })}
           />
         </div>
 
@@ -109,7 +116,7 @@ export function InstalledOverview({
                 <button
                   key={k.value}
                   type="button"
-                  onClick={() => onOpen({ kind: k.value })}
+                  onClick={() => onOpen({ kinds: new Set([k.value]) })}
                   className="group/bar grid grid-cols-[6.5rem_1fr_auto] items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-foreground/[0.04]"
                 >
                   <span className="flex min-w-0 items-center gap-2">
@@ -158,7 +165,7 @@ export function InstalledOverview({
                 个
               </span>
               <div className="ml-auto flex items-center gap-1.5">
-                <Button variant="ghost" size="sm" onClick={() => onOpen({ state: "notInShelf" })}>
+                <Button variant="ghost" size="sm" onClick={() => onOpen({ shelf: "notInShelf" })}>
                   查看
                 </Button>
                 <Button
@@ -181,7 +188,7 @@ export function InstalledOverview({
           action={
             updates.length > 0 && (
               <div className="flex items-center gap-1.5">
-                <Button variant="ghost" size="sm" onClick={() => onOpen({ state: "update" })}>
+                <Button variant="ghost" size="sm" onClick={() => onOpen({ update: "update" })}>
                   查看全部
                   <ArrowRightIcon />
                 </Button>
@@ -220,7 +227,7 @@ export function InstalledOverview({
               {updates.length > updateRows && (
                 <button
                   type="button"
-                  onClick={() => onOpen({ state: "update" })}
+                  onClick={() => onOpen({ update: "update" })}
                   className="mt-1 rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
                 >
                   还有 {updates.length - updateRows} 个，查看全部

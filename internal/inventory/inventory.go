@@ -57,6 +57,8 @@ type Entry struct {
 	// Icon is the registry's DisplayIcon: a file, maybe with ",index".
 	Icon     string
 	Location string // the registry's InstallLocation
+	// Scope is the registry's: "Machine" or "User", when known.
+	Scope string
 	// PackageFamily is the family name of a Store entry's package.
 	PackageFamily string
 }
@@ -94,6 +96,7 @@ func Build(pkgs []winget.Package, wingetOK bool, apps []scoop.App, reg []detect.
 		e.DisplayName = r.DisplayName
 		e.Icon = r.DisplayIcon
 		e.Location = r.InstallLocation
+		e.Scope = r.Scope
 		if e.Version == "" {
 			e.Version = r.DisplayVersion
 		}
@@ -140,14 +143,18 @@ func Build(pkgs []winget.Package, wingetOK bool, apps []scoop.App, reg []detect.
 			out = append(out, Entry{
 				Key: "reg:" + strings.ToLower(r.Key), Name: r.DisplayName, Version: r.DisplayVersion,
 				Publisher: r.Publisher, Kind: Local, DisplayName: r.DisplayName,
-				Icon: r.DisplayIcon, Location: r.InstallLocation,
+				Icon: r.DisplayIcon, Location: r.InstallLocation, Scope: r.Scope,
 			})
 		}
 	}
 	for _, a := range apps {
+		scope := "User"
+		if a.Global {
+			scope = "Machine"
+		}
 		out = append(out, Entry{
 			Key: "scoop:" + strings.ToLower(a.Name), Name: a.Name, Version: a.Version,
-			Kind: Scoop, Bucket: a.Bucket, ScoopName: a.Name, Update: a.Update,
+			Kind: Scoop, Bucket: a.Bucket, ScoopName: a.Name, Update: a.Update, Scope: scope,
 		})
 	}
 	slices.SortStableFunc(out, func(a, b Entry) int {

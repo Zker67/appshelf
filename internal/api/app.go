@@ -92,6 +92,24 @@ type Hooks struct {
 	SetTheme func(ThemeSource)
 	// Emit sends a change to the pages; nil means Changed.Broadcast.
 	Emit func(Change)
+
+	// Notify shows a system notification, which shows the updates when
+	// clicked; nil shows none. Active reports whether AppShelf's window is
+	// in front, when notifications are not shown.
+	Notify func(title, body string)
+	Active func() bool
+	// SetBackground keeps AppShelf in the notification area when its
+	// window closes, or stops. OpenAtLogin and SetOpenAtLogin read and
+	// change whether it starts when the user logs in. All three or none.
+	SetBackground  func(on bool)
+	OpenAtLogin    func() bool
+	SetOpenAtLogin func(on bool) error
+	// SelfAvailable is the newer AppShelf the update window found, or "".
+	SelfAvailable func() string
+	// SelfChecks and SetSelfChecks read and change whether the update
+	// window checks every day, and installs what it finds without asking.
+	SelfChecks    func() (checks, downloads bool)
+	SetSelfChecks func(checks, downloads bool)
 }
 
 // Config is what Start needs.
@@ -120,6 +138,7 @@ type App struct {
 	cfg  Config
 	core *core.Core
 	inv  *inventoryState
+	upd  *checker
 
 	// Owned by the loop: the core's work before the last function, to
 	// see it end.
@@ -157,12 +176,13 @@ func New(hooks Hooks) *App {
 		Changed.Broadcast(c)
 	})
 	a.inv = &inventoryState{app: a}
+	a.upd = newChecker(a)
 	return a
 }
 
 // Services returns the services to bind.
 func (a *App) Services() []any {
-	return []any{&Shelf{a}, &Tasks{a}, &Sources{a}, &Discover{a}, &Installed{a}, &About{a}}
+	return []any{&Shelf{a}, &Tasks{a}, &Sources{a}, &Discover{a}, &Installed{a}, &Updates{a}, &About{a}}
 }
 
 // Post runs fn on the loop: the core's Config.Post. What the core posts
@@ -185,8 +205,12 @@ func (a *App) Start(ctx context.Context, cfg Config) {
 	a.start.Do(func() {
 		a.cfg, a.core = cfg, cfg.Core
 		a.settings = loadSettings(cfg.Settings)
+		a.upd.ctx = ctx
 		go a.loop.run(ctx, a.afterLoop)
 		close(a.ready)
+		// Reading everything as AppShelf starts is a check for updates.
+		a.upd.begin()
+		go a.upd.run(ctx)
 		a.write([]ChangeKind{ChangedShelf}, func() { a.core.Refresh() })
 		a.inv.refresh(0)
 		if cfg.Icons != nil {
@@ -229,6 +253,7 @@ func (a *App) afterLoop() {
 		a.inv.refresh(0)
 	}
 	a.wasRefreshing, a.wasRunning = refreshing, running
+	a.upd.afterLoop()
 }
 
 // remember keeps an import or a deletion under a new token, forgetting the

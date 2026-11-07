@@ -353,7 +353,7 @@ function DiscoverHelp() {
         {
           icon: PencilLineIcon,
           title: "手动添加",
-          text: "都搜不到时，可以自己填写来源。",
+          text: "搜软件名或粘贴 GitHub 仓库链接，选中就能加入。",
         },
         {
           icon: ShieldCheckIcon,

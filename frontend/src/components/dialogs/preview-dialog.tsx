@@ -124,7 +124,10 @@ export function PreviewDialog({
             )}
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea
+          className="flex min-h-0 flex-1 flex-col"
+          viewportClassName="h-auto min-h-0 flex-1"
+        >
           <div className="flex flex-col gap-4 px-3 py-3">
             {preview.isPending ? (
               <div className="flex flex-col gap-1 px-2">

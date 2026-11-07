@@ -182,7 +182,10 @@ export function AddDialog({
             )}
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea
+          className="flex min-h-0 flex-1 flex-col"
+          viewportClassName="h-auto min-h-0 flex-1"
+        >
           <div className="flex flex-col gap-5 px-5 py-4">
             <div className="flex flex-col gap-1.5">
               {drafts.map((d) => (

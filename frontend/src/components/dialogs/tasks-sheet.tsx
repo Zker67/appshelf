@@ -5,9 +5,9 @@ import { AppIcon } from "@/components/app-icon";
 import { EmptyState } from "@/components/common";
 import { Pill } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -16,7 +16,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorText, useTasks } from "@/lib/api";
 import { formatElapsed, lineKind, queueProgress, taskProgress } from "@/lib/tasks";
-import { formatDateTime } from "@/lib/text";
+import { formatClock, formatDateTime } from "@/lib/text";
 import { useTaskLog } from "@/lib/use-task-log";
 import { cn } from "@/lib/utils";
 import { Tasks, type TaskAction, type TaskEntry, type TaskState } from "@/mygo";
@@ -40,6 +40,7 @@ import {
   RotateCcwIcon,
   TerminalIcon,
   XCircleIcon,
+  XIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -74,6 +75,10 @@ async function run(what: string, fn: () => Promise<unknown>) {
   }
 }
 
+/** Clicks on these leave the panel open: its own button, and what opens over it. */
+const keepOpenOn =
+  '[data-tasks-trigger], [role="dialog"], [role="alertdialog"], [data-slot$="dialog-overlay"], [data-sonner-toaster]';
+
 export function TasksSheet({
   open,
   onOpenChange,
@@ -84,27 +89,34 @@ export function TasksSheet({
   const nav = useNav();
   const { data } = useTasks();
   const items = data?.items ?? [];
-  const count = (s: TaskState) => items.filter((t) => t.state === s).length;
-  const waiting = count("waiting");
+  const waiting = items.filter((t) => t.state === "waiting").length;
   const progress = queueProgress(items);
+  // It floats beside the pages without holding them: a click outside, Esc or
+  // its button close it, and the pages stay usable while it is open.
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
         side="right"
-        className="gap-0 data-[side=right]:top-[var(--mygo-titlebar-height,44px)] data-[side=right]:h-[calc(100%-var(--mygo-titlebar-height,44px))] data-[side=right]:w-[480px] data-[side=right]:sm:max-w-[calc(100vw-4rem)]"
+        showCloseButton={false}
+        onPointerDownOutside={(e) => {
+          const target = e.detail.originalEvent.target;
+          if (target instanceof Element && target.closest(keepOpenOn)) e.preventDefault();
+        }}
+        onFocusOutside={(e) => e.preventDefault()}
+        className="glass-float top-[calc(var(--mygo-titlebar-height,44px)+0.5rem)]! right-2! bottom-auto! h-auto! max-h-[calc(100%-var(--mygo-titlebar-height,44px)-1rem)]! w-[460px]! max-w-[calc(100vw-1rem)]! gap-0 overflow-hidden rounded-xl border-0! bg-(--glass-float)"
       >
-        <SheetHeader className="gap-2 border-b px-5 pt-4 pb-3.5">
-          <SheetTitle className="flex items-center gap-2 text-base">
+        <SheetHeader className="relative flex-row items-center gap-2 border-b py-2.5 pr-2.5 pl-4">
+          <SheetTitle className="flex shrink-0 items-center gap-2 text-base">
             <ListChecksIcon className="size-5 text-primary" />
             任务
-            {progress.total > 0 && (
-              <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">
-                {progress.done}/{progress.total}
-              </span>
-            )}
           </SheetTitle>
           <SheetDescription asChild>
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5 tabular-nums">
+              {progress.total > 0 && (
+                <span className="text-sm text-muted-foreground">
+                  {progress.done}/{progress.total}
+                </span>
+              )}
               {data?.running && (
                 <Pill tone="primary">
                   <LoaderCircleIcon className="animate-spin" />
@@ -117,14 +129,12 @@ export function TasksSheet({
                   已停止
                 </Pill>
               )}
-              <Pill tone="muted">
-                <ClockIcon />
-                等待 {waiting}
-              </Pill>
-              <Pill tone="success">
-                <CheckCircle2Icon />
-                成功 {count("succeeded")}
-              </Pill>
+              {!progress.active && progress.total > 0 && progress.failed === 0 && (
+                <Pill tone="success">
+                  <CheckCircle2Icon />
+                  全部完成
+                </Pill>
+              )}
               {progress.failed > 0 && (
                 <Pill tone="danger">
                   <XCircleIcon />
@@ -133,28 +143,10 @@ export function TasksSheet({
               )}
             </div>
           </SheetDescription>
-          {progress.total > 0 && (
-            <div
-              className="h-1 overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-              aria-label="整体进度"
-              aria-valuemin={0}
-              aria-valuemax={progress.total}
-              aria-valuenow={progress.done}
-            >
-              <div
-                className={cn(
-                  "h-full rounded-full transition-[width] duration-500 ease-out",
-                  progress.failed > 0 && !progress.active ? "bg-destructive/70" : "bg-primary",
-                )}
-                style={{ width: `${(progress.done / progress.total) * 100}%` }}
-              />
-            </div>
-          )}
-          <div className="flex items-center gap-1.5 pt-1">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {data?.running ? (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 disabled={data.stopping}
                 onClick={() => run("停止", () => Tasks.stop())}
@@ -163,26 +155,49 @@ export function TasksSheet({
                 停止
               </Button>
             ) : (
+              waiting > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-primary"
+                  onClick={() => run("继续", () => Tasks.resume())}
+                >
+                  <PlayIcon />
+                  继续
+                </Button>
+              )
+            )}
+            {progress.done > 0 && (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                disabled={waiting === 0}
-                onClick={() => run("继续", () => Tasks.resume())}
+                onClick={() => run("清除", () => Tasks.clearDone())}
               >
-                <PlayIcon />
-                继续
+                <BrushCleaningIcon />
+                清除已完成
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={progress.done === 0}
-              onClick={() => run("清除", () => Tasks.clearDone())}
-            >
-              <BrushCleaningIcon />
-              清除已完成
-            </Button>
+            <SheetClose asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="关闭">
+                <XIcon />
+              </Button>
+            </SheetClose>
           </div>
+          {progress.active && (
+            <div
+              className="absolute inset-x-0 -bottom-px h-0.5 overflow-hidden"
+              role="progressbar"
+              aria-label="整体进度"
+              aria-valuemin={0}
+              aria-valuemax={progress.total}
+              aria-valuenow={progress.done}
+            >
+              <div
+                className="h-full rounded-r-full bg-primary transition-[width] duration-500 ease-out"
+                style={{ width: `${(progress.done / progress.total) * 100}%` }}
+              />
+            </div>
+          )}
         </SheetHeader>
         {items.length === 0 ? (
           <EmptyState icon={ListChecksIcon} title="没有任务">
@@ -198,17 +213,24 @@ export function TasksSheet({
             </Button>
           </EmptyState>
         ) : (
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="flex flex-col gap-1.5 p-3">
+          <div className="min-h-0 flex-auto overflow-y-auto [scrollbar-width:thin]">
+            <div className="flex flex-col gap-1 p-2">
               {items.map((t) => (
                 <TaskRow key={t.id} task={t} />
               ))}
             </div>
-          </ScrollArea>
+          </div>
         )}
       </SheetContent>
     </Sheet>
   );
+}
+
+/** endedAt writes when a task ended: the time alone today, the date too before. */
+function endedAt(value: string | undefined): string {
+  const full = formatDateTime(value);
+  if (!full || !value) return "";
+  return new Date(value).toDateString() === new Date().toDateString() ? formatClock(value) : full;
 }
 
 /** useNow is the time, every second while on. */
@@ -237,25 +259,19 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
   const started = t.started ? new Date(t.started).getTime() : 0;
   const elapsed = running && started ? formatElapsed((now - started) / 1000) : "";
   const progress = taskProgress(t);
-  const ended = formatDateTime(t.ended);
+  const ended = endedAt(t.ended);
   return (
     <div
       className={cn(
-        "anim-rise relative overflow-hidden rounded-xl border bg-card p-3 shadow-xs transition-colors",
-        running && "border-primary/35",
-        failed && "border-destructive/30",
+        "anim-rise rounded-lg px-3 py-2.5 transition-colors hover:bg-hover",
+        running && "bg-primary/6 hover:bg-primary/8",
+        failed && "bg-destructive/6 hover:bg-destructive/8",
       )}
     >
       <div className="flex items-start gap-3">
         <AppIcon path={t.icon} name={t.name} size={36} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium">{t.name}</span>
-            <Pill tone={st.tone} className="ml-auto">
-              <Icon className={running ? "animate-spin" : undefined} />
-              {st.label(t.action)}
-            </Pill>
-          </div>
+          <div className="truncate text-sm font-medium">{t.name}</div>
           {running && (
             <div className="mt-2 flex flex-col gap-1.5">
               <div className="flex items-baseline gap-2 text-xs">
@@ -282,8 +298,11 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
             </div>
           )}
           <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground tabular-nums">
-            {!running && ended && <span>结束 {ended}</span>}
-            {t.state === "waiting" && <span>排队中</span>}
+            <Pill tone={st.tone}>
+              <Icon className={running ? "animate-spin" : undefined} />
+              {st.label(t.action)}
+            </Pill>
+            {!running && ended && <span>{ended}</span>}
             <span className="ml-auto flex items-center gap-0.5">
               {t.leftovers && (
                 <Tooltip>

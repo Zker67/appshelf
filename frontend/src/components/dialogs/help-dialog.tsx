@@ -57,7 +57,7 @@ export function HelpDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(640px,calc(100vh-6rem))] flex-col gap-0 p-0 sm:max-w-4xl">
+      <DialogContent className="flex h-[min(640px,calc(100vh-6rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="border-b px-5 py-3.5">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <CircleHelpIcon className="size-5 text-primary" />
@@ -81,7 +81,7 @@ export function HelpDialog({
               </TabsTrigger>
             ))}
           </TabsList>
-          <ScrollArea className="min-h-0 flex-1 bg-background">
+          <ScrollArea className="min-h-0 flex-1">
             <div className="px-6 py-5">
               {tabs.map(({ value, body: Body }) => (
                 <TabsContent key={value} value={value} className="flex flex-col gap-6">

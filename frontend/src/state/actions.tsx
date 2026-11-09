@@ -35,6 +35,8 @@ interface Actions {
   /** editNote writes an app's own note. */
   editNote: (item: ShelfApp) => void;
   openTasks: () => void;
+  /** toggleTasks opens the task panel, or closes it when open. */
+  toggleTasks: () => void;
   openSettings: (tab?: SettingsTab) => void;
   openHelp: () => void;
 }
@@ -90,6 +92,7 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
           open: true,
         }),
       openTasks: () => setTasks(true),
+      toggleTasks: () => setTasks((open) => !open),
       openSettings: (tab) => setSettings({ tab: tab ?? "sources" }),
       openHelp: () => setHelp(true),
     }),

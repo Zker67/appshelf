@@ -1102,15 +1102,21 @@ body:has(
   animation-timing-function: var(--ease-spring);
 }
 
-/* Dialogs and the side sheet: the window dims and blurs behind them. */
+/* Dialogs and the side sheet: the window dims and blurs behind them, below
+   the title bar, which stays clear along with the window's own buttons. */
 :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"]) {
+  top: var(--mygo-titlebar-height, 44px);
   background-color: var(--scrim);
   backdrop-filter: blur(6px) saturate(1.2);
   animation-duration: 0.24s;
 }
-/* Dialogs are solid, for their long text to stay crisp; their rim and
-   shadow keep them of a piece with the glass. */
+/* Centred in what the scrim covers, not in the whole window. */
 :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
+  margin-top: calc(var(--mygo-titlebar-height, 44px) / 2);
+}
+/* Dialogs and the task panel are floating glass, like the menus; their rim
+   and shadow keep them of a piece with the panels. */
+:is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"]) {
   box-shadow:
     0 0 0 1px var(--glass-edge),
     inset 0 1px 0 var(--rim-hi),

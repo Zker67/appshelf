@@ -183,7 +183,8 @@ function Tools() {
         variant="ghost"
         size="sm"
         className="gap-1.5 text-muted-foreground hover:text-foreground"
-        onClick={actions.openTasks}
+        data-tasks-trigger=""
+        onClick={actions.toggleTasks}
       >
         {progress.active ? (
           <ProgressRing

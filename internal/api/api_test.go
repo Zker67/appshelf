@@ -16,6 +16,7 @@ import (
 	"appshelf/internal/core"
 	"appshelf/internal/detect"
 	"appshelf/internal/discover"
+	"appshelf/internal/jsonfile"
 	"appshelf/internal/source"
 	"appshelf/internal/source/github"
 	"appshelf/internal/source/scoop"
@@ -264,7 +265,8 @@ type env struct {
 	uninst *fakeUninstaller
 }
 
-func newEnv(t *testing.T) *env {
+// newEnv starts AppShelf on fakes; opts change its Config first.
+func newEnv(t *testing.T, opts ...func(*Config)) *env {
 	t.Helper()
 	e := &env{t: t, dir: t.TempDir()}
 	e.app = New(Hooks{
@@ -326,7 +328,7 @@ func newEnv(t *testing.T) *env {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	e.app.Start(ctx, Config{
+	cfg := Config{
 		Core:    c,
 		Sources: SourceAPIs{Winget: e.wapi, Scoop: fakeScoop{}, GitHub: e.gh},
 		Details: discover.NewDetails(discover.Fetchers{}, "", ""),
@@ -343,7 +345,11 @@ func newEnv(t *testing.T) *env {
 
 		TokenFile: filepath.Join(e.dir, "github-token.bin"),
 		EnvToken:  "ghp_fromenv",
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	e.app.Start(ctx, cfg)
 	e.until(func() bool { return !e.shelf.Snapshot().Refreshing })
 	e.until(func() bool { l := e.installed.List(); return l.Loaded && !l.Partial })
 	return e
@@ -517,19 +523,9 @@ func TestTasks(t *testing.T) {
 	if err != nil || len(res.Added) != 2 {
 		t.Fatal(res, err)
 	}
-	e.until(func() bool {
-		for _, a := range e.shelf.Snapshot().Apps {
-			if a.Status == nil || a.Checking {
-				return false
-			}
-		}
-		return true
-	})
-	prev := e.tasks.Preview(res.Added, ActionInstall)
-	if len(prev) != 2 || !prev[0].Runnable || prev[0].Plan != "安装" || prev[1].Runnable || prev[0].Icon != "/w/New.App" {
-		t.Fatalf("preview = %+v", prev)
-	}
-	n, err := e.tasks.Start(res.Added, ActionInstall)
+	// Started at once, while the states of the apps just added are read:
+	// Start waits for them, installs New and skips Has, installed already.
+	n, err := e.tasks.Start(context.Background(), res.Added, ActionInstall)
 	if err != nil || n != 1 {
 		t.Fatalf("start = %d, %v", n, err)
 	}
@@ -538,7 +534,7 @@ func TestTasks(t *testing.T) {
 		return len(l.Items) == 1 && l.Items[0].State == TaskSucceeded && !l.Running
 	})
 	item := e.tasks.List().Items[0]
-	if item.Name != "New" || item.Action != ActionInstall || !item.HasLog || item.Started.IsZero() {
+	if item.Name != "New" || item.Icon != "/w/New.App" || item.Action != ActionInstall || !item.HasLog || item.Started.IsZero() {
 		t.Errorf("task = %+v", item)
 	}
 	if err := e.tasks.OpenLog(item.ID); err != nil || len(e.opened) != 1 {
@@ -558,7 +554,7 @@ func TestTasks(t *testing.T) {
 	if len(e.tasks.List().Items) != 0 {
 		t.Error("done tasks not cleared")
 	}
-	if _, err := e.tasks.Start(res.Added[1:], ActionInstall); err == nil {
+	if _, err := e.tasks.Start(context.Background(), res.Added[1:], ActionInstall); err == nil {
 		t.Error("an installed app queued")
 	}
 	e.until(func() bool {
@@ -841,5 +837,42 @@ func TestLoopPanics(t *testing.T) {
 	a.read(func() { ran = true })
 	if !ran {
 		t.Error("loop stopped")
+	}
+}
+
+// TestInstalledCache keeps the list read for the next run, which shows it
+// at once while it reads the list again; a removal waits for that reading.
+func TestInstalledCache(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "installed.json")
+	e := newEnv(t, func(c *Config) { c.InstalledCache = path })
+	var kept inventoryCache
+	if err := jsonfile.Read(path, &kept); err != nil || kept.Version != cacheVersion || len(kept.List.Entries) != len(e.installed.List().Entries) {
+		t.Fatalf("kept list: %+v %v", kept, err)
+	}
+
+	next := New(Hooks{})
+	next.cfg = Config{InstalledCache: path}
+	next.inv.restore()
+	list, loaded, _ := next.inv.get()
+	if !loaded || len(list.Entries) != len(kept.List.Entries) || list.Entries[0].Reg == nil && kept.List.Entries[0].Reg != nil {
+		t.Fatalf("restored: loaded %v, %+v", loaded, list)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if _, err := next.inv.fresh(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a removal used the earlier run's list: %v", err)
+	}
+
+	// A file of another version, or none, shows nothing.
+	if err := jsonfile.WriteAtomic(path, inventoryCache{Version: cacheVersion + 1, List: kept.List}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{path, filepath.Join(filepath.Dir(path), "missing.json")} {
+		other := New(Hooks{})
+		other.cfg = Config{InstalledCache: p}
+		other.inv.restore()
+		if other.inv.loaded {
+			t.Errorf("restored %s", filepath.Base(p))
+		}
 	}
 }

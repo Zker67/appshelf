@@ -24,6 +24,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 |---|---|
 | `icons/` | UniGetUI 图标库 `database.json`（每周检查一次更新）、下载的图标（按地址的 SHA-256 命名），以及失败标记 `.fail`（24 小时内不再重试） |
 | `details/` | 软件详情：winget 7 天、scoop 1 天、GitHub 1 小时；GitHub 读不到 release 时不缓存 |
+| `installed.json` | 上次读到的本机已装列表（含大小、上次打开时间、注册表项）。启动时先显示它，同时照常重新读取，读完后替换并写回；卸载只用这次重新读到的列表，不用缓存里可能过期的卸载命令 |
 
 ### 软件清单 `catalog.json`（schemaVersion 1）
 
@@ -124,7 +125,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | | `SetCategory`、`SetTag`、`Add/Rename/DeleteCategory`、`Add/Rename/DeleteTag` | 批量设分类、加或去标签；分类和标签的管理 |
 | | `SetNote` | 改一个软件的备注（Markdown），返回保存后的内容，空字符串即删除；不重新读取本机状态。`SaveApp` 编辑已有软件时保留原备注，只有新建时采用传入的备注 |
 | | `Export`、`ReadImport`、`ApplyImport` | 导出到用户选择的文件；导入先读文件返回合并预览和令牌，确认后再合并 |
-| `Tasks` | `Preview`、`Start` | 预览每个软件将安装、更新还是跳过及原因；`Start` 重新预览后只把可执行的加入队列，没有可执行的返回错误。动作只接受 `install`、`upgrade`；`uninstall` 只能经 `Installed.StartUninstall` 加入 |
+| `Tasks` | `Start` | 安装、更新不预览，界面点了就调用：先等正在读取的状态（如刚加入的软件，最多 2 分钟），再逐个核对，只把可执行的加入队列，没有可执行的返回错误。动作只接受 `install`、`upgrade`；`uninstall` 只能经 `Installed.StartUninstall` 加入 |
 | | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列。每项有动作（`install`、`upgrade`、`uninstall`）、状态、阶段 `stage`（如“正在下载”）和下载字节 `done` / `total`（未知时省略）；`interactive` 表示这个失败的卸载可以用卸载程序窗口重试，`leftovers` 表示这个成功的卸载可以查找残留 |
 | | `RetryInteractive(id)` | 失败的卸载改为打开卸载程序窗口再执行一次（winget 用 `--interactive`，注册表程序用不带静默参数的卸载命令） |
 | | `Log(id, from)` | 应用内日志：从第 `from` 行起的整理后的行 `lines`、实际起点 `start`（更早的行已丢弃时大于 `from`）、下次的游标 `next`、还在刷新的当前行 `live`、任务是否结束 `done`。内存里每个任务最多保留最后 2000 行，完整内容用 `OpenLog` 打开日志文件 |
@@ -135,12 +136,12 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `Discover` | `Search(query, Channel<SearchBatch>)` | winget 和 scoop 并行搜索，每个来源的结果一到就发出；新的搜索取消上一次。winget 先发不带版本的结果，读到版本后同一来源再发一次（前端按来源整批替换）；各来源结果缓存 10 分钟 |
 | | `Warm()` | 页面显示时调用，立即返回；在后台启动 winget 搜索用的 PowerShell 并打开 winget 源，让第一次搜索也快 |
 | | `SearchGitHub`、`Details`、`SuggestRules` | GitHub 搜索（按需）；软件详情（只用于展示）；GitHub 软件的检测规则建议（先本机已装的程序，最后是仓库名） |
-| `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的，带注册表里的大小 `size`、安装日期 `installed`（`YYYY-MM-DD`）和安装目录 `location`；第一次调用时开始读取，先给出只含注册表的列表（`partial` 为真），读完 winget、scoop 和应用商店后替换。AppShelf 之外安装或卸载软件时自动重读 |
-| | `PreviewUpdates`、`StartUpdates` | 按已识别的本机 key 批量预览、确认后直接更新 winget / scoop 软件，不要求先加入清单 |
+| `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的，带注册表里的大小 `size`、安装日期 `installed`（`YYYY-MM-DD`）、安装目录 `location` 和上次打开时间 `lastUsed`（`internal/usage`，没有记录时省略；列表的 `usageTracked` 为假表示 Windows 没有记录程序启动）；第一次调用时开始读取，先给出只含注册表的列表（`partial` 为真），读完 winget、scoop 和应用商店后替换。AppShelf 之外安装或卸载软件时自动重读 |
+| | `StartUpdates` | 按已识别的本机 key 直接更新 winget / scoop 软件，不要求先加入清单；核对当前状态后只排队能更新的 |
 | | `PreviewUninstall(keys)` | 按本机 key 预览卸载，什么都不执行：卸载方式 `method`（winget、scoop、应用商店、卸载程序）、安装程序类型 `installer`、命令 `command`、是否静默 `quiet`、能否执行 `runnable` 和原因 `plan`、提示 `notes`（正在运行、需要管理员权限、运行库等）、卸载程序的签名 `signer` / `signed`、对应的清单软件 `inShelf` |
 | | `StartUninstall(keys)` | 重新预览后把能卸载的加入队列，一个都不能时返回原因；清单里的软件保留，卸载后重读它的状态 |
 | `Updates` | `List`、`Check` | 清单软件和本机 winget / scoop 软件按来源 key 合并的更新（含被搁置的，`count` 只数提供的）、更新方式不是默认的软件（`rules`）、检查时间和 AppShelf 自身的新版本；`Check` 立即检查 |
-| | `Preview`、`Start` | 按来源 key 预览和开始更新：清单里已读到状态的走 `Tasks` 的路径，其余走 `Installed` 的路径；前端只传 key，Go 重新解析来源 |
+| | `Start` | 按来源 key 开始更新：清单里已读到状态的走 `Tasks` 的路径，其余走 `Installed` 的路径；前端只传 key，Go 重新解析来源 |
 | | `SetMode`、`Skip`、`Snooze`、`Restore` | 设为提醒 / 自动更新 / 忽略（不能自动更新时返回原因；开启时有更新立即排队）；跳过当前最新版本；暂缓 1–90 天；恢复提醒 |
 | | `History`、`ClearHistory`、`Settings`、`SetSettings` | 更新记录；检查间隔、通知、托盘、开机启动、AppShelf 自身的检查和自动下载 |
 | `About` | `Info`、`CheckForUpdates`、`OpenLogs`、`OpenDataDir`、`OpenURL`、`SetTheme` | 版本、自更新、目录、用默认浏览器打开链接（只允许 http/https）、外观 |
@@ -204,8 +205,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 
 ### 本机直接更新
 
-- `Installed.PreviewUpdates(keys)`：只接受本机列表 key，Go 端解析精确 winget / scoop 来源，分组批量读取当前状态，返回现有 PreviewEntry；不写清单。
-- `Installed.StartUpdates(keys)`：重新解析和检查后，只以 Upgrade 动作加入共享队列；执行前后复查，失败可重试。
+- `Installed.StartUpdates(keys)`：只接受本机列表 key，Go 端解析精确 winget / scoop 来源，分组批量读取当前状态，只以 Upgrade 动作加入共享队列；执行前后复查，失败可重试。
 - 已在清单的软件复用原 App ID；其他目标使用由来源 key 派生的临时 ID，任务按来源身份去重，避免清单入口与本机入口重复排队。
 - 未安装、状态未知、来源不可用、来源外安装或无更新时跳过；来源不明确的本机 / 商店项不接受直接更新。原有安装入口仍要求软件在清单里。
 - 不自动创建 catalog.json、添加软件、分类或标签；更新完成后通过现有队列通知重新读取本机状态。
@@ -214,5 +214,5 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 
 - 只对更新方式为“自动更新”的软件，在一次检查结束后（或刚开启时）排队，走与手动更新相同的预览、`Upgrade` 和执行前后复查。
 - 能自动更新的条件（`autoBlock`）：来源是 winget 或 scoop；不是来源外安装；本机列表里找得到；安装范围是当前用户（注册表 HKCU；scoop 非 `--global`），同一软件同时有机器和用户两份时视为不确定；版本已知；能确定安装目录（`InstallLocation`，否则 `DisplayIcon` 所在目录，排除 Program Files、系统目录等共享目录；scoop 为 `<SCOOP>\apps\<name>`）。
-- 安装目录下有进程在运行时不排队，等下次检查；手动更新的预览会标出“正在运行”。
+- 安装目录下有进程在运行时不排队，等下次检查。手动更新不弹预览，正在运行的软件可能在更新时被关闭。
 - 被忽略、跳过或暂缓的更新不自动执行、不发通知；同一版本只通知一次；窗口在前台或关闭了通知时不发系统通知。

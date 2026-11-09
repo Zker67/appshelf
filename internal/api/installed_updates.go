@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"appshelf/internal/catalog"
-	"appshelf/internal/core"
 	"appshelf/internal/inventory"
 	"appshelf/internal/queue"
 )
@@ -62,25 +61,6 @@ func (s *Installed) updateApps(keys []string) ([]catalog.App, error) {
 		apps = append(apps, app)
 	}
 	return apps, nil
-}
-
-// PreviewUpdates checks current source state without changing the catalog.
-func (s *Installed) PreviewUpdates(ctx context.Context, keys []string) ([]PreviewEntry, error) {
-	apps, err := s.updateApps(keys)
-	if err != nil {
-		return nil, err
-	}
-	out := updateEntries(s.a.core.PreviewUpdates(ctx, apps))
-	s.a.markRunning(out)
-	return out, nil
-}
-
-func updateEntries(items []core.PreviewItem) []PreviewEntry {
-	out := make([]PreviewEntry, 0, len(items))
-	for _, item := range items {
-		out = append(out, PreviewEntry{AppID: item.App.ID, Name: item.App.Name, Icon: iconOf(item.App.Source), Runnable: item.Runnable, Plan: item.Plan, Source: item.App.Source, Note: item.Status.Note})
-	}
-	return out
 }
 
 // StartUpdates resolves and checks the targets again, then uses only Upgrade.

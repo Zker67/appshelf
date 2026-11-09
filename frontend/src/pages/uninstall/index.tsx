@@ -1,5 +1,5 @@
 // Uninstall: the programs of this machine weighed for removal, by the room
-// they take and how long ago they were installed; removed one by one or
+// they take and how long ago they were last opened; removed one by one or
 // several at once, each previewed first. The removals of this run follow,
 // with what they left behind to look for.
 
@@ -25,10 +25,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { errorText, useInstalled, useTasks } from "@/lib/api";
 import { formatBytes, matches } from "@/lib/text";
 import {
-  ageBand,
   ageText,
   allRemoval,
   isAllRemoval,
+  localDate,
   removalMatches,
   removalTasks,
   removing,
@@ -36,10 +36,11 @@ import {
   sizeShare,
   sortForRemoval,
   totalSize,
-  type AgeBand,
+  useBand,
   type RemovalFilter,
   type RemovalSort,
   type SizeBand,
+  type UseBand,
 } from "@/lib/uninstall";
 import { revealRow, useList, usePageKeys } from "@/lib/use-list";
 import { cn } from "@/lib/utils";
@@ -53,11 +54,12 @@ import {
 } from "@/mygo";
 import { useActions } from "@/state/actions";
 import {
+  ActivityIcon,
   AppWindowIcon,
   ArrowDownWideNarrowIcon,
   CalendarClockIcon,
-  CalendarPlusIcon,
   CheckCircle2Icon,
+  CircleDashedIcon,
   CircleHelpIcon,
   CircleSlashIcon,
   ClockIcon,
@@ -83,8 +85,8 @@ import { toast } from "sonner";
 
 const sortItems: Array<{ value: RemovalSort; label: string }> = [
   { value: "size", label: "占用空间" },
-  { value: "oldest", label: "最早安装" },
-  { value: "newest", label: "最近安装" },
+  { value: "unused", label: "久未打开" },
+  { value: "recent", label: "最近打开" },
   { value: "name", label: "名称" },
 ];
 
@@ -109,11 +111,11 @@ const sizeItems: Array<Band<SizeBand>> = [
   { value: "unknown", label: "大小未知", icon: CircleHelpIcon, tone: "text-muted-foreground" },
 ];
 
-const ageItems: Array<Band<AgeBand>> = [
-  { value: "recent", label: "30 天内", icon: CalendarPlusIcon, tone: "text-primary" },
-  { value: "year", label: "1 年内", icon: CalendarClockIcon, tone: "text-primary" },
-  { value: "old", label: "1 年以前", icon: HourglassIcon, tone: "text-warning" },
-  { value: "unknown", label: "日期未知", icon: CircleHelpIcon, tone: "text-muted-foreground" },
+const useItems: Array<Band<UseBand>> = [
+  { value: "month", label: "一个月内打开过", icon: ActivityIcon, tone: "text-success" },
+  { value: "months", label: "1–6 个月没打开", icon: CalendarClockIcon, tone: "text-primary" },
+  { value: "stale", label: "半年以上没打开", icon: HourglassIcon, tone: "text-warning" },
+  { value: "never", label: "没有打开记录", icon: CircleDashedIcon, tone: "text-muted-foreground" },
 ];
 
 const kindItems: Array<{ value: InstalledKind; label: string }> = [
@@ -172,7 +174,7 @@ export function UninstallPage() {
     const off: Partial<RemovalFilter> = {};
     if (patch.kinds) off.kinds = new Set();
     if (patch.size) off.size = "all";
-    if (patch.age) off.age = "all";
+    if (patch.used) off.used = "all";
     setFilter((f) => ({ ...f, ...(active ? off : patch) }));
     setView("list");
   };
@@ -220,18 +222,6 @@ export function UninstallPage() {
   const loading = isPending || (!data?.loaded && entries.length === 0);
   const shownSize = totalSize(shown);
   const chosenSize = totalSize(selected);
-  const title =
-    view === "history"
-      ? "最近卸载"
-      : isAllRemoval(filter)
-        ? "全部程序"
-        : [
-            ...kindItems.filter((k) => filter.kinds.has(k.value)).map((k) => k.label),
-            sizeItems.find((s) => s.value === filter.size)?.label,
-            ageItems.find((a) => a.value === filter.age)?.label,
-          ]
-            .filter(Boolean)
-            .join(" · ");
 
   return (
     <ResizablePanelGroup
@@ -287,23 +277,27 @@ export function UninstallPage() {
                     );
                   })}
               </SideGroup>
-              <SideGroup title="安装时间">
-                {ageItems
-                  .filter((a) => a.value !== "unknown" || countWith({ age: "unknown" }) > 0)
-                  .map((a) => {
-                    const active = view === "list" && filter.age === a.value;
-                    return (
-                      <SideRow
-                        key={a.value}
-                        icon={a.icon}
-                        iconClass={a.tone}
-                        label={a.label}
-                        count={countWith({ age: a.value })}
-                        active={active}
-                        onClick={() => choose({ age: a.value }, active)}
-                      />
-                    );
-                  })}
+              <SideGroup title="上次打开">
+                {useItems.map((u) => {
+                  const active = view === "list" && filter.used === u.value;
+                  return (
+                    <SideRow
+                      key={u.value}
+                      icon={u.icon}
+                      iconClass={u.tone}
+                      label={u.label}
+                      count={countWith({ used: u.value })}
+                      active={active}
+                      onClick={() => choose({ used: u.value }, active)}
+                    />
+                  );
+                })}
+                {data?.loaded && !data.partial && !data.usageTracked && (
+                  <p className="px-2.5 pt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    Windows 没有记录程序的打开。可在“设置 › 隐私和安全性 › 常规”里打开“允许 Windows
+                    跟踪应用启动”
+                  </p>
+                )}
               </SideGroup>
               <SideGroup title="来源">
                 {kindItems
@@ -338,7 +332,6 @@ export function UninstallPage() {
         <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 truncate text-sm font-semibold">{title}</span>
               {view === "list" ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -537,8 +530,8 @@ function ProgramRow({
   onUninstall: () => void;
 }) {
   const band = sizeBand(e.size);
-  const age = ageText(e.installed, now);
-  const old = ageBand(e.installed, now) === "old";
+  const used = ageText(e.lastUsed, now);
+  const stale = useBand(e.lastUsed, now) === "stale";
   return (
     <div
       data-row={e.key}
@@ -603,13 +596,15 @@ function ProgramRow({
         </span>
       </div>
       <div className="hidden w-[92px] shrink-0 flex-col items-end gap-0.5 @[640px]:flex">
-        {e.installed ? (
+        {e.lastUsed ? (
           <>
-            <span className={cn("text-xs tabular-nums", old && "text-warning")}>{age}</span>
-            <span className="text-[11px] text-muted-foreground tabular-nums">{e.installed}</span>
+            <span className={cn("text-xs tabular-nums", stale && "text-warning")}>{used}打开</span>
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              {localDate(e.lastUsed)}
+            </span>
           </>
         ) : (
-          <span className="text-xs text-muted-foreground/60">日期未知</span>
+          <span className="text-xs text-muted-foreground/60">没有打开记录</span>
         )}
       </div>
       <div className="flex w-[84px] shrink-0 justify-end">

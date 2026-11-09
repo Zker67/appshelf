@@ -8,7 +8,7 @@ AppShelf 的全部业务代码。分层和依赖方向见 [项目结构总览](.
 | [inventory](./inventory) | `inventory.go` | 本机已装程序：合并 winget、scoop、注册表和应用商店应用（带大小、安装日期和注册表项），与清单对照，见 [inventory/README.md](./inventory/README.md) | 单元测试，加一次真实的只读读取 |
 | [discover](./discover) | `rank.go`、`details.go`、`suggest.go` | 搜索结果排序、软件详情（带缓存）、GitHub 软件的检测规则建议，见 [discover/README.md](./discover/README.md) | 单元测试，加真实读取 VS Code 的详情 |
 | [icons](./icons) | `icons.go`、`database.go`、`fetch.go` | 图标协议：图标库、本机图标、GitHub 头像，下载和缓存，见 [icons/README.md](./icons/README.md) | 单元测试，加真实下载图标库 |
-| [core](./core) | `core.go`、`uninstall.go` | 打开清单和本机状态（损坏的文件改名留存），并行读取各来源状态、套用检测规则，保存编辑，导入导出，安装预览、清单外软件的批量更新预览（[updates.go](./core/updates.go)）、卸载预览和排队（[uninstall.go](./core/uninstall.go)），以及队列的执行者 | 假来源和临时目录 |
+| [core](./core) | `core.go`、`uninstall.go` | 打开清单和本机状态（损坏的文件改名留存），并行读取各来源状态、套用检测规则，保存编辑，导入导出，开始安装和更新前的核对、清单外软件的批量更新核对（[updates.go](./core/updates.go)）、卸载预览和排队（[uninstall.go](./core/uninstall.go)），以及队列的执行者 | 假来源和临时目录 |
 | [queue](./queue) | `queue.go` | 任务队列（安装、更新、卸载）：一个 goroutine 逐项执行；执行前复查（已装跳过、状态不确定不执行；卸载时已不在则跳过），执行后复查（卸载以程序是否还在判断成败）；阶段、进度和日志；重试（卸载可改用卸载程序窗口重试）、停止、继续、清除已完成 | 假执行者 |
 | [tasklog](./tasklog) | `tasklog.go` | 一个任务的日志：原样写进文件，同时整理成行（处理 `\r` 重绘、ANSI、进度条字符）留在内存，并记下来源报告的进度，见 [tasklog/README.md](./tasklog/README.md) | 单元测试 |
 | [uninstall](./uninstall) | `plan.go`、`run.go`、`inspect.go` | 卸载：winget、scoop、应用商店应用交给各自卸载，其余按注册表的卸载命令；识别 MSI、WiX、Inno Setup、NSIS 并静默卸载，等待卸载程序的副本结束；读取签名，拦下不能卸载的程序，见 [uninstall/README.md](./uninstall/README.md) | 替换的进程和注册表；真实本机只读生成卸载方式和读签名；真实卸载需显式开启 |

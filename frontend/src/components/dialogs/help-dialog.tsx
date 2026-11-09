@@ -213,7 +213,7 @@ function Start() {
           <span className="text-sm font-medium">放心安装</span>
           <ul className="flex flex-col gap-1.5 text-[13px] text-foreground/85">
             {[
-              "每次安装前先预览，确认后才开始",
+              "开始前会再核对一次安装状态",
               "已经装过的软件会自动跳过",
               "状态不确定的软件不会安装",
             ].map((t) => (

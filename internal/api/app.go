@@ -33,6 +33,7 @@ import (
 	"appshelf/internal/source/scoop"
 	"appshelf/internal/source/winget"
 	"appshelf/internal/state"
+	"appshelf/internal/usage"
 )
 
 // WingetAPI is what the services use of the winget source, beyond the
@@ -124,6 +125,12 @@ type Config struct {
 	Details *discover.Details
 	// Scan reads the registry's programs (detect.Scan).
 	Scan func() ([]detect.Entry, error)
+	// Usage reads when programs were last opened (usage.Read); nil reads
+	// nothing.
+	Usage func(ctx context.Context) (usage.Record, error)
+	// InstalledCache keeps the installed list between runs, shown as
+	// AppShelf starts while it is read again; "" keeps none.
+	InstalledCache string
 	// Watch calls changed, until ctx ends, when what is installed may have
 	// changed outside AppShelf (watch.Watch); nil watches nothing.
 	Watch func(ctx context.Context, changed func()) error
@@ -236,6 +243,7 @@ func (a *App) Start(ctx context.Context, cfg Config) {
 		a.upd.begin()
 		go a.upd.run(ctx)
 		a.write([]ChangeKind{ChangedShelf}, func() { a.core.Refresh() })
+		a.inv.restore()
 		a.inv.refresh(0)
 		if cfg.Watch != nil {
 			if err := cfg.Watch(ctx, a.inv.outside); err != nil {

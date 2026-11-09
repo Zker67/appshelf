@@ -82,11 +82,8 @@ func TestUninstallFromTheInstalledList(t *testing.T) {
 		t.Errorf("registry preview = %+v", tool)
 	}
 
-	if _, err := e.tasks.Start([]string{saved.ID}, ActionUninstall); err == nil {
+	if _, err := e.tasks.Start(context.Background(), []string{saved.ID}, ActionUninstall); err == nil {
 		t.Fatal("Tasks.Start must not take a removal")
-	}
-	if got := e.tasks.Preview([]string{saved.ID}, ActionUninstall); len(got) != 0 {
-		t.Fatalf("Tasks.Preview of a removal = %+v", got)
 	}
 
 	n, err := e.installed.StartUninstall(context.Background(), keys)

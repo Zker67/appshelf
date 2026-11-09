@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"errors"
+	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -10,12 +12,15 @@ import (
 	"appshelf/internal/catalog"
 	"appshelf/internal/detect"
 	"appshelf/internal/inventory"
+	"appshelf/internal/jsonfile"
 	"appshelf/internal/source/scoop"
 	"appshelf/internal/source/winget"
 )
 
 // inventoryState keeps the list of installed programs, read in the
-// background, one reading at a time.
+// background, one reading at a time. The last list read is kept in a file
+// (Config.InstalledCache): shown as AppShelf starts, while it is read
+// again.
 type inventoryState struct {
 	app *App
 
@@ -23,6 +28,7 @@ type inventoryState struct {
 	list    inventory.List
 	loaded  bool
 	loading bool
+	cached  bool          // list is the file's, of an earlier run
 	again   bool          // read again after the reading under way
 	maxAge  time.Duration // of the reading asked again
 
@@ -82,8 +88,9 @@ func (s *inventoryState) run(maxAge time.Duration) {
 		if s.app.cfg.Icons != nil {
 			s.app.cfg.Icons.SetInventory(list.Entries)
 		}
+		s.save(list)
 		s.mu.Lock()
-		s.list, s.loaded = list, true
+		s.list, s.loaded, s.cached = list, true, false
 		if !s.again {
 			s.loading = false
 			s.mu.Unlock()
@@ -97,9 +104,80 @@ func (s *inventoryState) run(maxAge time.Duration) {
 	s.app.loop.post(func() {})
 }
 
+// cacheVersion is the version of the cache file's content: a file of
+// another is ignored.
+const cacheVersion = 1
+
+type inventoryCache struct {
+	Version int            `json:"version"`
+	List    inventory.List `json:"list"`
+}
+
+// restore shows the list kept by an earlier run, before anything is read.
+// A missing or unreadable file shows nothing.
+func (s *inventoryState) restore() {
+	path := s.app.cfg.InstalledCache
+	if path == "" {
+		return
+	}
+	var c inventoryCache
+	if err := jsonfile.Read(path, &c); err != nil || c.Version != cacheVersion || len(c.List.Entries) == 0 {
+		return
+	}
+	c.List.Partial = false
+	s.mu.Lock()
+	if s.loaded {
+		s.mu.Unlock()
+		return
+	}
+	s.list, s.loaded, s.cached = c.List, true, true
+	s.mu.Unlock()
+	if s.app.cfg.Icons != nil {
+		s.app.cfg.Icons.SetInventory(c.List.Entries)
+	}
+}
+
+// save keeps a whole list for the next run.
+func (s *inventoryState) save(list inventory.List) {
+	path := s.app.cfg.InstalledCache
+	if path == "" || list.Partial {
+		return
+	}
+	if err := jsonfile.WriteAtomic(path, inventoryCache{Version: cacheVersion, List: list}); err != nil {
+		log.Printf("appshelf: keeping the installed list: %v", err)
+	}
+}
+
+// freshWait is how long fresh waits for this run's reading.
+var freshWait = 2 * time.Minute
+
+// fresh returns the list read in this run, waiting while only the earlier
+// run's is there: what a removal runs must not be stale.
+func (s *inventoryState) fresh(ctx context.Context) (inventory.List, error) {
+	deadline := time.Now().Add(freshWait)
+	for {
+		list, loaded, _ := s.get()
+		s.mu.Lock()
+		cached := s.cached
+		s.mu.Unlock()
+		if loaded && !cached {
+			return list, nil
+		}
+		if time.Now().After(deadline) {
+			return inventory.List{}, errors.New("本机列表正在读取，请稍后重试")
+		}
+		select {
+		case <-ctx.Done():
+			return inventory.List{}, ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
 // quick shows the registry's programs, which take milliseconds to read,
 // while winget takes seconds: only before a whole list was read, later
-// readings keep the last list until they end.
+// readings keep the last list until they end; nor when the earlier run's
+// list is shown.
 func (s *inventoryState) quick() {
 	s.mu.Lock()
 	loaded := s.loaded
@@ -148,7 +226,7 @@ func (s *inventoryState) get() (inventory.List, bool, bool) {
 // inventorySources are the sources usable here.
 func (a *App) inventorySources(maxAge time.Duration) inventory.Sources {
 	ctx := context.Background()
-	src := inventory.Sources{Scan: a.cfg.Scan}
+	src := inventory.Sources{Scan: a.cfg.Scan, Usage: a.cfg.Usage}
 	if w := a.cfg.Sources.Winget; w != nil {
 		av := a.availability(ctx, catalog.Winget, w.Check)
 		if av.OK {
@@ -180,7 +258,7 @@ func (s *Installed) List() InstalledList {
 	match := inventory.Match(list.Entries, apps)
 	pol := a.core.Store().Policies()
 	now := time.Now()
-	out := InstalledList{Entries: make([]InstalledEntry, 0, len(list.Entries)), Loaded: loaded, Loading: loading, Partial: list.Partial, At: list.At, Notes: list.Notes}
+	out := InstalledList{Entries: make([]InstalledEntry, 0, len(list.Entries)), Loaded: loaded, Loading: loading, Partial: list.Partial, At: list.At, Notes: list.Notes, UsageTracked: list.UsageTracked}
 	for _, e := range list.Entries {
 		entry := entryOf(e, match[e.Key])
 		if entry.Source != nil {
@@ -208,7 +286,7 @@ func entryOf(e inventory.Entry, inShelf []string) InstalledEntry {
 		Key: e.Key, Name: e.Name, Version: e.Version, Publisher: e.Publisher,
 		Kind: InstalledKind(e.Kind), Update: e.Update, InShelf: inShelf,
 		Icon: "/i/" + url.PathEscape(e.Key),
-		Size: e.Size, Installed: e.InstallDate, Location: e.Location,
+		Size: e.Size, Installed: e.InstallDate, Location: e.Location, LastUsed: e.LastUsed,
 	}
 	if out.InShelf == nil {
 		out.InShelf = []string{}

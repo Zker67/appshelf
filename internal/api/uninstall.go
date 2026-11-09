@@ -14,13 +14,14 @@ import (
 )
 
 // uninstallTargets resolves keys of the installed list as Go read it: the
-// page cannot name a program, a command or a path of its own.
-func (s *Installed) uninstallTargets(keys []string) ([]uninstall.Target, []inventory.Entry, error) {
+// page cannot name a program, a command or a path of its own. The list
+// kept by an earlier run is not used: its commands may be stale.
+func (s *Installed) uninstallTargets(ctx context.Context, keys []string) ([]uninstall.Target, []inventory.Entry, error) {
 	a := s.a
 	<-a.ready
-	list, loaded, _ := a.inv.get()
-	if !loaded {
-		return nil, nil, errors.New("本机列表正在读取，请稍后重试")
+	list, err := a.inv.fresh(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 	byKey := make(map[string]inventory.Entry, len(list.Entries))
 	for _, e := range list.Entries {
@@ -75,7 +76,7 @@ func targetOf(e inventory.Entry, inShelf []string) uninstall.Target {
 // PreviewUninstall says what removing the programs would do: how, with
 // what command, and what to know first. Nothing runs.
 func (s *Installed) PreviewUninstall(ctx context.Context, keys []string) ([]UninstallPreview, error) {
-	targets, entries, err := s.uninstallTargets(keys)
+	targets, entries, err := s.uninstallTargets(ctx, keys)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +127,7 @@ func methodText(m uninstall.Method) string {
 // removed. Each is checked once more right before it runs, and counts as
 // removed only when it is then gone. The catalog keeps its apps.
 func (s *Installed) StartUninstall(ctx context.Context, keys []string) (int, error) {
-	targets, _, err := s.uninstallTargets(keys)
+	targets, _, err := s.uninstallTargets(ctx, keys)
 	if err != nil {
 		return 0, err
 	}

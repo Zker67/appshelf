@@ -1,5 +1,6 @@
-// The dialogs every page opens: installing, adding, editing, an app's
-// note, the tasks, the settings and the guide.
+// The dialogs every page opens: removing, adding, editing, an app's note,
+// the tasks, the settings and the guide; and installs and updates, which
+// start without one.
 
 import {
   AddDialog,
@@ -10,20 +11,27 @@ import { AppEditor } from "@/components/dialogs/app-editor";
 import { HelpDialog } from "@/components/dialogs/help-dialog";
 import { LeftoversDialog, type LeftoversRequest } from "@/components/dialogs/leftovers-dialog";
 import { NoteEditor, type NoteRequest } from "@/components/dialogs/note-editor";
-import { PreviewDialog, type PreviewRequest } from "@/components/dialogs/preview-dialog";
 import { SettingsDialog, type SettingsTab } from "@/components/dialogs/settings-dialog";
 import { TasksSheet } from "@/components/dialogs/tasks-sheet";
 import { UninstallDialog, type UninstallRequest } from "@/components/dialogs/uninstall-dialog";
 import type { AddTarget } from "@/lib/add-target";
-import type { App, ShelfApp, TaskAction } from "@/mygo";
+import { errorText } from "@/lib/api";
+import { Installed, Tasks, Updates, type App, type ShelfApp } from "@/mygo";
 import { createContext, use, useMemo, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 
 interface Actions {
-  /** preview shows what installing or updating apps would do, to start it. */
-  preview: (ids: string[], action: TaskAction) => void;
-  previewInstalledUpdates: (keys: string[]) => void;
-  /** previewUpdates previews updates of packages, by source key. */
-  previewUpdates: (keys: string[]) => void;
+  /**
+   * Installs and updates start at once, without a preview: Go waits for
+   * the states being read, checks each again and queues those that can
+   * run, and the queue checks before and after. install and upgrade take
+   * apps of the catalog; updateInstalled programs of the installed list,
+   * by key; update packages, by source key.
+   */
+  install: (ids: string[]) => void;
+  upgrade: (ids: string[]) => void;
+  updateInstalled: (keys: string[]) => void;
+  update: (keys: string[]) => void;
   /** previewUninstall shows what removing programs would do, by key of the installed list. */
   previewUninstall: (keys: string[]) => void;
   /** findLeftovers looks for what a removal left behind. */
@@ -46,10 +54,32 @@ const ActionsContext = createContext<Actions | null>(null);
 let counter = 0;
 const next = () => ++counter;
 
+/**
+ * startTasks starts installs or updates, saying how many and how many
+ * could not; it may wait a while for the states of apps just added.
+ */
+async function startTasks(
+  verb: "安装" | "更新",
+  asked: number,
+  start: () => Promise<number>,
+  started: () => void,
+) {
+  const id = toast.loading(`正在准备${verb}`);
+  try {
+    const n = await start();
+    toast.success(`已开始${verb} ${n} 个软件`, {
+      id,
+      description: asked > n ? `另有 ${asked - n} 个现在不能${verb}，已跳过` : undefined,
+    });
+    started();
+  } catch (err) {
+    toast.error(`无法开始${verb}`, { id, description: errorText(err) });
+  }
+}
+
 export function ActionsProvider({ children }: { children: ReactNode }) {
   // A request stays after its dialog closes, for the dialog to animate out;
   // a new one remounts the dialog by its seq.
-  const [preview, setPreview] = useState<PreviewRequest | null>(null);
   const [uninstall, setUninstall] = useState<UninstallRequest | null>(null);
   const [leftovers, setLeftovers] = useState<LeftoversRequest | null>(null);
   const [add, setAdd] = useState<AddDialogRequest | null>(null);
@@ -66,11 +96,34 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Actions>(
     () => ({
-      preview: (ids, action) => setPreview({ ids, action, seq: next(), open: true }),
-      previewInstalledUpdates: (keys) =>
-        setPreview({ ids: keys, action: "upgrade", installed: true, seq: next(), open: true }),
-      previewUpdates: (keys) =>
-        setPreview({ ids: keys, action: "upgrade", updates: true, seq: next(), open: true }),
+      install: (ids) =>
+        void startTasks(
+          "安装",
+          ids.length,
+          () => Tasks.start(ids, "install"),
+          () => setTasks(true),
+        ),
+      upgrade: (ids) =>
+        void startTasks(
+          "更新",
+          ids.length,
+          () => Tasks.start(ids, "upgrade"),
+          () => setTasks(true),
+        ),
+      updateInstalled: (keys) =>
+        void startTasks(
+          "更新",
+          keys.length,
+          () => Installed.startUpdates(keys),
+          () => setTasks(true),
+        ),
+      update: (keys) =>
+        void startTasks(
+          "更新",
+          keys.length,
+          () => Updates.start(keys),
+          () => setTasks(true),
+        ),
       previewUninstall: (keys) => setUninstall({ keys, seq: next(), open: true }),
       findLeftovers: (taskId, name) => setLeftovers({ taskId, name, seq: next(), open: true }),
       add: (items, opts) =>
@@ -102,12 +155,6 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
   return (
     <ActionsContext value={value}>
       {children}
-      <PreviewDialog
-        key={`p${preview?.seq ?? 0}`}
-        request={preview}
-        onClose={() => setPreview((p) => p && { ...p, open: false })}
-        onStarted={() => setTasks(true)}
-      />
       <UninstallDialog
         key={`u${uninstall?.seq ?? 0}`}
         request={uninstall}
@@ -123,7 +170,7 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
         key={`a${add?.seq ?? 0}`}
         request={add}
         onClose={() => setAdd((a) => a && { ...a, open: false })}
-        onInstall={(ids) => setPreview({ ids, action: "install", seq: next(), open: true })}
+        onInstall={(ids) => value.install(ids)}
       />
       <AppEditor
         key={`e${edit?.seq ?? 0}`}

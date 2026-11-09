@@ -1,5 +1,5 @@
 // What the uninstall page weighs a program by: how much room it takes and
-// how long ago it was installed, not whether it has an update.
+// how long ago it was last opened, not whether it has an update.
 
 import type { InstalledEntry, InstalledKind, TaskEntry } from "@/mygo";
 
@@ -17,29 +17,30 @@ export function sizeBand(size: number | undefined): SizeBand {
   return "small";
 }
 
-/** AgeBand is how long ago a program was installed. */
-export type AgeBand = "recent" | "year" | "old" | "unknown";
+/** UseBand is how long ago a program was last opened. */
+export type UseBand = "month" | "months" | "stale" | "never";
 
 /**
- * daysSince counts the whole days from a date written YYYY-MM-DD to now,
- * null when the date is missing or not one.
+ * daysSince counts the whole calendar days from a date, written YYYY-MM-DD
+ * or as a time (RFC 3339), to now; null when the date is missing or not one.
  */
 export function daysSince(date: string | undefined, now: Date): number | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date ?? "");
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (!date) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(date);
   if (Number.isNaN(d.getTime())) return null;
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.max(0, Math.round((today.getTime() - d.getTime()) / 86400000));
+  return Math.max(0, Math.round((today.getTime() - day.getTime()) / 86400000));
 }
 
-/** ageBand puts an install date in its band: 30 days, a year, longer. */
-export function ageBand(date: string | undefined, now: Date): AgeBand {
-  const days = daysSince(date, now);
-  if (days === null) return "unknown";
-  if (days <= 30) return "recent";
-  if (days <= 365) return "year";
-  return "old";
+/** useBand puts a last launch in its band: 30 days, half a year, longer, none. */
+export function useBand(lastUsed: string | undefined, now: Date): UseBand {
+  const days = daysSince(lastUsed, now);
+  if (days === null) return "never";
+  if (days <= 30) return "month";
+  if (days <= 182) return "months";
+  return "stale";
 }
 
 /** ageText says how long ago a date was, as "3 天前" or "2 年前". */
@@ -53,33 +54,42 @@ export function ageText(date: string | undefined, now: Date): string {
   return `${Math.floor(days / 365)} 年前`;
 }
 
+/** localDate writes a time as its local date, YYYY-MM-DD; "" when it is none. */
+export function localDate(time: string | undefined): string {
+  const d = new Date(time ?? "");
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 /** RemovalFilter is what the uninstall page shows; its groups combine. */
 export interface RemovalFilter {
   kinds: ReadonlySet<InstalledKind>;
   size: SizeBand | "all";
-  age: AgeBand | "all";
+  used: UseBand | "all";
 }
 
-export const allRemoval: RemovalFilter = { kinds: new Set(), size: "all", age: "all" };
+export const allRemoval: RemovalFilter = { kinds: new Set(), size: "all", used: "all" };
 
 export function isAllRemoval(f: RemovalFilter): boolean {
-  return f.kinds.size === 0 && f.size === "all" && f.age === "all";
+  return f.kinds.size === 0 && f.size === "all" && f.used === "all";
 }
 
 /** removalMatches reports whether a program passes every group of the filter. */
 export function removalMatches(e: InstalledEntry, f: RemovalFilter, now: Date): boolean {
   if (f.kinds.size > 0 && !f.kinds.has(e.kind)) return false;
   if (f.size !== "all" && sizeBand(e.size) !== f.size) return false;
-  if (f.age !== "all" && ageBand(e.installed, now) !== f.age) return false;
+  if (f.used !== "all" && useBand(e.lastUsed, now) !== f.used) return false;
   return true;
 }
 
 /** RemovalSort is the order of the uninstall page's list. */
-export type RemovalSort = "size" | "oldest" | "newest" | "name";
+export type RemovalSort = "size" | "unused" | "recent" | "name";
 
 /**
- * sortForRemoval orders programs largest first, oldest or newest first, or
- * by name as Go lists them; those of unknown size or date go last, by name.
+ * sortForRemoval orders programs largest first, opened longest ago or
+ * latest first, or by name as Go lists them; those of unknown size or
+ * never opened go last, by name.
  */
 export function sortForRemoval(
   entries: readonly InstalledEntry[],
@@ -88,7 +98,7 @@ export function sortForRemoval(
   if (by === "name") return [...entries];
   const ranked = entries.map((e, i) => ({ e, i }));
   ranked.sort((a, b) => {
-    const known = (e: InstalledEntry) => (by === "size" ? !!e.size && e.size > 0 : !!e.installed);
+    const known = (e: InstalledEntry) => (by === "size" ? !!e.size && e.size > 0 : !!e.lastUsed);
     const ka = known(a.e);
     const kb = known(b.e);
     if (ka !== kb) return ka ? -1 : 1;
@@ -96,9 +106,9 @@ export function sortForRemoval(
     let d = 0;
     if (by === "size") d = (b.e.size ?? 0) - (a.e.size ?? 0);
     else {
-      const x = a.e.installed ?? "";
-      const y = b.e.installed ?? "";
-      d = x === y ? 0 : (x < y ? -1 : 1) * (by === "oldest" ? 1 : -1);
+      const x = Date.parse(a.e.lastUsed ?? "");
+      const y = Date.parse(b.e.lastUsed ?? "");
+      d = (x - y) * (by === "unused" ? 1 : -1);
     }
     return d || a.i - b.i;
   });

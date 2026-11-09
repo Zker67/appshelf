@@ -238,10 +238,6 @@ func TestUpdatesAutoWaitsWhileRunning(t *testing.T) {
 		t.Fatalf("running: %+v", it)
 	}
 	updateState(e, availableUpdate())
-	prev, err := e.updates.Preview(context.Background(), []string{installedObsidian})
-	if err != nil || len(prev) != 1 || !prev[0].Running {
-		t.Fatalf("preview: %+v %v", prev, err)
-	}
 	if err := e.updates.SetMode(installedObsidian, UpdateAuto); err != nil {
 		t.Fatal(err)
 	}
@@ -377,26 +373,20 @@ func TestUpdateChecksAndSettings(t *testing.T) {
 	}
 }
 
-func TestUpdatesPreviewStartAndHistory(t *testing.T) {
+func TestUpdatesStartAndHistory(t *testing.T) {
 	e := newEnv(t)
 	updateState(e, availableUpdate())
 	e.winget.mu.Lock()
 	e.winget.after[installedObsidian] = source.Status{State: source.Installed, Version: "1.9"}
 	e.winget.mu.Unlock()
 	ctx := context.Background()
-	prev, err := e.updates.Preview(ctx, []string{installedObsidian, " WINGET:Obsidian.Obsidian "})
-	if err != nil || len(prev) != 1 || !prev[0].Runnable || prev[0].Running {
-		t.Fatalf("preview: %+v %v", prev, err)
-	}
 	for _, keys := range [][]string{{"winget:nope.nope"}, {"local:tool"}, {""}} {
-		if _, err := e.updates.Preview(ctx, keys); err == nil {
-			t.Errorf("previewed %q", keys)
-		}
 		if _, err := e.updates.Start(ctx, keys); err == nil {
 			t.Errorf("started %q", keys)
 		}
 	}
-	n, err := e.updates.Start(ctx, []string{installedObsidian})
+	// The same package twice, as written another way, is queued once.
+	n, err := e.updates.Start(ctx, []string{installedObsidian, " WINGET:Obsidian.Obsidian "})
 	if err != nil || n != 1 {
 		t.Fatalf("start: %d %v", n, err)
 	}

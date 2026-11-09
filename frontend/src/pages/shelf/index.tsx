@@ -154,8 +154,8 @@ export function ShelfPage() {
     check: list.check,
     targets: (id) =>
       list.selected.has(id) ? selected : [byId.get(id)].filter((a): a is ShelfApp => !!a),
-    install: (ids) => actions.preview(ids, "install"),
-    upgrade: (ids) => actions.preview(ids, "upgrade"),
+    install: (ids) => actions.install(ids),
+    upgrade: (ids) => actions.upgrade(ids),
     uninstallKeys,
     uninstall: (keys) => actions.previewUninstall(keys),
     edit: (app) => actions.edit(app),
@@ -204,9 +204,6 @@ export function ShelfPage() {
         <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="max-w-60 min-w-0 truncate text-sm font-semibold">
-                {title(filter, categories, tags)}
-              </span>
               {hasGroupFilter(filter) && filter.status !== "all" && (
                 <Chip icon={ListFilterIcon}>{statusTitles[filter.status]}</Chip>
               )}
@@ -393,12 +390,7 @@ export function ShelfPage() {
             <Button
               size="sm"
               disabled={installable === 0}
-              onClick={() =>
-                actions.preview(
-                  selected.map((a) => a.app.id),
-                  "install",
-                )
-              }
+              onClick={() => actions.install(selected.map((a) => a.app.id))}
             >
               <DownloadIcon />
               安装{installable > 0 && ` ${installable}`}
@@ -407,12 +399,7 @@ export function ShelfPage() {
               size="sm"
               variant="secondary"
               disabled={updatable === 0}
-              onClick={() =>
-                actions.preview(
-                  selected.map((a) => a.app.id),
-                  "upgrade",
-                )
-              }
+              onClick={() => actions.upgrade(selected.map((a) => a.app.id))}
             >
               <ArrowUpCircleIcon />
               更新{updatable > 0 && ` ${updatable}`}
@@ -466,8 +453,8 @@ export function ShelfPage() {
               categories={categories}
               tags={tags}
               onClose={list.closeDetails}
-              onInstall={() => actions.preview([focused.app.id], "install")}
-              onUpgrade={() => actions.preview([focused.app.id], "upgrade")}
+              onInstall={() => actions.install([focused.app.id])}
+              onUpgrade={() => actions.upgrade([focused.app.id])}
               onEdit={() => actions.edit(focused.app)}
               onDelete={() => remove([focused])}
             />
@@ -485,22 +472,6 @@ const statusTitles = {
   notInstalled: "未安装",
   problem: "无法确认",
 } as const;
-
-/** title names the groups the list shows, or its state, or all. */
-function title(
-  f: ShelfFilter,
-  categories: Map<string, { name: string }>,
-  tags: Map<string, { name: string }>,
-): string {
-  const parts = [
-    ...[...f.categories].map((id) => (id === "" ? "未分类" : (categories.get(id)?.name ?? ""))),
-    ...[...f.tags].map((id) => `#${tags.get(id)?.name ?? ""}`),
-  ].filter(Boolean);
-  if (parts.length === 0) return statusTitles[f.status] || "全部软件";
-  return parts.length > 2
-    ? `${parts.slice(0, 2).join("、")} 等 ${parts.length} 项`
-    : parts.join("、");
-}
 
 function ListSkeleton() {
   return (

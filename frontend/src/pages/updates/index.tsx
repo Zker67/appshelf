@@ -172,9 +172,6 @@ export function UpdatesPage() {
         <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 truncate text-sm font-semibold">
-                {views.find((v) => v.value === view)?.label}
-              </span>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span>
@@ -218,7 +215,7 @@ export function UpdatesPage() {
                     className="shrink-0"
                     aria-label="全部更新"
                     disabled={runnable.length === 0}
-                    onClick={() => actions.previewUpdates(runnable.map((i) => i.key))}
+                    onClick={() => actions.update(runnable.map((i) => i.key))}
                   >
                     <ArrowUpCircleIcon />
                     <WideLabel from="xl">全部更新</WideLabel>
@@ -254,11 +251,7 @@ export function UpdatesPage() {
                   <SelfCard version={list.self.version} available={list.self.available} />
                 )}
                 {shownUpdates.map((i) => (
-                  <UpdateRow
-                    key={i.key}
-                    item={i}
-                    onUpdate={() => actions.previewUpdates([i.key])}
-                  />
+                  <UpdateRow key={i.key} item={i} onUpdate={() => actions.update([i.key])} />
                 ))}
               </Rows>
             )

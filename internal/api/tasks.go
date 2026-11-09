@@ -1,51 +1,32 @@
 package api
 
 import (
+	"context"
 	"errors"
+	"time"
 
 	"appshelf/internal/queue"
 )
 
-// Tasks installs and updates apps of the catalog, one at a time, after a
-// preview of what each would do.
+// Tasks installs and updates apps of the catalog, one at a time. They
+// start without a preview: Start checks each again and queues those that
+// can run, and the queue checks before and after each.
 type Tasks struct{ a *App }
 
-// Preview says what installing or updating the apps would do, from the
-// states known. Nothing runs.
-func (t *Tasks) Preview(ids []string, action TaskAction) []PreviewEntry {
-	a := t.a
-	out := []PreviewEntry{}
-	act, ok := action.queue()
-	if !ok {
-		return out
-	}
-	a.read(func() {
-		for _, it := range a.core.Preview(ids, act) {
-			e := PreviewEntry{AppID: it.App.ID, Name: it.App.Name, Icon: iconOf(it.App.Source), Runnable: it.Runnable, Plan: it.Plan, Source: it.App.Source}
-			if st, ok := a.core.Status(it.App.ID); ok {
-				if st.Asset != "" {
-					e.Asset, e.Release = st.Asset, st.Latest
-				}
-				if it.Runnable {
-					e.Note = st.Note
-				}
-			}
-			out = append(out, e)
-		}
-	})
-	if action == ActionUpgrade {
-		a.markRunning(out)
-	}
-	return out
-}
+// stateWait is how long Start waits for the states of apps being read.
+var stateWait = 2 * time.Minute
 
-// Start queues the apps whose preview, made again now, can run, and
-// returns how many. Each is checked again right before it runs.
-func (t *Tasks) Start(ids []string, action TaskAction) (int, error) {
+// Start queues the apps that can be installed or updated and returns how
+// many. It first waits for the states being read, as of apps just added,
+// which it would otherwise skip.
+func (t *Tasks) Start(ctx context.Context, ids []string, action TaskAction) (int, error) {
 	a := t.a
 	act, ok := action.queue()
 	if !ok {
 		return 0, errors.New("这里只能安装或更新清单里的软件")
+	}
+	if err := a.awaitStates(ctx, ids); err != nil {
+		return 0, err
 	}
 	n := 0
 	a.write([]ChangeKind{ChangedTasks, ChangedShelf}, func() {
@@ -55,6 +36,31 @@ func (t *Tasks) Start(ids []string, action TaskAction) (int, error) {
 		return 0, errors.New("没有可以执行的软件")
 	}
 	return n, nil
+}
+
+// awaitStates waits, up to stateWait, while the state of one of the apps
+// is being read.
+func (a *App) awaitStates(ctx context.Context, ids []string) error {
+	deadline := time.Now().Add(stateWait)
+	for {
+		reading := false
+		a.read(func() {
+			for _, id := range ids {
+				if a.core.Checking(id) {
+					reading = true
+					return
+				}
+			}
+		})
+		if !reading || time.Now().After(deadline) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 // List returns the tasks.

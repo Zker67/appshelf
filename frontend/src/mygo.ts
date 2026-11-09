@@ -142,6 +142,12 @@ export interface InstalledEntry {
   size?: number;
   installed?: string;
   location?: string;
+  /**
+   * LastUsed is when the user last opened it, as Windows recorded its
+   * launches from the Start menu, the taskbar, the desktop and Explorer;
+   * the time it was read when it is running. Empty when no record says.
+   */
+  lastUsed?: string;
 }
 
 /** InstalledKind is where an installed program comes from. */
@@ -159,6 +165,11 @@ export interface InstalledList {
   partial: boolean;
   at?: string;
   notes: string[];
+  /**
+   * UsageTracked means Windows records the programs the user opens; off,
+   * no entry has a LastUsed.
+   */
+  usageTracked: boolean;
 }
 
 /** LeftoverItem is something a removed program may have left behind. */
@@ -246,24 +257,6 @@ export interface PackageRef {
   type: SourceType;
   id: string;
   version?: string;
-}
-
-/** PreviewEntry is what installing or updating an app would do. */
-export interface PreviewEntry {
-  appId: string;
-  name: string;
-  icon: string;
-  runnable: boolean;
-  /** Plan is "安装", "更新 1.0 → 1.1", or why not. */
-  plan: string;
-  source: Source;
-  /** Asset is the installer a GitHub release gives, of Release. */
-  asset?: string;
-  release?: string;
-  /** Note is what the source said of the app, as a limit it reached. */
-  note?: string;
-  /** Running means a program of the app runs: updating may close it. */
-  running?: boolean;
 }
 
 /** RateInfo is a GitHub request quota as last reported. */
@@ -750,8 +743,9 @@ export const Shelf = {
 } as const;
 
 /**
- * Tasks installs and updates apps of the catalog, one at a time, after a
- * preview of what each would do.
+ * Tasks installs and updates apps of the catalog, one at a time. They
+ * start without a preview: Start checks each again and queues those that
+ * can run, and the queue checks before and after each.
  */
 export const Tasks = {
   /**
@@ -790,13 +784,6 @@ export const Tasks = {
   openLog(id: number): Promise<void> {
     return call("Tasks.OpenLog", id);
   },
-  /**
-   * Preview says what installing or updating the apps would do, from the
-   * states known. Nothing runs.
-   */
-  preview(ids: string[], action: TaskAction): Promise<PreviewEntry[]> {
-    return call("Tasks.Preview", ids, action);
-  },
   /** Resume starts the waiting tasks again. */
   resume(): Promise<void> {
     return call("Tasks.Resume");
@@ -813,8 +800,9 @@ export const Tasks = {
     return call("Tasks.RetryInteractive", id);
   },
   /**
-   * Start queues the apps whose preview, made again now, can run, and
-   * returns how many. Each is checked again right before it runs.
+   * Start queues the apps that can be installed or updated and returns how
+   * many. It first waits for the states being read, as of apps just added,
+   * which it would otherwise skip.
    */
   start(ids: string[], action: TaskAction): Promise<number> {
     return call("Tasks.Start", ids, action);
@@ -939,10 +927,6 @@ export const Installed = {
   previewUninstall(keys: string[]): Promise<UninstallPreview[]> {
     return call("Installed.PreviewUninstall", keys);
   },
-  /** PreviewUpdates checks current source state without changing the catalog. */
-  previewUpdates(keys: string[]): Promise<PreviewEntry[]> {
-    return call("Installed.PreviewUpdates", keys);
-  },
   /** Refresh reads what is installed again. */
   refresh(): Promise<void> {
     return call("Installed.Refresh");
@@ -995,10 +979,6 @@ export const Updates = {
    */
   list(): Promise<UpdateList> {
     return call("Updates.List");
-  },
-  /** Preview says what updating the packages would do. Nothing runs. */
-  preview(keys: string[]): Promise<PreviewEntry[]> {
-    return call("Updates.Preview", keys);
   },
   /**
    * Restore offers the package's updates again: no version skipped, nothing

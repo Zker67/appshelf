@@ -19,12 +19,12 @@
 | `app.go` | `App`、`Hooks`（文件对话框、打开路径和链接、自更新、外观、系统通知、托盘、开机启动）、`Config`、循环和通知器 |
 | `dto.go` | 前端看到的全部类型；改动后要重新生成 `mygo.ts` |
 | `shelf.go` | `Shelf`：清单快照、检查更新、添加、批量加入、删除与撤销、分类和标签、备注、导入导出 |
-| `tasks.go` | `Tasks`：安装预览、开始、队列操作（含用卸载程序窗口重试 `RetryInteractive`），任务的阶段和进度，应用内日志（`Log` 按游标增量读取）和日志文件 |
+| `tasks.go` | `Tasks`：开始安装和更新（先等正在读取的状态，不预览）、队列操作（含用卸载程序窗口重试 `RetryInteractive`），任务的阶段和进度，应用内日志（`Log` 按游标增量读取）和日志文件 |
 | [leftovers.go](./leftovers.go) | `Tasks.FindLeftovers` / `CleanLeftovers` / `OpenBackup`：为卸载成功的任务查找残留，结果和令牌留在服务端，清理只按 ID 选择；注册表备份到 `<数据目录>\backups\leftovers-<时间>-<软件名>` |
 | `sources.go` | `Sources`：来源状态与额度、安装 winget 模块、编辑时搜索（等版本读完一起返回）、检查 GitHub 仓库 |
 | `discover.go` | `Discover`：统一搜索（`Channel` 流式返回，新的搜索取消旧的；winget 先发结果，读到版本再发一次）、预热（`Warm`）、GitHub 搜索、详情、规则建议；以及 `Changed` 事件 |
 | `search.go` | 搜索缓存：按来源和查询（忽略大小写和首尾空格）保留来源的原始结果和 winget 版本 10 分钟，最多 64 次搜索；出错不缓存；“已在清单”“本机已装”在发送时重新标记 |
-| [installed.go](./installed.go)、[installed_updates.go](./installed_updates.go) | `Installed`：本机已装列表、与清单对照，以及按已识别 key 预览和开始直接更新；不会自动加入清单。第一次读取先给出只含注册表的列表（`partial`），完整列表随后替换；`Config.Watch` 报告 AppShelf 之外的变化时，1.5 秒内的变化合并为一次重读（自己的任务运行时不重读） |
+| [installed.go](./installed.go)、[installed_updates.go](./installed_updates.go) | `Installed`：本机已装列表、与清单对照，以及按已识别 key 直接开始更新；不会自动加入清单。启动时先显示上次运行缓存的列表（`Config.InstalledCache`），同时重新读取；没有缓存时第一次读取先给出只含注册表的列表（`partial`），卸载要等这次读完才用列表，完整列表随后替换；`Config.Watch` 报告 AppShelf 之外的变化时，1.5 秒内的变化合并为一次重读（自己的任务运行时不重读） |
 | [uninstall.go](./uninstall.go) | `Installed.PreviewUninstall` / `StartUninstall`：只接受本机已装列表里的 key，由 Go 自己读到的条目决定卸载方式（winget、scoop、应用商店或注册表卸载命令），页面传不了命令和路径；开始前再预览一次，只把能卸载的排进队列，一个都不能时返回原因 |
 | [updates.go](./updates.go)、[dto_updates.go](./dto_updates.go) | `Updates`：清单软件和本机 winget / scoop 软件按来源 key 合并的更新列表、AppShelf 自身新版本、更新方式（`SetMode`、`Skip`、`Snooze`、`Restore`）、预览和开始、历史、更新设置；能否自动更新（`autoBlock`）和安装目录（`installDir`）的判断；`navigate` 事件 |
 | [autoupdate.go](./autoupdate.go) | `checker`：检查的开始与完成、定时、自动更新排队、通知、更新历史 |
@@ -45,7 +45,7 @@
 
 `updates_test.go`：清单与本机合并去重、清单状态优先、跳过 / 暂缓 / 忽略 / 恢复、自动更新的条件（安装范围、GitHub、正在运行）与立即执行、通知只发一次且窗口在前或关闭通知时不发、定时检查与设置、预览开始与历史、安装目录判断、来源 key 校验。
 
-`uninstall_test.go`：假卸载执行者下的预览、排队、执行和任务日志，卸载不会把软件移出清单，不能卸载的程序开始时被拒绝；`Tasks.Start` 和 `Tasks.Preview` 不接受卸载；失败后用卸载程序窗口重试，成功的任务不能这样重试。
+`uninstall_test.go`：假卸载执行者下的预览、排队、执行和任务日志，卸载不会把软件移出清单，不能卸载的程序开始时被拒绝；`Tasks.Start` 不接受卸载；失败后用卸载程序窗口重试，成功的任务不能这样重试。
 
 `leftovers_test.go`（Windows）：只为卸载成功的任务查找残留，在 `%LOCALAPPDATA%` 下找到测试目录并清理到回收站；未选择、未知令牌和未知 ID 的处理；没有注册表备份时不能打开备份。
 

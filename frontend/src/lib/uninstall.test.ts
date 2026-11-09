@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { InstalledEntry, TaskEntry } from "@/mygo";
 import {
-  ageBand,
   ageText,
   allRemoval,
   daysSince,
+  localDate,
   removalMatches,
   removalTasks,
   removing,
@@ -12,6 +12,7 @@ import {
   sizeShare,
   sortForRemoval,
   totalSize,
+  useBand,
 } from "./uninstall";
 
 const MB = 1024 * 1024;
@@ -21,7 +22,7 @@ function entry(key: string, extra: Partial<InstalledEntry> = {}): InstalledEntry
   return { key, name: key, kind: "local", source: null, inShelf: [], icon: "", rule: "", ...extra };
 }
 
-describe("size and age bands", () => {
+describe("size and last-opened bands", () => {
   it("puts sizes in their band", () => {
     expect(sizeBand(undefined)).toBe("unknown");
     expect(sizeBand(0)).toBe("unknown");
@@ -37,11 +38,19 @@ describe("size and age bands", () => {
     expect(daysSince("20261106", now)).toBeNull();
   });
 
+  it("counts calendar days from a time", () => {
+    expect(daysSince(new Date(2026, 10, 9, 0, 5).toISOString(), now)).toBe(0);
+    expect(daysSince(new Date(2026, 10, 8, 23, 55).toISOString(), now)).toBe(1);
+    expect(daysSince("not a time", now)).toBeNull();
+    expect(localDate(new Date(2026, 10, 6, 23, 30).toISOString())).toBe("2026-11-06");
+    expect(localDate(undefined)).toBe("");
+  });
+
   it("puts dates in their band and says how long ago", () => {
-    expect(ageBand("2026-10-20", now)).toBe("recent");
-    expect(ageBand("2026-03-01", now)).toBe("year");
-    expect(ageBand("2023-01-01", now)).toBe("old");
-    expect(ageBand(undefined, now)).toBe("unknown");
+    expect(useBand("2026-10-20T08:00:00Z", now)).toBe("month");
+    expect(useBand("2026-07-01T08:00:00Z", now)).toBe("months");
+    expect(useBand("2026-03-01T08:00:00Z", now)).toBe("stale");
+    expect(useBand(undefined, now)).toBe("never");
     expect(ageText("2026-11-09", now)).toBe("今天");
     expect(ageText("2026-11-08", now)).toBe("昨天");
     expect(ageText("2026-11-01", now)).toBe("8 天前");
@@ -52,12 +61,13 @@ describe("size and age bands", () => {
 });
 
 describe("removalMatches", () => {
-  const big = entry("big", { kind: "winget", size: 2048 * MB, installed: "2022-01-01" });
-  const fresh = entry("fresh", { size: 3 * MB, installed: "2026-11-01" });
+  const big = entry("big", { kind: "winget", size: 2048 * MB, lastUsed: "2025-01-01T08:00:00Z" });
+  const fresh = entry("fresh", { size: 3 * MB, lastUsed: "2026-11-01T08:00:00Z" });
   it("combines the groups", () => {
     expect(removalMatches(big, allRemoval, now)).toBe(true);
-    expect(removalMatches(big, { ...allRemoval, size: "huge", age: "old" }, now)).toBe(true);
-    expect(removalMatches(big, { ...allRemoval, size: "huge", age: "recent" }, now)).toBe(false);
+    expect(removalMatches(big, { ...allRemoval, size: "huge", used: "stale" }, now)).toBe(true);
+    expect(removalMatches(big, { ...allRemoval, size: "huge", used: "month" }, now)).toBe(false);
+    expect(removalMatches(entry("x"), { ...allRemoval, used: "never" }, now)).toBe(true);
     expect(removalMatches(fresh, { ...allRemoval, kinds: new Set(["winget"]) }, now)).toBe(false);
     expect(removalMatches(entry("x"), { ...allRemoval, size: "unknown" }, now)).toBe(true);
   });
@@ -65,17 +75,17 @@ describe("removalMatches", () => {
 
 describe("sortForRemoval", () => {
   const list = [
-    entry("a", { size: 10, installed: "2026-01-02" }),
+    entry("a", { size: 10, lastUsed: "2026-01-02T08:00:00Z" }),
     entry("b"),
-    entry("c", { size: 300, installed: "2025-05-05" }),
-    entry("d", { size: 10, installed: "2026-03-01" }),
+    entry("c", { size: 300, lastUsed: "2025-05-05T08:00:00+08:00" }),
+    entry("d", { size: 10, lastUsed: "2026-03-01T08:00:00Z" }),
   ];
   const keys = (by: Parameters<typeof sortForRemoval>[1]) =>
     sortForRemoval(list, by).map((e) => e.key);
-  it("puts the largest, oldest or newest first, the unknown last", () => {
+  it("puts the largest, longest unused or latest opened first, the unknown last", () => {
     expect(keys("size")).toEqual(["c", "a", "d", "b"]);
-    expect(keys("oldest")).toEqual(["c", "a", "d", "b"]);
-    expect(keys("newest")).toEqual(["d", "a", "c", "b"]);
+    expect(keys("unused")).toEqual(["c", "a", "d", "b"]);
+    expect(keys("recent")).toEqual(["d", "a", "c", "b"]);
     expect(keys("name")).toEqual(["a", "b", "c", "d"]);
   });
 

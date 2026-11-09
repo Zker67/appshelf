@@ -19,6 +19,7 @@
 | 字段 | 内容 |
 |---|---|
 | `Size`、`InstallDate` | 注册表里的估计大小（字节）和安装日期（`YYYY-MM-DD`），没有时为空 |
+| `LastUsed` | 上次打开时间（`SetLastUsed`，见 `internal/usage`）：按安装目录、图标和卸载程序所在目录、应用包族名、scoop 名称归属；没有记录时为零值 |
 | `Reg` | 整个注册表项（`detect.Entry`），卸载时用它的卸载命令、范围和键名 |
 | `PackageFullName` | `MSIX\<包全名>` 条目的包全名，用 `Remove-AppxPackage` 卸载 |
 | `StoreID` | msstore 源条目的 ID，用 `winget uninstall --source msstore` 卸载 |
@@ -29,7 +30,7 @@
 
 ## 读取（`Load`）
 
-`Sources` 里的 winget、scoop、注册表扫描并行读取；读不到的来源写进 `List.Notes`，其余照常列出。
+`Sources` 里的 winget、scoop、注册表扫描和启动记录（`Usage`）并行读取；读不到的来源写进 `List.Notes`，其余照常列出。`List.UsageTracked` 表示 Windows 有程序启动记录。
 
 `List.Partial` 表示只读了注册表：`internal/api` 打开“本机已装”时先用注册表扫描给出列表（`Partial` 为真），winget、scoop 和应用商店应用读完后再换成完整列表。
 

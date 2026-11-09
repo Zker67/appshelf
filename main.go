@@ -26,6 +26,7 @@ import (
 	"appshelf/internal/source/winget"
 	"appshelf/internal/state"
 	"appshelf/internal/uninstall"
+	"appshelf/internal/usage"
 	"appshelf/internal/watch"
 )
 
@@ -174,6 +175,9 @@ func main() {
 			Icons:   iconService,
 			Details: details,
 			Scan:    detect.Scan,
+			Usage:   usage.Read,
+			// The installed list of the last run, shown while it is read.
+			InstalledCache: filepath.Join(cacheDir, "installed.json"),
 			Watch: func(ctx context.Context, changed func()) error {
 				_, err := watch.Watch(ctx, watch.InstalledKeys(), watch.ScoopDirs(), changed)
 				return err

@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"appshelf/internal/detect"
 	"appshelf/internal/source/scoop"
 	"appshelf/internal/source/winget"
+	"appshelf/internal/usage"
 )
 
 var registry = []detect.Entry{
@@ -55,6 +57,54 @@ func TestLoadPreservesUnavailableSourceReason(t *testing.T) {
 		if entry.Update != "" {
 			t.Fatal("reported update without source")
 		}
+	}
+}
+
+// TestLoadLastUsed gives each entry its last launch: by its directories,
+// its app package or its scoop app.
+func TestLoadLastUsed(t *testing.T) {
+	day := func(d int) time.Time { return time.Date(2026, 11, d, 12, 0, 0, 0, time.UTC) }
+	reg := []detect.Entry{
+		{DisplayName: "Editor", Name: "Editor", Scope: "User", Arch: "X64", InstallLocation: `C:\Tools\Editor`},
+		// No location: its icon's directory tells.
+		{DisplayName: "Viewer", Name: "Viewer", Scope: "User", Arch: "X64", DisplayIcon: `"C:\Tools\Viewer\viewer.exe",0`},
+		{DisplayName: "Unused", Name: "Unused", Scope: "User", Arch: "X64", InstallLocation: `C:\Tools\Unused`},
+	}
+	pkgs := []winget.Package{{ID: `MSIX\Microsoft.ScreenSketch_11.0.0.0_x64__8wekyb3d8bbwe`, Name: "Snipping Tool"}}
+	for _, r := range reg {
+		pkgs = append(pkgs, winget.Package{ID: `ARP\User\X64\` + r.Name, Name: r.DisplayName})
+	}
+	rec := usage.Record{At: day(9), Launches: []usage.Launch{
+		{Path: `C:\Tools\Editor\editor.exe`, At: day(2)},
+		{Path: `C:\Tools\Viewer\viewer.exe`, At: day(3)},
+		{AppID: "Microsoft.ScreenSketch_8wekyb3d8bbwe!App", At: day(4)},
+		{Path: `C:\Users\me\scoop\apps\ripgrep\current\rg.exe`, At: day(5)},
+	}}
+	list := Load(context.Background(), Sources{
+		Winget: func(context.Context) ([]winget.Package, error) { return pkgs, nil },
+		Scoop:  func(context.Context) ([]scoop.App, error) { return []scoop.App{{Name: "ripgrep", Version: "14"}}, nil },
+		Scan:   func() ([]detect.Entry, error) { return reg, nil },
+		Usage:  func(context.Context) (usage.Record, error) { return rec, nil },
+	})
+	if !list.UsageTracked {
+		t.Error("launches recorded, but not tracked")
+	}
+	want := map[string]time.Time{"Editor": day(2), "Viewer": day(3), "Snipping Tool": day(4), "ripgrep": day(5), "Unused": {}}
+	for _, e := range list.Entries {
+		if w, ok := want[e.Name]; !ok || !e.LastUsed.Equal(w) {
+			t.Errorf("%s: LastUsed = %v, want %v", e.Name, e.LastUsed, w)
+		}
+	}
+
+	// Usage that fails says so, and the list stands.
+	list = Load(context.Background(), Sources{
+		Scan: func() ([]detect.Entry, error) { return reg, nil },
+		Usage: func(context.Context) (usage.Record, error) {
+			return usage.Record{}, errors.New("读取程序的打开记录失败：x")
+		},
+	})
+	if len(list.Entries) != len(reg) || list.UsageTracked || !slices.Contains(list.Notes, "读取程序的打开记录失败：x") {
+		t.Errorf("failed usage: %+v", list)
 	}
 }
 
@@ -204,7 +254,7 @@ func TestLoadReal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	w := winget.New()
-	src := Sources{Scan: detect.Scan}
+	src := Sources{Scan: detect.Scan, Usage: usage.Read}
 	wingetOK := false
 	if av := w.Check(ctx); av.OK {
 		wingetOK = true
@@ -237,6 +287,16 @@ func TestLoadReal(t *testing.T) {
 	}
 	t.Logf("%d entries %v; %d with the registry's name and publisher", len(list.Entries), kinds, joined)
 	t.Logf("%d entries with source-reported updates", updates)
+	used := 0
+	for _, e := range list.Entries {
+		if !e.LastUsed.IsZero() {
+			used++
+		}
+	}
+	t.Logf("%d entries with a last launch; Windows tracks launches: %v", used, list.UsageTracked)
+	if list.UsageTracked && used == 0 {
+		t.Error("launches tracked, but no entry has one")
+	}
 	if !wingetOK {
 		t.Logf("winget not available: registry only")
 		return

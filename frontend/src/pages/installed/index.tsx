@@ -334,7 +334,6 @@ export function InstalledPage() {
         <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 truncate text-sm font-semibold">本机已装</span>
               <Chip icon={LayersIcon}>{overview ? entries.length : shown.length} 个</Chip>
               {data?.partial && (
                 <Tooltip>
@@ -439,7 +438,7 @@ export function InstalledPage() {
               entries={entries}
               at={at}
               onOpen={openList}
-              onUpdate={actions.previewInstalledUpdates}
+              onUpdate={actions.updateInstalled}
               onAdd={add}
             />
           ) : shown.length === 0 ? (
@@ -480,7 +479,7 @@ export function InstalledPage() {
                     onAdd={() => add([e])}
                     onFind={() => findSource(e)}
                     onShow={() => nav.showInShelf(e.inShelf)}
-                    onUpdate={() => actions.previewInstalledUpdates([e.key])}
+                    onUpdate={() => actions.updateInstalled([e.key])}
                     update={e.source ? updateOf.get(sourceKey(e.source)) : undefined}
                   />
                 ))}
@@ -494,7 +493,7 @@ export function InstalledPage() {
             <Button
               size="sm"
               disabled={updatable.length === 0}
-              onClick={() => actions.previewInstalledUpdates(updatable.map((e) => e.key))}
+              onClick={() => actions.updateInstalled(updatable.map((e) => e.key))}
             >
               <ArrowUpCircleIcon />
               更新{updatable.length > 0 && ` ${updatable.length}`}

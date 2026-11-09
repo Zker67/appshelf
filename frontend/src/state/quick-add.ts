@@ -82,7 +82,7 @@ export function useQuickAdd(isInShelf: (key: string) => boolean) {
           },
         },
       );
-      if (install) actions.preview(added, "install");
+      if (install) actions.install(added);
     } catch (err) {
       release(keys);
       toast.error("加入清单失败", { description: errorText(err) });

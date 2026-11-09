@@ -424,27 +424,6 @@ func (a *App) resolveUpdates(keys []string) (ids, installed []string, err error)
 	return ids, installed, nil
 }
 
-// Preview says what updating the packages would do. Nothing runs.
-func (s *Updates) Preview(ctx context.Context, keys []string) ([]PreviewEntry, error) {
-	a := s.a
-	ids, installed, err := a.resolveUpdates(keys)
-	if err != nil {
-		return nil, err
-	}
-	out := []PreviewEntry{}
-	if len(ids) > 0 {
-		out = append(out, (&Tasks{a}).Preview(ids, ActionUpgrade)...)
-	}
-	if len(installed) > 0 {
-		more, err := (&Installed{a}).PreviewUpdates(ctx, installed)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, more...)
-	}
-	return out, nil
-}
-
 // Start queues the updates of the packages that can run, after previewing
 // them again, and returns how many.
 func (s *Updates) Start(ctx context.Context, keys []string) (int, error) {
@@ -495,20 +474,6 @@ func (a *App) startUpdates(ctx context.Context, keys []string, auto map[string]b
 		return 0, errors.New("没有可以执行的更新，请重新检查")
 	}
 	return n, nil
-}
-
-// markRunning marks the entries whose programs run.
-func (a *App) markRunning(entries []PreviewEntry) {
-	if len(entries) == 0 {
-		return
-	}
-	ps := a.packages()
-	paths := a.upd.processes()
-	for i := range entries {
-		if p := ps.byKey[entries[i].Source.Key()]; p != nil {
-			entries[i].Running = running(p, paths)
-		}
-	}
 }
 
 // setPolicy changes the policy of a package and tells the pages.

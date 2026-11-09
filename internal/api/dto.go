@@ -184,24 +184,6 @@ func (a TaskAction) queue() (queue.Action, bool) {
 	return 0, false
 }
 
-// PreviewEntry is what installing or updating an app would do.
-type PreviewEntry struct {
-	AppID    string `json:"appId"`
-	Name     string `json:"name"`
-	Icon     string `json:"icon"`
-	Runnable bool   `json:"runnable"`
-	// Plan is "安装", "更新 1.0 → 1.1", or why not.
-	Plan   string         `json:"plan"`
-	Source catalog.Source `json:"source"`
-	// Asset is the installer a GitHub release gives, of Release.
-	Asset   string `json:"asset,omitempty"`
-	Release string `json:"release,omitempty"`
-	// Note is what the source said of the app, as a limit it reached.
-	Note string `json:"note,omitempty"`
-	// Running means a program of the app runs: updating may close it.
-	Running bool `json:"running,omitempty"`
-}
-
 // TaskState is where a task is.
 type TaskState string
 
@@ -468,6 +450,10 @@ type InstalledEntry struct {
 	Size      int64  `json:"size,omitempty"`
 	Installed string `json:"installed,omitempty"`
 	Location  string `json:"location,omitempty"`
+	// LastUsed is when the user last opened it, as Windows recorded its
+	// launches from the Start menu, the taskbar, the desktop and Explorer;
+	// the time it was read when it is running. Empty when no record says.
+	LastUsed time.Time `json:"lastUsed,omitzero"`
 }
 
 // InstalledList is what is installed.
@@ -480,6 +466,9 @@ type InstalledList struct {
 	Partial bool      `json:"partial"`
 	At      time.Time `json:"at,omitzero"`
 	Notes   []string  `json:"notes"`
+	// UsageTracked means Windows records the programs the user opens; off,
+	// no entry has a LastUsed.
+	UsageTracked bool `json:"usageTracked"`
 }
 
 // TokenSource is where the GitHub token comes from.

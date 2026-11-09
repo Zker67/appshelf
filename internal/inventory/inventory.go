@@ -9,6 +9,7 @@ package inventory
 import (
 	"cmp"
 	"context"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"appshelf/internal/detect"
 	"appshelf/internal/source/scoop"
 	"appshelf/internal/source/winget"
+	"appshelf/internal/usage"
 )
 
 // Kind is where an installed program comes from, as far as AppShelf can
@@ -69,6 +71,9 @@ type Entry struct {
 	// YYYY-MM-DD; both empty when unknown.
 	Size        int64
 	InstallDate string
+	// LastUsed is when the user last opened it, as Windows recorded it;
+	// zero when no record says.
+	LastUsed time.Time
 	// Reg is the program's registry entry, when it has one: how to remove
 	// it, and where it is.
 	Reg *detect.Entry
@@ -304,6 +309,8 @@ type Sources struct {
 	Winget func(ctx context.Context) ([]winget.Package, error)
 	Scoop  func(ctx context.Context) ([]scoop.App, error)
 	Scan   func() ([]detect.Entry, error)
+	// Usage reads when programs were last opened (usage.Read).
+	Usage func(ctx context.Context) (usage.Record, error)
 }
 
 // List is what Load found.
@@ -315,6 +322,9 @@ type List struct {
 	// Partial means only the registry was read yet: winget's sources and
 	// updates, scoop and the Store's apps follow.
 	Partial bool
+	// UsageTracked means Windows records the programs the user opens:
+	// without it, no entry has a LastUsed.
+	UsageTracked bool
 }
 
 // Load reads the sources side by side and builds the entries.
@@ -324,7 +334,9 @@ func Load(ctx context.Context, src Sources) List {
 		pkgs             []winget.Package
 		apps             []scoop.App
 		reg              []detect.Entry
+		rec              usage.Record
 		wErr, sErr, rErr error
+		uErr             error
 	)
 	if src.Winget != nil {
 		wg.Go(func() { pkgs, wErr = src.Winget(ctx) })
@@ -334,6 +346,9 @@ func Load(ctx context.Context, src Sources) List {
 	}
 	if src.Scan != nil {
 		wg.Go(func() { reg, rErr = src.Scan() })
+	}
+	if src.Usage != nil {
+		wg.Go(func() { rec, uErr = src.Usage(ctx) })
 	}
 	wg.Wait()
 	notes := slices.Clone(src.Notes)
@@ -346,6 +361,38 @@ func Load(ctx context.Context, src Sources) List {
 	if rErr != nil {
 		notes = append(notes, rErr.Error())
 	}
+	if uErr != nil {
+		notes = append(notes, uErr.Error())
+	}
 	wingetOK := src.Winget != nil && wErr == nil
-	return List{Entries: Build(pkgs, wingetOK, apps, reg), At: time.Now(), Notes: notes}
+	entries := Build(pkgs, wingetOK, apps, reg)
+	if src.Usage != nil {
+		SetLastUsed(entries, rec)
+	}
+	return List{Entries: entries, At: time.Now(), Notes: notes, UsageTracked: rec.Tracked()}
+}
+
+// SetLastUsed sets when each entry was last opened, by the directories of
+// its registry entry, its app package and its scoop app.
+func SetLastUsed(entries []Entry, rec usage.Record) {
+	for i := range entries {
+		e := &entries[i]
+		p := usage.Program{Family: e.PackageFamily}
+		if e.Kind == Scoop {
+			p.ScoopName = e.ScoopName
+		}
+		files := []string{detect.CommandFile(e.Icon)}
+		if e.Reg != nil {
+			files = append(files, detect.CommandFile(e.Reg.UninstallString))
+		}
+		if e.Location != "" {
+			p.Dirs = append(p.Dirs, e.Location)
+		}
+		for _, f := range files {
+			if f != "" {
+				p.Dirs = append(p.Dirs, filepath.Dir(f))
+			}
+		}
+		e.LastUsed = rec.LastUsed(p)
+	}
 }

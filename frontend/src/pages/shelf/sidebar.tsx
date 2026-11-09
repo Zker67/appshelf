@@ -71,7 +71,7 @@ export function ShelfSidebar({
   const tags = shelf?.tags ?? [];
   const all = !hasGroupFilter(filter) && filter.status === "all";
   return (
-    <div className="flex h-full min-h-0 flex-col bg-sidebar">
+    <div className="glass-panel flex h-full min-h-0 flex-col">
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 p-2.5">
           <NavRow
@@ -189,8 +189,8 @@ function NavRow({
       className={cn(
         "side-row group/nav relative flex h-8 items-center gap-2 rounded-lg pr-2 pl-2.5 text-[13px] transition-colors duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50",
         active
-          ? "bg-linear-to-r from-primary/14 to-primary/[0.03] font-medium text-foreground ring-1 ring-primary/10 ring-inset dark:from-primary/24 dark:to-primary/[0.05]"
-          : "text-foreground/80 hover:bg-foreground/[0.05] hover:text-foreground",
+          ? "font-medium text-foreground"
+          : "text-foreground/80 hover:bg-hover hover:text-foreground",
       )}
     >
       <Icon
@@ -242,7 +242,7 @@ function ToolButton({
             onClick();
           }}
           className={cn(
-            "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10",
+            "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover",
             danger ? "hover:text-destructive" : "hover:text-foreground",
           )}
         >
@@ -270,7 +270,7 @@ function NameInput({
   const finish = (keep: boolean) =>
     onDone(keep && value.trim() && value.trim() !== initial ? value.trim() : null);
   return (
-    <div className="anim-fade flex h-8 items-center gap-2 rounded-lg bg-background pr-1.5 pl-2.5 ring-2 ring-ring/40">
+    <div className="anim-fade flex h-8 items-center gap-2 rounded-lg bg-thumb pr-1.5 pl-2.5 ring-2 ring-ring/40">
       <Icon className="size-4 shrink-0 text-primary" />
       <input
         autoFocus
@@ -387,7 +387,7 @@ function NamesGroup({
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="flex h-8 items-center gap-2 rounded-lg pl-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+          className="flex h-8 items-center gap-2 rounded-lg pl-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
         >
           <PlusIcon className="size-4" />
           新建{word}

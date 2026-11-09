@@ -446,10 +446,10 @@ function ModeSwitch({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
     <div
       role="radiogroup"
       aria-label="显示方式"
-      className="relative grid shrink-0 grid-cols-3 rounded-xl bg-foreground/[0.045] p-[3px] dark:bg-white/[0.05]"
+      className="seg-track relative grid shrink-0 grid-cols-3 rounded-xl p-[3px]"
     >
       <div
-        className="absolute top-[3px] bottom-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-[9px] bg-card shadow-sm ring-1 ring-border/60 transition-transform duration-400 ease-spring dark:bg-white/[0.09] dark:ring-white/[0.06]"
+        className="absolute top-[3px] bottom-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-[9px] seg-thumb transition-transform duration-400 ease-spring"
         style={{ transform: `translateX(${index * 100}%)` }}
       />
       {modes.map((m) => (

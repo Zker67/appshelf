@@ -4,12 +4,37 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* The interface's face is Sarasa UI SC, shipped with the app (see
+   public/fonts): Inter for Latin, Source Han Sans for Chinese. It has no
+   medium, so medium takes its semibold. Characters outside its subset fall
+   to the system's fonts. Shown before it loads, the text would jump; it
+   loads from the app itself, at once. */
+@font-face {
+  font-family: "Sarasa UI SC";
+  src: url("/fonts/SarasaUiSC-Regular.woff2") format("woff2");
+  font-weight: 100 449;
+  font-display: block;
+}
+@font-face {
+  font-family: "Sarasa UI SC";
+  src: url("/fonts/SarasaUiSC-SemiBold.woff2") format("woff2");
+  font-weight: 450 649;
+  font-display: block;
+}
+@font-face {
+  font-family: "Sarasa UI SC";
+  src: url("/fonts/SarasaUiSC-Bold.woff2") format("woff2");
+  font-weight: 650 900;
+  font-display: block;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans:
-    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui,
-    sans-serif;
-  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "Microsoft YaHei UI", monospace;
+    "Sarasa UI SC", "Segoe UI Variable Text", "Segoe UI", "Noto Sans SC", "Microsoft YaHei UI",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono:
+    "Cascadia Mono", "Cascadia Code", Consolas, "Sarasa UI SC", "Microsoft YaHei UI", monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -44,13 +69,20 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-surface: var(--surface);
-  --color-titlebar: var(--titlebar);
   --color-brand-from: var(--brand-from);
   --color-brand-to: var(--brand-to);
   --color-brand-foreground: var(--brand-foreground);
+  --color-hover: var(--hover);
+  --color-track: var(--track);
+  --color-thumb: var(--thumb);
+  --color-field: var(--field);
+  --color-sticky: var(--sticky);
+  --color-selected: var(--selected);
   --shadow-soft: 0 1px 2px var(--shadow-color), 0 4px 14px -6px var(--shadow-color);
   --shadow-lift: 0 2px 4px var(--shadow-color), 0 14px 32px -12px var(--shadow-color);
-  --shadow-brand: inset 0 1px 0 var(--highlight), 0 6px 18px -6px var(--brand-glow);
+  --shadow-brand:
+    inset 0 1px 0 var(--highlight), 0 1px 2px var(--brand-glow), 0 4px 12px -6px var(--brand-glow);
+  --radius-panel: 16px;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -62,103 +94,135 @@
   --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
 }
 
-/* Colors of the app icon: a deep cobalt square, light blue shapes. The
-   brand gradient runs from the icon's cobalt to its azure; the side bar and
-   the title bar are glass over the window's ambient light. */
+/* Glacier blue, light glass. The window is an ice fog drifting slowly; the
+   panels are frosted glass resting on it, edged by a rim of light. The brand
+   gradient runs from glacier blue to ice cyan. Lines, hovers and fields are
+   see-through, so that they read the same on any glass. */
 :root {
-  --brand-from: oklch(0.47 0.2 266);
-  --brand-to: oklch(0.64 0.16 250);
+  --brand-from: oklch(0.55 0.14 245);
+  --brand-to: oklch(0.67 0.12 220);
   --brand-foreground: oklch(0.99 0 0);
-  --brand-glow: oklch(0.5 0.2 264 / 38%);
-  --highlight: oklch(1 0 0 / 24%);
-  --shadow-color: oklch(0.35 0.08 264 / 11%);
-  --scrim: oklch(0.3 0.06 266 / 18%);
-  --ambient-a: oklch(0.72 0.13 256 / 22%);
-  --ambient-b: oklch(0.78 0.1 232 / 16%);
-  --background: oklch(0.972 0.007 260);
-  --foreground: oklch(0.22 0.03 264);
-  --surface: oklch(0.985 0.004 260);
-  --titlebar: oklch(0.965 0.012 262 / 80%);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.03 264);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.03 264);
-  --primary: oklch(0.5 0.2 264);
+  --brand-glow: oklch(0.5 0.13 242 / 24%);
+  --highlight: oklch(1 0 0 / 30%);
+  --shadow-color: oklch(0.38 0.07 240 / 12%);
+  --scrim: oklch(0.32 0.05 240 / 16%);
+  /* The ice fog: a light wash, and three slow banks of cyan, blue and frost. */
+  --fog-from: oklch(0.955 0.02 222);
+  --fog-to: oklch(0.925 0.03 246);
+  --fog-1: oklch(0.86 0.08 215 / 70%);
+  --fog-2: oklch(0.82 0.09 250 / 55%);
+  --fog-3: oklch(0.975 0.015 220 / 90%);
+  /* Glass: panels, the main panels a little denser, what floats above them. */
+  --glass: oklch(0.99 0.006 230 / 56%);
+  --glass-strong: oklch(0.995 0.004 230 / 80%);
+  --glass-float: oklch(0.99 0.006 230 / 78%);
+  --glass-edge: oklch(0.4 0.06 240 / 10%);
+  --rim-hi: oklch(1 0 0 / 95%);
+  --rim-lo: oklch(1 0 0 / 35%);
+  --hover: oklch(0.45 0.07 240 / 6%);
+  --track: oklch(0.42 0.06 240 / 7.5%);
+  --thumb: oklch(1 0 0 / 96%);
+  --field: oklch(1 0 0 / 72%);
+  --sticky: oklch(0.99 0.005 230 / 84%);
+  --selected: oklch(0.955 0.04 232 / 95%);
+  --background: oklch(0.955 0.015 230);
+  --foreground: oklch(0.24 0.035 248);
+  --surface: oklch(0.985 0.006 230);
+  --card: oklch(1 0 0 / 70%);
+  --card-foreground: oklch(0.24 0.035 248);
+  --popover: oklch(0.995 0.004 230);
+  --popover-foreground: oklch(0.24 0.035 248);
+  --primary: oklch(0.56 0.135 240);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.945 0.016 260);
-  --secondary-foreground: oklch(0.3 0.06 264);
-  --muted: oklch(0.95 0.01 260);
-  --muted-foreground: oklch(0.5 0.025 262);
-  --accent: oklch(0.93 0.035 260);
-  --accent-foreground: oklch(0.36 0.14 264);
-  --destructive: oklch(0.58 0.22 27);
-  --success: oklch(0.58 0.14 155);
-  --warning: oklch(0.68 0.15 70);
-  --border: oklch(0.905 0.014 260);
-  --input: oklch(0.88 0.016 260);
-  --ring: oklch(0.6 0.16 262);
-  --chart-1: oklch(0.5 0.2 264);
-  --chart-2: oklch(0.7 0.12 250);
-  --chart-3: oklch(0.58 0.14 155);
-  --chart-4: oklch(0.68 0.15 70);
-  --chart-5: oklch(0.58 0.22 27);
+  --secondary: oklch(0.93 0.025 232);
+  --secondary-foreground: oklch(0.32 0.06 242);
+  --muted: oklch(0.94 0.015 232);
+  --muted-foreground: oklch(0.5 0.03 242);
+  --accent: oklch(0.92 0.04 230);
+  --accent-foreground: oklch(0.38 0.11 242);
+  --destructive: oklch(0.58 0.21 25);
+  --success: oklch(0.6 0.13 165);
+  --warning: oklch(0.7 0.15 70);
+  --border: oklch(0.42 0.06 240 / 13%);
+  --input: oklch(0.42 0.06 240 / 20%);
+  --ring: oklch(0.62 0.13 236);
+  --chart-1: oklch(0.56 0.135 240);
+  --chart-2: oklch(0.72 0.11 215);
+  --chart-3: oklch(0.6 0.13 165);
+  --chart-4: oklch(0.7 0.15 70);
+  --chart-5: oklch(0.58 0.21 25);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.006 260 / 72%);
-  --sidebar-foreground: oklch(0.22 0.03 264);
-  --sidebar-primary: oklch(0.5 0.2 264);
+  --sidebar: oklch(0.42 0.06 240 / 4%);
+  --sidebar-foreground: oklch(0.24 0.035 248);
+  --sidebar-primary: oklch(0.56 0.135 240);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.93 0.035 260);
-  --sidebar-accent-foreground: oklch(0.36 0.14 264);
-  --sidebar-border: oklch(0.905 0.014 260);
-  --sidebar-ring: oklch(0.6 0.16 262);
+  --sidebar-accent: oklch(0.92 0.04 230);
+  --sidebar-accent-foreground: oklch(0.38 0.11 242);
+  --sidebar-border: oklch(0.42 0.06 240 / 13%);
+  --sidebar-ring: oklch(0.62 0.13 236);
   color-scheme: light;
 }
 
+/* Polar night: deep blue-grey ice under a faint teal and blue aurora. */
 .dark {
-  --brand-from: oklch(0.5 0.2 266);
-  --brand-to: oklch(0.66 0.15 248);
+  --brand-from: oklch(0.56 0.13 245);
+  --brand-to: oklch(0.69 0.11 218);
   --brand-foreground: oklch(0.99 0 0);
-  --brand-glow: oklch(0.55 0.2 262 / 45%);
+  --brand-glow: oklch(0.55 0.13 235 / 30%);
   --highlight: oklch(1 0 0 / 20%);
-  --shadow-color: oklch(0.08 0.03 266 / 45%);
-  --scrim: oklch(0.08 0.03 266 / 45%);
-  --ambient-a: oklch(0.48 0.17 264 / 30%);
-  --ambient-b: oklch(0.52 0.13 236 / 18%);
-  --background: oklch(0.175 0.03 266);
-  --foreground: oklch(0.95 0.01 255);
-  --surface: oklch(0.2 0.033 266);
-  --titlebar: oklch(0.16 0.032 266 / 78%);
-  --card: oklch(0.215 0.036 266);
-  --card-foreground: oklch(0.95 0.01 255);
-  --popover: oklch(0.235 0.038 266);
-  --popover-foreground: oklch(0.95 0.01 255);
-  --primary: oklch(0.7 0.14 254);
-  --primary-foreground: oklch(0.18 0.05 266);
-  --secondary: oklch(0.27 0.04 266);
-  --secondary-foreground: oklch(0.92 0.02 255);
-  --muted: oklch(0.255 0.036 266);
-  --muted-foreground: oklch(0.7 0.03 258);
-  --accent: oklch(0.3 0.07 262);
-  --accent-foreground: oklch(0.9 0.06 254);
+  --shadow-color: oklch(0.06 0.02 250 / 50%);
+  --scrim: oklch(0.06 0.02 250 / 45%);
+  --fog-from: oklch(0.2 0.035 238);
+  --fog-to: oklch(0.15 0.03 255);
+  --fog-1: oklch(0.42 0.1 220 / 55%);
+  --fog-2: oklch(0.36 0.12 255 / 50%);
+  --fog-3: oklch(0.5 0.07 200 / 22%);
+  --glass: oklch(0.24 0.03 248 / 48%);
+  --glass-strong: oklch(0.2 0.028 248 / 74%);
+  --glass-float: oklch(0.24 0.03 248 / 80%);
+  --glass-edge: oklch(0.05 0.02 250 / 40%);
+  --rim-hi: oklch(1 0 0 / 20%);
+  --rim-lo: oklch(1 0 0 / 5%);
+  --hover: oklch(1 0 0 / 5%);
+  --track: oklch(1 0 0 / 6%);
+  --thumb: oklch(1 0 0 / 11%);
+  --field: oklch(1 0 0 / 5%);
+  --sticky: oklch(0.21 0.028 248 / 86%);
+  --selected: oklch(0.75 0.1 228 / 15%);
+  --background: oklch(0.17 0.028 250);
+  --foreground: oklch(0.95 0.012 230);
+  --surface: oklch(0.205 0.03 248);
+  --card: oklch(1 0 0 / 4.5%);
+  --card-foreground: oklch(0.95 0.012 230);
+  --popover: oklch(0.235 0.032 248);
+  --popover-foreground: oklch(0.95 0.012 230);
+  --primary: oklch(0.76 0.115 228);
+  --primary-foreground: oklch(0.18 0.04 250);
+  --secondary: oklch(0.29 0.035 248);
+  --secondary-foreground: oklch(0.92 0.02 230);
+  --muted: oklch(0.26 0.03 248);
+  --muted-foreground: oklch(0.71 0.03 235);
+  --accent: oklch(0.31 0.06 240);
+  --accent-foreground: oklch(0.9 0.06 228);
   --destructive: oklch(0.7 0.18 22);
-  --success: oklch(0.72 0.14 155);
+  --success: oklch(0.74 0.13 165);
   --warning: oklch(0.8 0.14 75);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.62 0.14 256);
-  --chart-1: oklch(0.7 0.14 254);
-  --chart-2: oklch(0.6 0.16 264);
-  --chart-3: oklch(0.72 0.14 155);
+  --border: oklch(1 0 0 / 8.5%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.64 0.12 232);
+  --chart-1: oklch(0.76 0.115 228);
+  --chart-2: oklch(0.6 0.13 250);
+  --chart-3: oklch(0.74 0.13 165);
   --chart-4: oklch(0.8 0.14 75);
   --chart-5: oklch(0.7 0.18 22);
-  --sidebar: oklch(0.2 0.035 266 / 66%);
-  --sidebar-foreground: oklch(0.95 0.01 255);
-  --sidebar-primary: oklch(0.7 0.14 254);
-  --sidebar-primary-foreground: oklch(0.18 0.05 266);
-  --sidebar-accent: oklch(0.3 0.07 262);
-  --sidebar-accent-foreground: oklch(0.9 0.06 254);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.62 0.14 256);
+  --sidebar: oklch(1 0 0 / 3%);
+  --sidebar-foreground: oklch(0.95 0.012 230);
+  --sidebar-primary: oklch(0.76 0.115 228);
+  --sidebar-primary-foreground: oklch(0.18 0.04 250);
+  --sidebar-accent: oklch(0.31 0.06 240);
+  --sidebar-accent-foreground: oklch(0.9 0.06 228);
+  --sidebar-border: oklch(1 0 0 / 8.5%);
+  --sidebar-ring: oklch(0.64 0.12 232);
   color-scheme: dark;
 }
 
@@ -175,11 +239,6 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "tnum" 0;
-    /* Ambient light at the window's left, seen through the glass bars. */
-    background-image:
-      radial-gradient(52rem 36rem at -12% -18%, var(--ambient-a), transparent 62%),
-      radial-gradient(34rem 30rem at 4% 112%, var(--ambient-b), transparent 64%);
-    background-attachment: fixed;
   }
   html {
     @apply font-sans;
@@ -196,6 +255,13 @@
   }
 }
 
+/* Body text keeps proportional figures; the body's feature setting would
+   also switch off the figures the tabular-nums utility asks for, which
+   counts and versions use to line up. */
+.tabular-nums {
+  font-feature-settings: "tnum" 1;
+}
+
 /* The title bar moves the window; its controls stay clickable. */
 .app-drag {
   --app-region: drag;
@@ -210,11 +276,167 @@
   display: block !important;
 }
 
-/* react-resizable-panels gives a panel's inner box overflow: auto, which
-   flashes a native scrollbar while a page shown again lays its panels out.
-   Panels scroll only through their own ScrollArea. */
+/* react-resizable-panels clips its group and gives a panel's inner box
+   overflow: auto, which would cut off the panels' shadows and flash a native
+   scrollbar while a page shown again lays its panels out. Panels clip and
+   scroll themselves, through their glass and their own ScrollArea. */
+[data-slot="resizable-panel-group"],
 [data-slot="resizable-panel"] > div {
-  overflow: hidden !important;
+  overflow: visible !important;
+}
+
+/* ---- The ice fog behind the window: a wash and three soft banks of cyan,
+   blue and frost, drifting slowly. Only transforms move, so the glass above
+   is not painted again. It holds still behind a dialog, whose scrim blurs
+   it, and when less motion is asked for. ---- */
+.ice-fog {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background-image: linear-gradient(150deg, var(--fog-from), var(--fog-to));
+}
+.ice-fog > span {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+}
+.ice-fog > .fog-1 {
+  top: -30%;
+  left: -18%;
+  width: 78vmax;
+  height: 62vmax;
+  background: radial-gradient(closest-side, var(--fog-1), transparent);
+  animation: fog-a 46s ease-in-out infinite alternate;
+}
+.ice-fog > .fog-2 {
+  right: -24%;
+  bottom: -34%;
+  width: 82vmax;
+  height: 66vmax;
+  background: radial-gradient(closest-side, var(--fog-2), transparent);
+  animation: fog-b 58s ease-in-out infinite alternate;
+}
+.ice-fog > .fog-3 {
+  top: 18%;
+  left: 30%;
+  width: 56vmax;
+  height: 40vmax;
+  background: radial-gradient(closest-side, var(--fog-3), transparent);
+  animation: fog-c 72s ease-in-out infinite alternate;
+}
+@keyframes fog-a {
+  to {
+    transform: translate3d(14vw, 10vh, 0) scale(1.12);
+  }
+}
+@keyframes fog-b {
+  to {
+    transform: translate3d(-16vw, -8vh, 0) scale(0.92);
+  }
+}
+@keyframes fog-c {
+  to {
+    transform: translate3d(-12vw, 14vh, 0) scale(1.18) rotate(8deg);
+  }
+}
+body:has(
+    :is(
+      [data-slot="dialog-overlay"],
+      [data-slot="alert-dialog-overlay"],
+      [data-slot="sheet-overlay"]
+    )
+  )
+  .ice-fog
+  > span {
+  animation-play-state: paused;
+}
+
+/* ---- Glass. A rim of light runs round each piece: bright at two corners,
+   faint between, drawn above the content so that nothing covers it. A
+   panel rests on the fog; strong is for the panels read most; float is what
+   hovers over the panels, frosting what is under it. ---- */
+@layer components {
+  .glass-panel,
+  .glass-float {
+    position: relative;
+    isolation: isolate;
+    background-color: var(--glass);
+    box-shadow:
+      0 0 0 1px var(--glass-edge),
+      0 1px 2px var(--shadow-color),
+      0 14px 34px -18px var(--shadow-color);
+  }
+  .glass-panel::after,
+  .glass-float::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    padding: 1px;
+    border-radius: inherit;
+    background: linear-gradient(
+      135deg,
+      var(--rim-hi),
+      var(--rim-lo) 32%,
+      var(--rim-lo) 68%,
+      var(--rim-hi)
+    );
+    mask:
+      linear-gradient(#000 0 0) content-box exclude,
+      linear-gradient(#000 0 0);
+    pointer-events: none;
+  }
+  .glass-panel {
+    overflow: hidden;
+    border-radius: var(--radius-panel);
+  }
+  .glass-strong {
+    background-color: var(--glass-strong);
+  }
+  .glass-float {
+    background-color: var(--glass-float);
+    backdrop-filter: blur(22px) saturate(1.7);
+    box-shadow:
+      0 0 0 1px var(--glass-edge),
+      0 2px 6px -2px var(--shadow-color),
+      0 18px 40px -14px var(--shadow-color);
+  }
+
+  /* A segmented choice: a sunken track, the chosen part raised on it. */
+  .seg-track {
+    background-color: var(--track);
+    box-shadow: inset 0 1px 1px var(--glass-edge);
+  }
+  .seg-thumb {
+    background-color: var(--thumb);
+    box-shadow:
+      0 0 0 1px var(--glass-edge),
+      inset 0 1px 0 var(--highlight),
+      0 1px 2px var(--shadow-color),
+      0 3px 8px -4px var(--shadow-color);
+  }
+}
+
+/* Asked for less transparency, the glass turns nearly solid. */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  .dark {
+    --glass: color-mix(in oklch, var(--surface) 96%, transparent);
+    --glass-strong: var(--surface);
+    --glass-float: var(--popover);
+  }
+  .glass-float,
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="context-menu-content"],
+  [data-slot="context-menu-sub-content"],
+  [data-slot="popover-content"],
+  [data-slot="select-content"],
+  .cn-toast {
+    backdrop-filter: none !important;
+  }
 }
 
 /* Rows far out of view skip their layout and paint. */
@@ -521,8 +743,9 @@
     width 0.46s var(--ease-spring);
 }
 
-/* ---- Selection: a side bar's chosen row is a tinted pill with its count in
-   the brand gradient; a list's focused row lifts as an inset card. ---- */
+/* ---- Selection: a side bar's chosen row and a list's focused row are the
+   same raised card of ice, inset from the edges, never a bar at the side;
+   the side row's count is a capsule in the brand gradient. ---- */
 @keyframes row-select {
   0% {
     transform: scale(0.97);
@@ -553,6 +776,11 @@
   }
 }
 .side-row[aria-pressed="true"] {
+  background-color: var(--selected);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--primary) 18%, transparent),
+    0 1px 2px var(--shadow-color),
+    0 4px 12px -6px var(--shadow-color);
   animation: row-select 0.34s var(--ease-spring);
 }
 .side-row > svg:first-of-type {
@@ -564,6 +792,34 @@
 .side-row:hover:not([aria-pressed="true"]) > svg:first-of-type {
   animation: icon-hop 0.5s var(--ease-spring);
 }
+/* A list's row: a line under it, inset from the panel's sides; hovered or
+   checked, an inset tint; focused, the raised card. */
+.list-row {
+  isolation: isolate;
+}
+.list-row::before {
+  content: "";
+  position: absolute;
+  inset: 3px 6px;
+  z-index: -1;
+  border-radius: var(--radius-lg);
+  transition: background-color 0.18s var(--ease-out-soft);
+}
+.list-row::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: 0;
+  left: 12px;
+  height: 1px;
+  background-color: var(--border);
+}
+.list-row:hover::before {
+  background-color: var(--hover);
+}
+.list-row[data-checked="true"]::before {
+  background-color: color-mix(in oklch, var(--primary) 7%, transparent);
+}
 .row-focus {
   isolation: isolate;
 }
@@ -573,14 +829,11 @@
   inset: 4px 6px;
   z-index: -1;
   border-radius: var(--radius-lg);
-  background-image: linear-gradient(
-    90deg,
-    color-mix(in oklch, var(--primary) 14%, transparent),
-    color-mix(in oklch, var(--primary) 5%, transparent)
-  );
+  background-color: var(--selected) !important;
   box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--primary) 22%, transparent),
-    0 6px 16px -10px var(--brand-glow);
+    inset 0 0 0 1px color-mix(in oklch, var(--primary) 20%, transparent),
+    0 1px 2px var(--shadow-color),
+    0 6px 16px -8px var(--shadow-color);
   animation: focus-in 0.34s var(--ease-spring) both;
 }
 
@@ -713,11 +966,23 @@
     0 1px 2px var(--brand-glow),
     0 8px 20px -6px var(--brand-glow);
 }
+/* Outlined buttons are a pane of frosted field on the glass; ghost buttons
+   tint as the rows do. */
+[data-slot="button"][data-variant="outline"] {
+  background-color: var(--field);
+}
 [data-slot="button"][data-variant="outline"]:not(:focus-visible) {
-  box-shadow: 0 1px 2px var(--shadow-color);
+  box-shadow:
+    inset 0 1px 0 var(--highlight),
+    0 1px 2px var(--shadow-color);
 }
 [data-slot="button"][data-variant="outline"]:hover:not(:disabled) {
   border-color: color-mix(in oklch, var(--primary) 35%, var(--border));
+  background-color: var(--thumb);
+}
+[data-slot="button"][data-variant="ghost"]:hover:not(:disabled),
+[data-slot="button"][data-variant="ghost"][aria-expanded="true"] {
+  background-color: var(--hover);
 }
 
 @keyframes check-pop {
@@ -750,18 +1015,19 @@
   transition-timing-function: var(--ease-spring);
 }
 
-/* Menus and popovers: glass, opening with a little spring. */
+/* Menus and popovers: floating glass, opening with a little spring. */
 [data-slot="dropdown-menu-content"],
 [data-slot="dropdown-menu-sub-content"],
 [data-slot="context-menu-content"],
 [data-slot="context-menu-sub-content"],
 [data-slot="popover-content"],
 [data-slot="select-content"] {
-  background-color: color-mix(in oklch, var(--popover) 84%, transparent);
-  backdrop-filter: blur(18px) saturate(1.5);
+  background-color: var(--glass-float);
+  backdrop-filter: blur(22px) saturate(1.7);
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--foreground) 9%, transparent),
-    0 12px 32px -10px var(--shadow-color),
+    0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--rim-lo),
+    0 14px 34px -10px var(--shadow-color),
     0 3px 8px -3px var(--shadow-color);
 }
 :is(
@@ -782,9 +1048,12 @@
   backdrop-filter: blur(6px) saturate(1.2);
   animation-duration: 0.24s;
 }
+/* Dialogs are solid, for their long text to stay crisp; their rim and
+   shadow keep them of a piece with the glass. */
 :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--foreground) 9%, transparent),
+    0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--rim-hi),
     0 24px 60px -16px var(--shadow-color),
     0 6px 16px -6px var(--shadow-color);
 }
@@ -798,16 +1067,23 @@
   animation-duration: 0.14s;
 }
 [data-slot="sheet-content"] {
-  box-shadow: -18px 0 48px -18px var(--shadow-color);
+  box-shadow:
+    0 0 0 1px var(--glass-edge),
+    -18px 0 48px -18px var(--shadow-color);
 }
 [data-slot="sheet-content"][data-state="open"] {
   animation-duration: 0.4s;
   animation-timing-function: var(--ease-out-soft);
 }
 
-/* Toasts are glass, as the menus. */
+/* Toasts are floating glass, as the menus. */
 .cn-toast {
-  backdrop-filter: blur(18px) saturate(1.5);
+  background-color: var(--glass-float) !important;
+  backdrop-filter: blur(22px) saturate(1.7);
+  box-shadow:
+    0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--rim-lo),
+    0 14px 34px -10px var(--shadow-color) !important;
 }
 
 /* Loading placeholders: light sweeps across instead of a pulse. */
@@ -822,13 +1098,34 @@
   animation: shimmer 1.6s linear infinite;
 }
 
-/* The line between panels lights up where it can be dragged. */
+/* Between panels is a gap of fog; a grip shows in it where it can be
+   dragged, growing while dragged. */
 [data-slot="resizable-handle"] {
-  transition: background-color 0.2s var(--ease-out-soft);
+  width: 8px;
+  background-color: transparent;
 }
-[data-slot="resizable-handle"]:hover,
-[data-slot="resizable-handle"]:active {
-  background-color: color-mix(in oklch, var(--primary) 55%, transparent);
+[data-slot="resizable-handle"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 28px;
+  translate: -50% -50%;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  opacity: 0;
+  transition:
+    opacity 0.2s var(--ease-out-soft),
+    height 0.36s var(--ease-spring);
+}
+[data-slot="resizable-handle"]:is([data-separator="hover"], [data-separator="active"])::before {
+  opacity: 0.55;
+  height: 44px;
+}
+[data-slot="resizable-handle"][data-separator="active"]::before {
+  opacity: 0.8;
+  height: 72px;
 }
 
 @media (prefers-reduced-motion: reduce) {

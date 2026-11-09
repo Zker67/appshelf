@@ -56,10 +56,10 @@ export function NoteTab({ item }: { item: ShelfApp }) {
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         {tasks.total > 0 && (
-          <span className="inline-flex h-6 items-center gap-1.5 rounded-full bg-foreground/[0.045] pr-2.5 pl-2 text-xs text-muted-foreground tabular-nums">
+          <span className="inline-flex h-6 items-center gap-1.5 rounded-full bg-track pr-2.5 pl-2 text-xs text-muted-foreground tabular-nums">
             <ListChecksIcon className="size-3.5" />
             {tasks.done} / {tasks.total}
-            <span className="h-1 w-10 overflow-hidden rounded-full bg-foreground/10">
+            <span className="h-1 w-10 overflow-hidden rounded-full bg-track">
               <span
                 className="block h-full rounded-full bg-primary transition-[width] duration-500 ease-out-soft"
                 style={{ width: `${(tasks.done / tasks.total) * 100}%` }}

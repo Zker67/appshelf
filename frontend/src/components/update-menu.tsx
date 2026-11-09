@@ -105,7 +105,7 @@ export function UpdateMenu({
               size="xs"
               onClick={(ev) => ev.stopPropagation()}
               className={cn(
-                "shrink-0 gap-1 text-muted-foreground hover:text-foreground data-[state=open]:bg-foreground/[0.06] data-[state=open]:text-foreground",
+                "shrink-0 gap-1 text-muted-foreground hover:text-foreground data-[state=open]:bg-hover data-[state=open]:text-foreground",
                 t.mode === "auto" && "text-primary hover:text-primary",
                 className,
               )}

@@ -4,7 +4,7 @@
 
 import { AddTargetChip } from "@/components/add-target";
 import { AppIcon } from "@/components/app-icon";
-import { CopyButton, EmptyState, SearchBox, SelectionBar } from "@/components/common";
+import { CopyButton, EmptyState, SearchBox, SelectionBar, WideLabel } from "@/components/common";
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
 import { DetailPanel } from "@/components/detail-panel";
 import { PackageInfo } from "@/components/package-info";
@@ -319,7 +319,7 @@ export function DiscoverPage() {
         maxSize={340}
         groupResizeBehavior="preserve-pixel-size"
       >
-        <div className="flex h-full min-h-0 flex-col bg-sidebar">
+        <div className="glass-panel flex h-full min-h-0 flex-col">
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-4 p-2.5">
               <SideRow
@@ -347,7 +347,7 @@ export function DiscoverPage() {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel id="list" minSize={520}>
-        <div className="@container relative flex h-full min-h-0 flex-col bg-background">
+        <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[60px] shrink-0 items-center gap-2.5 border-b px-3">
             <AddTargetChip />
             <SearchBox
@@ -366,11 +366,12 @@ export function DiscoverPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    aria-label="搜 GitHub"
                     disabled={!searchable(query) || results.github.state === "loading"}
                     onClick={() => searchGitHub(query)}
                   >
                     <GitHubMark className="size-3.5" />
-                    搜 GitHub
+                    <WideLabel from="xl">搜 GitHub</WideLabel>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -379,14 +380,20 @@ export function DiscoverPage() {
                     : "未设置 token 时每分钟最多 10 次"}
                 </TooltipContent>
               </Tooltip>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => actions.edit(undefined, { name: query.trim() })}
-              >
-                <PencilLineIcon />
-                手动添加
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label="手动添加"
+                    onClick={() => actions.edit(undefined, { name: query.trim() })}
+                  >
+                    <PencilLineIcon />
+                    <WideLabel>手动添加</WideLabel>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>手动添加</TooltipContent>
+              </Tooltip>
             </div>
           </div>
           {find && (
@@ -444,7 +451,7 @@ export function DiscoverPage() {
                 {sections.map(({ kind: k, hits }) =>
                   hits.length === 0 ? null : (
                     <section key={k}>
-                      <div className="sticky top-0 z-10 flex h-8 items-center gap-2 border-b bg-background/90 px-4 text-xs font-medium text-muted-foreground backdrop-blur">
+                      <div className="sticky top-0 z-10 flex h-8 items-center gap-2 border-b bg-sticky px-4 text-xs font-medium text-muted-foreground backdrop-blur-md">
                         <SourceIcon type={k} />
                         {sourceLabel(k)}
                         <span className="tabular-nums">{hits.length}</span>
@@ -608,7 +615,7 @@ function TwinSwitch({ twin, className }: { twin: TwinPick; className?: string })
         <span
           role="radiogroup"
           aria-label="选择来源"
-          className={cn("inline-flex shrink-0 rounded-md bg-muted p-0.5", className)}
+          className={cn("seg-track inline-flex shrink-0 rounded-md p-0.5", className)}
           onClick={(e) => e.stopPropagation()}
         >
           {(["winget", "scoop"] as const).map((k) => (
@@ -621,7 +628,7 @@ function TwinSwitch({ twin, className }: { twin: TwinPick; className?: string })
               className={cn(
                 "flex h-5 items-center gap-1 rounded-[5px] px-1.5 text-[11px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                 twin.pick === k
-                  ? "bg-background text-foreground shadow-xs"
+                  ? "seg-thumb text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -667,9 +674,10 @@ function HitRow({
     <div
       data-row={rowKey}
       onClick={onClick}
+      data-checked={checked}
       className={cn(
-        "row-lazy group/row relative flex h-[60px] items-center gap-3 border-b border-border/60 px-3 transition-colors duration-150 select-none",
-        focused ? "row-focus" : checked ? "bg-primary/[0.05]" : "hover:bg-foreground/[0.035]",
+        "row-lazy list-row group/row relative flex h-[60px] items-center gap-3 px-3 select-none",
+        focused && "row-focus",
       )}
     >
       <Checkbox
@@ -692,7 +700,7 @@ function HitRow({
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="truncate text-sm font-medium">{h.name}</span>
           {h.version && (
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">{h.version}</span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{h.version}</span>
           )}
         </div>
         <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
@@ -829,7 +837,7 @@ function ResultSkeleton() {
       {Array.from({ length: 8 }, (_, i) => (
         <div
           key={i}
-          className="flex h-[60px] items-center gap-3 border-b border-border/60 px-3"
+          className="list-row pointer-events-none relative flex h-[60px] items-center gap-3 px-3"
           style={{ opacity: 1 - i * 0.1 }}
         >
           <Skeleton className="size-4 rounded" />

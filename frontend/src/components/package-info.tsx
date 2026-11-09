@@ -102,7 +102,7 @@ function FactGrid({ facts, loading = 0 }: { facts: Fact[]; loading?: number }) {
             </span>
             <span
               className={cn(
-                "truncate text-[13.5px] font-medium select-text",
+                "truncate text-[13.5px] font-medium tabular-nums select-text",
                 f.mono && "font-mono text-[13px] tabular-nums",
                 f.tone === "primary" && "text-primary",
                 f.tone === "warning" && "text-warning",
@@ -233,7 +233,6 @@ function facts(d: PackageDetails, latest?: string): Fact[] {
       icon: PackageIcon,
       value: version,
       title: version,
-      mono: true,
       tone: "primary",
     });
   }

@@ -164,7 +164,7 @@ export function TagPicker({
           {t.name}
           <button
             type="button"
-            className="rounded p-0.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+            className="rounded p-0.5 text-muted-foreground hover:bg-hover hover:text-foreground"
             onClick={t.remove}
             aria-label={`去掉标签 ${t.name}`}
           >

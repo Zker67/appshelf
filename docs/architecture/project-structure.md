@@ -59,7 +59,7 @@ Go 模块 `appshelf`，最初由 `mygo init -template native` 生成，0.2.0 起
 | [go.mod](../../go.mod) / `go.sum` | 依赖和 MyGo CLI 工具版本 |
 | [mygo.json](../../mygo.json) | 应用名、标识符、版本号、输出目录、自更新配置 |
 | [CHANGELOG.md](../../CHANGELOG.md) | 每个版本的更新说明，构建时写进自更新清单 |
-| [resources/icon.png](../../resources/icon.png) | 应用图标（1024×1024，深钴蓝圆角方形，外部透明） |
+| [resources/icon.png](../../resources/icon.png) | 应用图标（1024×1024，冰川蓝玻璃圆角方形，外部透明；`frontend/src/assets/logo.png` 和 `frontend/public/favicon.png` 是同一图标的 128×128） |
 | [.agents/skills/mygo-maintenance/](../../.agents/skills/mygo-maintenance/) | MyGo 版本维护 Skill |
 
 `internal/` 的分层：每个包只依赖层号比它大的包，`main.go` 在最上面组装。

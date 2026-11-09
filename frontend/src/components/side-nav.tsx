@@ -44,8 +44,8 @@ export function SideRow({
       className={cn(
         "side-row relative flex h-8 items-center gap-2 rounded-lg pr-2 pl-2.5 text-left text-[13px] transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         active
-          ? "bg-linear-to-r from-primary/14 to-primary/[0.03] font-medium text-foreground ring-1 ring-primary/10 ring-inset dark:from-primary/24 dark:to-primary/[0.05]"
-          : "text-foreground/80 hover:bg-foreground/[0.05] hover:text-foreground",
+          ? "font-medium text-foreground"
+          : "text-foreground/80 hover:bg-hover hover:text-foreground",
       )}
     >
       <Icon

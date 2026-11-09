@@ -103,7 +103,7 @@ export function SelectionBar({
 }) {
   if (count === 0) return null;
   return (
-    <div className="anim-bar absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-xl border bg-popover/95 p-1.5 pl-3.5 shadow-xl shadow-black/10 backdrop-blur supports-[backdrop-filter]:bg-popover/85 dark:shadow-black/40">
+    <div className="glass-float anim-bar absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-2xl p-1.5 pl-3.5">
       <span className="mr-1.5 text-sm font-medium whitespace-nowrap">
         已选 <span className="text-primary tabular-nums">{count}</span> 项
       </span>
@@ -144,7 +144,7 @@ export function SearchBox({
   return (
     <InputGroup
       className={cn(
-        "bg-background/70 transition-shadow focus-within:shadow-sm",
+        "bg-field shadow-[inset_0_1px_0_var(--highlight)] transition-shadow focus-within:shadow-sm",
         size === "lg" ? "h-10" : "h-8",
         className,
       )}
@@ -222,6 +222,26 @@ export function CopyButton({
       <TooltipContent>复制</TooltipContent>
     </Tooltip>
   );
+}
+
+const wideFrom = {
+  xl: "hidden @xl:inline",
+  "2xl": "hidden @2xl:inline",
+} as const;
+
+/**
+ * WideLabel is the words of a toolbar's button, shown while its list is at
+ * least `from` wide; narrower, the button keeps its icon, named by its
+ * tooltip, so that the toolbar never runs out of the panel.
+ */
+export function WideLabel({
+  from = "2xl",
+  children,
+}: {
+  from?: keyof typeof wideFrom;
+  children: ReactNode;
+}) {
+  return <span className={wideFrom[from]}>{children}</span>;
 }
 
 /** Chip is a small summary label of a toolbar. */

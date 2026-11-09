@@ -1,7 +1,7 @@
 // My shelf: the catalog's apps, filtered by state, category and tag, to
 // install and update one or many; their details at the right.
 
-import { Chip, EmptyState, SearchBox, SelectionBar } from "@/components/common";
+import { Chip, EmptyState, SearchBox, SelectionBar, WideLabel } from "@/components/common";
 import { CategoryPicker } from "@/components/pickers";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -190,10 +190,10 @@ export function ShelfPage() {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel id="list" minSize={460}>
-        <div className="@container relative flex h-full min-h-0 flex-col bg-background">
+        <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
-            <div className="flex min-w-0 shrink-0 items-center gap-2">
-              <span className="max-w-60 truncate text-sm font-semibold">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="max-w-60 min-w-0 truncate text-sm font-semibold">
                 {title(filter, categories, tags)}
               </span>
               {hasGroupFilter(filter) && filter.status !== "all" && (
@@ -249,12 +249,17 @@ export function ShelfPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <PlusIcon />
-                    添加软件
-                  </Button>
-                </DropdownMenuTrigger>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" aria-label="添加软件">
+                        <PlusIcon />
+                        <WideLabel>添加软件</WideLabel>
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>添加软件</TooltipContent>
+                </Tooltip>
                 <DropdownMenuContent align="end" className="w-44">
                   <DropdownMenuItem onSelect={() => nav.search("")}>
                     <SearchIcon />
@@ -274,14 +279,16 @@ export function ShelfPage() {
                 <TooltipTrigger asChild>
                   <Button
                     size="sm"
+                    aria-label="检查更新"
                     onClick={() => void refresh()}
                     disabled={shelf?.refreshing ?? true}
                   >
                     <RefreshCwIcon className={shelf?.refreshing ? "animate-spin" : undefined} />
-                    检查更新
+                    <WideLabel from="xl">检查更新</WideLabel>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
+                  检查更新 ·{" "}
                   {formatDateTime(shelf?.lastRefresh)
                     ? `上次检查：${formatDateTime(shelf?.lastRefresh)}`
                     : "还没有检查过"}
@@ -326,7 +333,7 @@ export function ShelfPage() {
             </EmptyState>
           ) : (
             <>
-              <div className="flex h-9 shrink-0 items-center gap-3 border-b bg-muted/30 px-3 text-xs text-muted-foreground">
+              <div className="flex h-9 shrink-0 items-center gap-3 border-b bg-hover px-3 text-xs text-muted-foreground">
                 <Checkbox
                   checked={allChecked ? true : selecting ? "indeterminate" : false}
                   onCheckedChange={() => list.selectAll(!allChecked)}
@@ -362,7 +369,7 @@ export function ShelfPage() {
                   <button
                     type="button"
                     onClick={() => nav.search("")}
-                    className="flex h-12 w-full items-center gap-2 px-4 text-sm text-muted-foreground transition-colors hover:bg-foreground/[0.035] hover:text-foreground"
+                    className="list-row relative flex h-12 w-full items-center gap-2 px-4 text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <PlusIcon className="size-4" />
                     添加软件
@@ -490,7 +497,7 @@ function ListSkeleton() {
       {Array.from({ length: 10 }, (_, i) => (
         <div
           key={i}
-          className="flex h-[60px] items-center gap-3 border-b border-border/60 px-3"
+          className="list-row pointer-events-none relative flex h-[60px] items-center gap-3 px-3"
           style={{ opacity: 1 - i * 0.08 }}
         >
           <Skeleton className="size-4 rounded" />

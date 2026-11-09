@@ -90,9 +90,10 @@ export function ShelfRow({
         <div
           data-row={app.id}
           onClick={(e) => act.clickRow(app.id, e)}
+          data-checked={checked}
           className={cn(
-            "row-lazy group/row relative flex h-[60px] items-center gap-3 border-b border-border/60 pr-3 pl-3 transition-colors duration-150 select-none",
-            focused ? "row-focus" : checked ? "bg-primary/[0.05]" : "hover:bg-foreground/[0.035]",
+            "row-lazy list-row group/row relative flex h-[60px] items-center gap-3 pr-3 pl-3 select-none",
+            focused && "row-focus",
           )}
         >
           <Checkbox
@@ -128,7 +129,7 @@ export function ShelfRow({
                 </Tooltip>
               )}
               {(status?.version || status?.state === "updateAvailable") && (
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                   {status.version || "?"}
                   {status.state === "updateAvailable" && status.latest && (
                     <span className="text-primary"> → {status.latest}</span>

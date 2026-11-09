@@ -5,7 +5,7 @@
 
 import logo from "@/assets/logo.png";
 import { AppIcon } from "@/components/app-icon";
-import { Chip, EmptyState, SearchBox } from "@/components/common";
+import { Chip, EmptyState, SearchBox, WideLabel } from "@/components/common";
 import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
 import { SourceBadge } from "@/components/source-badge";
 import { Pill } from "@/components/status-badge";
@@ -29,7 +29,6 @@ import { errorText, useUpdateHistory, useUpdateSettings, useUpdates } from "@/li
 import { sourceID } from "@/lib/shelf";
 import { formatClock, formatDateTime, matches } from "@/lib/text";
 import { holdText } from "@/lib/updates";
-import { cn } from "@/lib/utils";
 import {
   About,
   Updates,
@@ -146,7 +145,7 @@ export function UpdatesPage() {
         maxSize={340}
         groupResizeBehavior="preserve-pixel-size"
       >
-        <div className="flex h-full min-h-0 flex-col bg-sidebar">
+        <div className="glass-panel flex h-full min-h-0 flex-col">
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-4 p-2.5">
               <SideGroup title="更新">
@@ -170,10 +169,10 @@ export function UpdatesPage() {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel id="list" minSize={520}>
-        <div className="@container relative flex h-full min-h-0 flex-col bg-background">
+        <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
-            <div className="flex shrink-0 items-center gap-2">
-              <span className="text-sm font-semibold">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold">
                 {views.find((v) => v.value === view)?.label}
               </span>
               <Tooltip>
@@ -195,26 +194,39 @@ export function UpdatesPage() {
               placeholder="搜索软件名称"
               className="mx-auto w-full max-w-sm min-w-40"
             />
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              disabled={list?.checking ?? true}
-              onClick={() => void check()}
-            >
-              <RefreshCwIcon className={list?.checking ? "animate-spin" : undefined} />
-              {list?.checking ? "检查中" : "检查更新"}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  aria-label="检查更新"
+                  disabled={list?.checking ?? true}
+                  onClick={() => void check()}
+                >
+                  <RefreshCwIcon className={list?.checking ? "animate-spin" : undefined} />
+                  <WideLabel>{list?.checking ? "检查中" : "检查更新"}</WideLabel>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>检查更新</TooltipContent>
+            </Tooltip>
             {view === "updates" && (
-              <Button
-                size="sm"
-                className="shrink-0"
-                disabled={runnable.length === 0}
-                onClick={() => actions.previewUpdates(runnable.map((i) => i.key))}
-              >
-                <ArrowUpCircleIcon />
-                全部更新{runnable.length > 0 && ` ${runnable.length}`}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    className="shrink-0"
+                    aria-label="全部更新"
+                    disabled={runnable.length === 0}
+                    onClick={() => actions.previewUpdates(runnable.map((i) => i.key))}
+                  >
+                    <ArrowUpCircleIcon />
+                    <WideLabel from="xl">全部更新</WideLabel>
+                    {runnable.length > 0 && ` ${runnable.length}`}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>全部更新</TooltipContent>
+              </Tooltip>
             )}
             {view === "history" && <ClearHistory disabled={records.length === 0} />}
           </div>
@@ -395,7 +407,7 @@ function SelfCard({ version, available }: { version: string; available: string }
 /** Versions shows "1.8 → 1.9". */
 function Versions({ from, to }: { from?: string; to?: string }) {
   return (
-    <span className="shrink-0 font-mono text-xs text-muted-foreground select-text">
+    <span className="shrink-0 text-xs text-muted-foreground tabular-nums select-text">
       {from || "?"} → <span className="text-primary">{to || "?"}</span>
     </span>
   );
@@ -413,7 +425,7 @@ function RowShell({
   children: ReactNode;
 }) {
   return (
-    <div className="row-lazy group/row relative flex h-[60px] items-center gap-3 border-b border-border/60 px-3 transition-colors duration-150 hover:bg-foreground/[0.035]">
+    <div className="row-lazy list-row group/row relative flex h-[60px] items-center gap-3 px-3">
       <AppIcon path={icon} name={name} size={36} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium select-text">{name}</div>
@@ -675,16 +687,22 @@ function ClearHistory({ disabled }: { disabled: boolean }) {
   };
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        className="shrink-0"
-        disabled={disabled}
-        onClick={() => setOpen(true)}
-      >
-        <Trash2Icon />
-        清除记录
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            aria-label="清除记录"
+            disabled={disabled}
+            onClick={() => setOpen(true)}
+          >
+            <Trash2Icon />
+            <WideLabel>清除记录</WideLabel>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>清除记录</TooltipContent>
+      </Tooltip>
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -709,7 +727,7 @@ function ListSkeleton() {
       {Array.from({ length: 9 }, (_, i) => (
         <div
           key={i}
-          className={cn("flex h-[60px] items-center gap-3 border-b border-border/60 px-3")}
+          className="list-row pointer-events-none relative flex h-[60px] items-center gap-3 px-3"
           style={{ opacity: 1 - i * 0.09 }}
         >
           <Skeleton className="size-9 rounded-[26%]" />

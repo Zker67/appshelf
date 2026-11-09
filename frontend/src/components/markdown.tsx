@@ -138,7 +138,7 @@ const components: Components = {
     // Inside pre, the block's own look; alone, a chip.
     if (className?.startsWith("language-")) return <code>{children}</code>;
     return (
-      <code className="rounded-[5px] bg-foreground/[0.06] px-[5px] py-px font-mono text-[0.9em] dark:bg-white/[0.08]">
+      <code className="rounded-[5px] bg-track px-[5px] py-px font-mono text-[0.9em]">
         {children}
       </code>
     );
@@ -152,7 +152,7 @@ const components: Components = {
       ),
     )?.[1];
     return (
-      <div className="group/code relative my-2.5 overflow-hidden rounded-lg bg-foreground/[0.045] ring-1 ring-border/60 dark:bg-white/[0.04]">
+      <div className="group/code relative my-2.5 overflow-hidden rounded-lg bg-hover ring-1 ring-border/60">
         {lang && (
           <div className="border-b border-border/50 px-3 py-1 font-mono text-[11px] text-muted-foreground">
             {lang}
@@ -174,7 +174,7 @@ const components: Components = {
       <table className="w-full border-collapse text-[13px]">{children}</table>
     </div>
   ),
-  thead: ({ children }) => <thead className="bg-foreground/[0.035]">{children}</thead>,
+  thead: ({ children }) => <thead className="bg-hover">{children}</thead>,
   tr: ({ children }) => <tr className="border-b border-border/60 last:border-0">{children}</tr>,
   th: ({ children, style }) => (
     <th style={style} className="px-2.5 py-1.5 text-left font-semibold">

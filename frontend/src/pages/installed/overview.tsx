@@ -117,13 +117,13 @@ export function InstalledOverview({
                   key={k.value}
                   type="button"
                   onClick={() => onOpen({ kinds: new Set([k.value]) })}
-                  className="group/bar grid grid-cols-[6.5rem_1fr_auto] items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-foreground/[0.04]"
+                  className="group/bar grid grid-cols-[6.5rem_1fr_auto] items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-hover"
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <SourceIcon type={k.value} className="size-4 shrink-0" />
                     <span className="truncate">{k.label}</span>
                   </span>
-                  <span className="h-2 overflow-hidden rounded-full bg-foreground/[0.06]">
+                  <span className="h-2 overflow-hidden rounded-full bg-track">
                     <span
                       className="anim-grow-x block h-full rounded-full bg-linear-to-r from-brand-from to-brand-to opacity-80 transition-opacity group-hover/bar:opacity-100"
                       style={{
@@ -150,7 +150,7 @@ export function InstalledOverview({
                 / {total} 个已在清单 · {percent(inShelf, total)}
               </span>
             </div>
-            <div className="mx-2 mt-2.5 h-2 overflow-hidden rounded-full bg-foreground/[0.06]">
+            <div className="mx-2 mt-2.5 h-2 overflow-hidden rounded-full bg-track">
               <div
                 className="anim-grow-x h-full rounded-full bg-success/80 [animation-delay:300ms]"
                 style={{ width: `${total ? (inShelf / total) * 100 : 0}%` }}
@@ -219,7 +219,7 @@ export function InstalledOverview({
                   <AppIcon path={e.icon} name={e.name} size={24} />
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{e.name}</span>
                   <SourceBadge type={e.kind} />
-                  <span className="w-44 shrink-0 truncate text-right font-mono text-xs text-muted-foreground">
+                  <span className="w-44 shrink-0 truncate text-right text-xs text-muted-foreground tabular-nums">
                     {e.version ?? "?"} → <span className="text-primary">{e.update}</span>
                   </span>
                 </div>
@@ -228,7 +228,7 @@ export function InstalledOverview({
                 <button
                   type="button"
                   onClick={() => onOpen({ update: "update" })}
-                  className="mt-1 rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+                  className="mt-1 rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
                 >
                   还有 {updates.length - updateRows} 个，查看全部
                 </button>

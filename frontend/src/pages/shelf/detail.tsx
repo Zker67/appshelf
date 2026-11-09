@@ -77,7 +77,6 @@ export function ShelfDetail({
       icon: BoxIcon,
       value: status.version,
       title: status.version,
-      mono: true,
     });
   }
   if (status?.asset) {

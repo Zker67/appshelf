@@ -6,7 +6,7 @@
 
 import { AddTargetChip } from "@/components/add-target";
 import { AppIcon } from "@/components/app-icon";
-import { Chip, EmptyState, SearchBox, SelectionBar } from "@/components/common";
+import { Chip, EmptyState, SearchBox, SelectionBar, WideLabel } from "@/components/common";
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
 import { AddButton, InShelfButton } from "@/components/row-actions";
 import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
@@ -216,7 +216,7 @@ export function InstalledPage() {
         maxSize={340}
         groupResizeBehavior="preserve-pixel-size"
       >
-        <div className="flex h-full min-h-0 flex-col bg-sidebar">
+        <div className="glass-panel flex h-full min-h-0 flex-col">
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-4 p-2.5">
               <div className="flex flex-col gap-0.5">
@@ -296,10 +296,10 @@ export function InstalledPage() {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel id="list" minSize={520}>
-        <div className="@container relative flex h-full min-h-0 flex-col bg-background">
+        <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
-            <div className="flex shrink-0 items-center gap-2">
-              <span className="text-sm font-semibold">本机已装</span>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold">本机已装</span>
               <Chip icon={LayersIcon}>{overview ? entries.length : shown.length} 个</Chip>
               {(data?.notes.length ?? 0) > 0 && (
                 <Tooltip>
@@ -337,14 +337,17 @@ export function InstalledPage() {
                   variant="outline"
                   size="sm"
                   className="shrink-0"
+                  aria-label="重新读取"
                   disabled={data?.loading ?? true}
                   onClick={() => void refresh()}
                 >
                   <RefreshCwIcon className={data?.loading ? "animate-spin" : undefined} />
-                  {data?.loading ? "读取中" : "重新读取"}
+                  <WideLabel>{data?.loading ? "读取中" : "重新读取"}</WideLabel>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{at ? `读取于 ${at}` : "正在读取本机已装的程序"}</TooltipContent>
+              <TooltipContent>
+                {at ? `重新读取 · 读取于 ${at}` : "正在读取本机已装的程序"}
+              </TooltipContent>
             </Tooltip>
           </div>
           {isError ? (
@@ -469,9 +472,10 @@ function EntryRow({
     <div
       data-row={e.key}
       onClick={onClick}
+      data-checked={checked}
       className={cn(
-        "row-lazy group/row relative flex h-[60px] items-center gap-3 border-b border-border/60 px-3 transition-colors duration-150 select-none",
-        focused ? "row-focus" : checked ? "bg-primary/[0.05]" : "hover:bg-foreground/[0.035]",
+        "row-lazy list-row group/row relative flex h-[60px] items-center gap-3 px-3 select-none",
+        focused && "row-focus",
       )}
     >
       <Checkbox
@@ -494,7 +498,7 @@ function EntryRow({
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="truncate text-sm font-medium select-text">{e.name}</span>
           {e.version && (
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">{e.version}</span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{e.version}</span>
           )}
         </div>
         <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -595,7 +599,7 @@ function ListSkeleton() {
       {Array.from({ length: 11 }, (_, i) => (
         <div
           key={i}
-          className="flex h-[60px] items-center gap-3 border-b border-border/60 px-3"
+          className="list-row pointer-events-none relative flex h-[60px] items-center gap-3 px-3"
           style={{ opacity: 1 - i * 0.075 }}
         >
           <Skeleton className="size-4 rounded" />

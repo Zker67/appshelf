@@ -18,6 +18,11 @@ export default function App() {
   return (
     <NavProvider>
       <ActionsProvider>
+        <div className="ice-fog" aria-hidden>
+          <span className="fog-1" />
+          <span className="fog-2" />
+          <span className="fog-3" />
+        </div>
         <div className="flex h-full flex-col">
           <Titlebar />
           <Pages />
@@ -63,7 +68,8 @@ function Pages() {
 
 /**
  * PageSlot shows a page while it is chosen. A page mounts the first time it
- * is chosen, so that what it reads and its icons wait until then.
+ * is chosen, so that what it reads and its icons wait until then. Its panels
+ * float on the fog, a gap from the window's edges.
  */
 function PageSlot({ page, dir, children }: { page: Page; dir: Direction; children: ReactNode }) {
   const nav = useNav();
@@ -72,7 +78,7 @@ function PageSlot({ page, dir, children }: { page: Page; dir: Direction; childre
   if (!visited) return null;
   return (
     <Activity mode={nav.page === page ? "visible" : "hidden"}>
-      <div className="page-in absolute inset-0" data-dir={dir}>
+      <div className="page-in absolute inset-0 px-2 pb-2" data-dir={dir}>
         {children}
       </div>
     </Activity>

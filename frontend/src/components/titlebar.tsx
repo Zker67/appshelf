@@ -27,25 +27,21 @@ const pages: Array<{ page: Page; label: string; icon: ComponentType<SVGProps<SVG
 
 /**
  * Titlebar is the window's only title bar: the app's name, the pages, and
- * the tools every page shares. Windows draws its buttons at the right.
+ * the tools every page shares. It is clear, over the fog, the panels below
+ * it. Windows draws its buttons at the right.
  */
 export function Titlebar() {
   return (
     <header
-      className="app-drag relative z-30 flex shrink-0 items-center gap-3 border-b bg-titlebar/90 pl-3 backdrop-blur"
+      className="app-drag relative z-30 flex shrink-0 items-center gap-3 pl-3.5"
       style={{
         height: "var(--mygo-titlebar-height, 44px)",
         paddingRight: "calc(var(--mygo-titlebar-inset-right, 0px) + 8px)",
       }}
     >
-      <div className="brand flex shrink-0 items-center gap-2 pr-2">
-        <img
-          src={logo}
-          alt=""
-          className="brand-logo size-[22px] drop-shadow-sm"
-          draggable={false}
-        />
-        <span className="text-[13px] font-semibold tracking-[0.08em]">软件图书馆</span>
+      <div className="brand flex shrink-0 items-center gap-2.5 pr-2">
+        <img src={logo} alt="" className="brand-logo size-6 drop-shadow-sm" draggable={false} />
+        <span className="text-[15px] leading-none font-semibold tracking-[0.03em]">软件图书馆</span>
       </div>
       <NavTabs />
       <div className="flex-1" />
@@ -66,7 +62,7 @@ function NavTabs() {
     if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
   }, [nav.page, updates]);
   return (
-    <nav className="app-no-drag relative flex items-center gap-0.5 rounded-xl bg-foreground/[0.045] p-[3px] dark:bg-white/[0.05]">
+    <nav className="seg-track app-no-drag relative flex items-center gap-0.5 rounded-xl p-[3px]">
       {pill && (
         <div
           className="nav-pill absolute top-[3px] bottom-[3px] rounded-[9px]"
@@ -88,7 +84,7 @@ function NavTabs() {
               "nav-tab relative z-10 flex h-[30px] items-center gap-1.5 rounded-[9px] px-3 text-[13px] font-medium transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
               active
                 ? "text-brand-foreground"
-                : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
+                : "text-muted-foreground hover:bg-hover hover:text-foreground",
             )}
           >
             <Icon className="size-[18px] transition-colors" />

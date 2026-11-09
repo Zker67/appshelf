@@ -46,7 +46,8 @@ bun run --cwd frontend build    # 构建到 dist/（go tool mygo build 会自动
 
 图标切页缓存的浏览器回归见 [tests/README.md](./tests/README.md)。
 
-- 外观跟随 Go 设置的窗口主题（`prefers-color-scheme`），亮暗两套颜色都在 `src/index.css`，主色取自应用图标的深钴蓝。品牌渐变（钴蓝→天蓝）、玻璃质感（半透明侧栏和顶栏、菜单和弹窗的背景模糊）和动效（切页按页签方向滑入、列表级联入场等）也都定义在 `src/index.css`；生成的 `components/ui/` 组件通过 `data-slot` 选择器换装，不改其结构。
+- 外观是「冰川蓝 · 轻玻璃」，跟随 Go 设置的窗口主题（`prefers-color-scheme`），亮暗两套颜色都在 `src/index.css`：主色冰川蓝，品牌渐变冰川蓝→冰青。窗口底是缓慢漂移的冰雾（`App.tsx` 的 `.ice-fog`，弹窗打开时和减少动效时静止）；顶栏透明，各页的侧栏、列表、详情是浮在雾上的半透明玻璃面板（`glass-panel`，列表和详情加 `glass-strong` 更密），面板之间的缝就是拖拽线；浮在内容上的菜单、弹窗、Toast、批量操作条用 `glass-float`（带背景模糊），分段切换用 `seg-track` / `seg-thumb`；弹窗和侧滑面板为不透明底；工具条按钮文字用 `WideLabel`，列表变窄时收成图标；列表行用 `list-row`（内缩分割线和悬停），聚焦行和侧栏选中项是同一张浮起的冰面卡片。颜色只用 token（如 `bg-hover`、`bg-track`、`bg-field`），不在组件里直接写色值。系统要求降低透明度（`prefers-reduced-transparency`）时玻璃变为接近不透明。动效（切页按页签方向滑入、列表级联入场、页签图标动画等）也定义在 `src/index.css`；生成的 `components/ui/` 组件通过 `data-slot` 选择器换装，不改其结构。
+- 字体：界面用随程序打包的更纱黑体 UI 简体（`Sarasa UI SC`，常规、半粗、粗体三个字重的子集，`font-medium` 用半粗），来源、子集范围和许可证见 [public/fonts/README.md](./public/fonts/README.md)；子集外的字依次退回 Segoe UI Variable、Noto Sans SC、微软雅黑 UI。版本号用普通字体加 `tabular-nums` 等宽数字；软件 ID、文件名、安装参数等标识符用 Cascadia Mono。正文保持比例数字（`body` 的 `"tnum" 0`），`.tabular-nums` 单独打开等宽数字。
 - 图标只走 Go 的 `icon` 协议（`About.info().iconBase` 加路径，路径格式见 `docs/api.md`），页面不加载外部网址；链接用 `About.openURL` 在浏览器中打开。
 - 文案用简体中文，简短；时间写成“年-月-日 时:分”（24 小时制）。
 - 改了 Go 服务或类型后先运行 `go tool mygo generate`，再运行 `check`。

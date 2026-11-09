@@ -68,8 +68,8 @@ export function DetailPanel({
 
   const box = folded ? iconBoxFolded : iconBox;
   return (
-    <div className="flex h-full min-h-0 flex-col bg-surface">
-      <div className="shrink-0 border-b bg-linear-to-b from-primary/[0.08] via-primary/[0.03] to-transparent dark:from-primary/[0.14] dark:via-primary/[0.05]">
+    <div className="glass-panel glass-strong flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b bg-linear-to-b from-primary/[0.09] via-primary/[0.03] to-transparent dark:from-primary/[0.13] dark:via-primary/[0.04]">
         <div
           className={cn(
             "anim-panel flex items-center gap-3.5 px-5 transition-[padding] duration-300 ease-out-soft",
@@ -81,7 +81,7 @@ export function DetailPanel({
             style={{ width: box, height: box }}
           >
             <div
-              className="absolute top-0 left-0 origin-top-left rounded-[28%] bg-card p-1.5 shadow-soft ring-1 ring-border/70 transition-transform duration-300 ease-out-soft"
+              className="seg-thumb absolute top-0 left-0 origin-top-left rounded-[28%] p-1.5 transition-transform duration-300 ease-out-soft"
               style={{ transform: `scale(${box / iconBox})` }}
             >
               {icon}
@@ -217,11 +217,11 @@ export function DetailTabs({ tabs, pending = 0 }: { tabs: DetailTab[]; pending?:
             <TabsPrimitive.List
               ref={list}
               aria-label="详情"
-              className="relative flex rounded-xl bg-foreground/[0.045] p-[3px] dark:bg-white/[0.05]"
+              className="seg-track relative flex rounded-xl p-[3px]"
             >
               {pill && (
                 <div
-                  className="absolute top-[3px] bottom-[3px] rounded-[9px] bg-card shadow-sm ring-1 ring-border/60 transition-[left,width] duration-400 ease-spring dark:bg-white/[0.09] dark:ring-white/[0.06]"
+                  className="seg-thumb absolute top-[3px] bottom-[3px] rounded-[9px] transition-[left,width] duration-400 ease-spring"
                   style={{ left: pill.left, width: pill.width }}
                 />
               )}

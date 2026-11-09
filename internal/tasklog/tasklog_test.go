@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"appshelf/internal/source"
 )
@@ -110,4 +111,47 @@ func TestProgress(t *testing.T) {
 	}
 	// Other writers ignore progress.
 	source.ReportProgress(&bytes.Buffer{}, source.Progress{Stage: "x"})
+}
+
+func TestSpeed(t *testing.T) {
+	l := New(nil, nil)
+	at := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	l.now = func() time.Time { return at }
+	report := func(after time.Duration, stage string, done int64) int64 {
+		t.Helper()
+		at = at.Add(after)
+		l.ReportProgress(source.Progress{Stage: stage, Done: done, Total: 100 << 20})
+		return l.Progress().Speed
+	}
+	if s := report(0, "正在下载", 1<<20); s != 0 {
+		t.Errorf("one sample: %d", s)
+	}
+	if s := report(200*time.Millisecond, "正在下载", 2<<20); s != 0 {
+		t.Errorf("too close to tell: %d", s)
+	}
+	// 1 MiB every half second: 2 MiB/s.
+	for i := int64(3); i <= 12; i++ {
+		report(300*time.Millisecond, "正在下载", i<<20)
+	}
+	// From 2 MiB/s to 4 MiB/s: the window follows within its 3 seconds.
+	done := int64(12 << 20)
+	var s int64
+	for range 10 {
+		done += 2 << 20
+		s = report(500*time.Millisecond, "正在下载", done)
+	}
+	if s != 4<<20 {
+		t.Errorf("after 5 s at 4 MiB/s: %d", s)
+	}
+	// The next file, or the next stage, starts again.
+	if s := report(500*time.Millisecond, "正在下载", 1<<20); s != 0 {
+		t.Errorf("bytes went back: %d", s)
+	}
+	report(500*time.Millisecond, "正在下载", 2<<20)
+	if s := report(500*time.Millisecond, "正在解压", 3<<20); s != 0 {
+		t.Errorf("new stage: %d", s)
+	}
+	if s := report(500*time.Millisecond, "正在安装", 0); s != 0 {
+		t.Errorf("no bytes: %d", s)
+	}
 }

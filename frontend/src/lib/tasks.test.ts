@@ -40,6 +40,14 @@ describe("taskProgress", () => {
     // Bytes with a size come first.
     expect(taskProgress({ done: 50, total: 200, percent: 90 }).percent).toBe(25);
   });
+
+  it("shows the speed with the bytes", () => {
+    expect(taskProgress({ done: 12 << 20, total: 50 << 20, speed: 3.2 * (1 << 20) }).text).toBe(
+      "12.0 MB / 50.0 MB · 3.2 MB/s",
+    );
+    expect(taskProgress({ done: 2048, speed: 1024 }).text).toBe("已下载 2.0 KB · 1.0 KB/s");
+    expect(taskProgress({ done: 50, total: 200, speed: 0 }).text).toBe("50 B / 200 B");
+  });
 });
 
 describe("lineKind", () => {

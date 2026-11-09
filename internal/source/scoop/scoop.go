@@ -65,7 +65,9 @@ Write-Result @{ Found = [bool](Get-Command scoop -ErrorAction SilentlyContinue);
 `
 
 // Check finds scoop. Without it, AppShelf can install scoop, unless it runs
-// as administrator, which scoop's installer refuses.
+// as administrator, which scoop's installer refuses. With it, aria2
+// missing is told as a helper to install: scoop downloads with it over
+// several connections.
 func (s *Source) Check(ctx context.Context) source.Availability {
 	var out struct{ Found, Admin bool }
 	if _, err := runner.PowerShell(ctx, checkScript, nil, &out, runner.Options{Timeout: time.Minute}); err != nil {
@@ -76,6 +78,9 @@ func (s *Source) Check(ctx context.Context) source.Availability {
 			return source.Availability{Reason: "未安装 scoop（AppShelf 以管理员身份运行，scoop 安装器不允许，请以普通用户打开后安装）"}
 		}
 		return source.Availability{Reason: "未安装 scoop", Fixable: true}
+	}
+	if aria2Missing() {
+		return source.Availability{OK: true, Reason: "已找到 scoop，未安装 aria2", Helper: "aria2"}
 	}
 	return source.Availability{OK: true, Reason: "已找到 scoop"}
 }
@@ -117,11 +122,40 @@ if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
 Write-Result @{ Ok = $true }
 `
 
-// Fix installs scoop for the current user, with scoop's official
-// installer, from get.scoop.sh.
+const installAria2Script = scoopPrelude + `
+Write-Output '> scoop install aria2'
+& scoop install aria2
+exit $LASTEXITCODE
+`
+
+// Fix installs what scoop misses for the current user: scoop itself, with
+// scoop's official installer from get.scoop.sh, then aria2, which scoop
+// downloads with, unless the user turned it off.
 func (s *Source) Fix(ctx context.Context, log io.Writer) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if log == nil {
+		log = io.Discard
+	}
+	if !s.Check(ctx).OK {
+		if err := s.installScoop(ctx, log); err != nil {
+			return err
+		}
+	}
+	if !aria2Missing() {
+		return nil
+	}
+	fmt.Fprintln(log)
+	if _, err := runner.PowerShell(ctx, installAria2Script, nil, nil, runner.Options{Log: log, Timeout: 10 * time.Minute}); err != nil {
+		return fmt.Errorf("安装 aria2 失败（scoop 本身可以使用）：%w", err)
+	}
+	if aria2Missing() {
+		return errors.New("scoop 已结束，但仍找不到 aria2，详见安装日志")
+	}
+	return nil
+}
+
+func (s *Source) installScoop(ctx context.Context, log io.Writer) error {
 	var out struct{ Ok bool }
 	_, err := runner.PowerShell(ctx, installScoopScript, nil, &out, runner.Options{Log: log, Timeout: 10 * time.Minute})
 	var se *runner.ScriptError
@@ -498,7 +532,9 @@ func (s *Source) run(ctx context.Context, script string, in map[string]any, log 
 	if log == nil {
 		log = io.Discard
 	}
-	_, err := runner.PowerShell(ctx, script, in, nil, runner.Options{Log: newProgress(log, verb)})
+	p := newProgress(log, verb, app.Source.Name, cacheDir())
+	_, err := runner.PowerShell(ctx, script, in, nil, runner.Options{Log: p})
+	p.close()
 	var se *runner.ScriptError
 	if errors.As(err, &se) {
 		switch se.ExitCode {

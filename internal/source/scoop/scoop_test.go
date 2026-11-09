@@ -200,7 +200,7 @@ func (r *stageRecorder) ReportProgress(p source.Progress) {
 
 func TestProgressFollowsScoopsSteps(t *testing.T) {
 	rec := &stageRecorder{}
-	p := newProgress(rec, "update")
+	p := newProgress(rec, "update", "git", "")
 	// scoop update git, as scoop 0.5 writes it.
 	out := "Updating one outdated app:\r\nUpdating 'git' (2.45.0 -> 2.45.1)\nDownloading new version\n" +
 		"PortableGit-2.45.1-64-bit.7z.exe (61.5 MB) [====] 100%\n" +

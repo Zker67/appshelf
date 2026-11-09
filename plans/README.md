@@ -67,3 +67,4 @@ plans/
 | [修复卸载误报失败](./2026-11-09-uninstall-false-failure/00-overview.md) | `[in-progress]` | winget 卸载后也等 NSIS / Inno Setup 的卸载程序副本结束再复查；重试时程序已不在算卸载成功；跳过的卸载任务立刻移出本机已装列表；等待用户真实卸载验收 |
 | [常驻托盘与托盘菜单](./2026-11-09-tray/00-overview.md) | `[in-progress]` | 托盘图标常驻，「关闭窗口后留在托盘」默认打开；右键菜单查看更新、全部更新、检查更新、任务、退出（有任务时确认）；有更新时图标带橙点，悬停显示更新和任务；等待用户在真实窗口验收 |
 | [winget 改走 COM 接口显示真实进度](./2026-11-09-winget-com-progress/00-overview.md) | `[in-progress]` | winget 安装、更新、卸载经 `Microsoft.WinGet.Client` 模块在后台作业里调用 COM，读出真实下载百分比；进度模型增加百分比；模块不可用时退回命令行 |
+| [scoop 下载进度、下载速度与 aria2](./2026-11-09-scoop-progress-aria2/00-overview.md) | `[in-progress]` | scoop 默认下载器按 `Downloading … (大小)` 和缓存里 `.download` 文件的实际大小算进度，aria2 解析读数行；`tasklog` 按字节变化算下载速度；准备 scoop 时一起安装 aria2，已有 scoop 缺 aria2 时也提示 |

@@ -20,23 +20,29 @@ export interface TaskProgress {
    * else null: the bar flows rather than make a number up.
    */
   percent: number | null;
-  /** text is how far it has come, as "12 MB / 50 MB" or "45%", or "". */
+  /**
+   * text is how far it has come, as "12 MB / 50 MB · 3.2 MB/s" or "45%",
+   * or "".
+   */
   text: string;
 }
 
-export function taskProgress(t: Pick<TaskEntry, "done" | "total" | "percent">): TaskProgress {
+export function taskProgress(
+  t: Pick<TaskEntry, "done" | "total" | "percent" | "speed">,
+): TaskProgress {
   const done = t.done ?? 0;
   const total = t.total ?? 0;
+  const speed = (t.speed ?? 0) > 0 ? ` · ${formatBytes(t.speed ?? 0)}/s` : "";
   if (total > 0) {
     const percent = Math.min(100, Math.max(0, (done / total) * 100));
-    return { percent, text: `${formatBytes(done)} / ${formatBytes(total)}` };
+    return { percent, text: `${formatBytes(done)} / ${formatBytes(total)}${speed}` };
   }
   const reported = t.percent ?? 0;
   if (reported > 0) {
     const percent = Math.min(100, reported);
     return { percent, text: `${Math.round(percent)}%` };
   }
-  return { percent: null, text: done > 0 ? `已下载 ${formatBytes(done)}` : "" };
+  return { percent: null, text: done > 0 ? `已下载 ${formatBytes(done)}${speed}` : "" };
 }
 
 /** LineKind is how a line of a log is shown. */

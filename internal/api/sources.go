@@ -24,6 +24,9 @@ func (s *Sources) Overview() SourcesOverview {
 			if av, ok := c.Availability(t); ok {
 				info.Checked, info.OK, info.Reason = true, av.OK, av.Reason
 				info.Fixable = !av.OK && av.Fixable && c.CanFix(t)
+				if av.OK && av.Helper != "" && c.CanFix(t) {
+					info.Helper = av.Helper
+				}
 			}
 			out.Sources = append(out.Sources, info)
 		}
@@ -41,7 +44,8 @@ func (s *Sources) Overview() SourcesOverview {
 }
 
 // Fix makes a source usable for the user: for winget it installs the
-// PowerShell module, for scoop scoop itself. It then checks the sources and
+// PowerShell module, for scoop scoop itself and aria2, or aria2 alone when
+// it is what scoop misses. It then checks the sources and
 // reads the states again. It takes minutes.
 func (s *Sources) Fix(sourceType catalog.SourceType) error {
 	a := s.a

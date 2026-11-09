@@ -372,6 +372,11 @@ export interface SourceInfo {
    * install winget's module, or scoop.
    */
   fixable?: boolean;
+  /**
+   * Helper names what a usable source misses and AppShelf can install,
+   * as aria2 for scoop.
+   */
+  helper?: string;
 }
 
 export type SourceType = string;
@@ -429,6 +434,11 @@ export interface TaskEntry {
    * reports a percentage without bytes; 0 when unknown.
    */
   percent?: number;
+  /**
+   * Speed is the download's bytes a second over the last seconds, when
+   * its bytes are known.
+   */
+  speed?: number;
   /**
    * Interactive means a failed removal can run again with its
    * uninstaller's window.
@@ -847,7 +857,8 @@ export const Sources = {
   },
   /**
    * Fix makes a source usable for the user: for winget it installs the
-   * PowerShell module, for scoop scoop itself. It then checks the sources and
+   * PowerShell module, for scoop scoop itself and aria2, or aria2 alone when
+   * it is what scoop misses. It then checks the sources and
    * reads the states again. It takes minutes.
    */
   fix(sourceType: SourceType): Promise<void> {

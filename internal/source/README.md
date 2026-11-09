@@ -19,12 +19,12 @@ winget 和 scoop 另有 `Uninstall`，不在接口里：由 [internal/uninstall]
 
 ## 进度
 
-`Progress{Stage, Done, Total, Percent}` 是一个任务当前的阶段（如“正在下载”）、下载字节数（未知时为 0），以及来源只给百分比时的百分比（0–100，未知时为 0）。界面有字节总数或百分比时显示确定进度，都没有时显示不确定动画，不编造数值；下载和安装不拼成一个整体百分比。来源用 `source.ReportProgress(log, p)` 报告：交给来源的日志实现了 `ProgressReporter`（[internal/tasklog](../tasklog/README.md)）时记下进度，否则忽略。
+`Progress{Stage, Done, Total, Percent, Speed}` 是一个任务当前的阶段（如“正在下载”）、下载字节数（未知时为 0）、来源只给百分比时的百分比（0–100，未知时为 0），以及下载速度（字节/秒，由任务日志按最近约 3 秒的字节变化算出，来源不报告）。界面有字节总数或百分比时显示确定进度，都没有时显示不确定动画，不编造数值；下载和安装不拼成一个整体百分比。来源用 `source.ReportProgress(log, p)` 报告：交给来源的日志实现了 `ProgressReporter`（[internal/tasklog](../tasklog/README.md)）时记下进度，否则忽略。
 
 | 来源 | 阶段 | 下载进度 |
 |---|---|---|
 | winget | 正在准备 → 正在下载 → 正在安装 / 正在更新 / 正在卸载 → 正在完成，来自 COM 接口的进度记录 | COM 回报的真实百分比（`Percent`），没有字节数；安装、卸载阶段有百分比时同样显示（多数安装程序没有）。退回命令行时：命令行重定向输出没有进度条，只按输出里的下载地址识别阶段，并读 `%TEMP%\WinGet\<ID>.<版本>\` 的大小作为已下载；本机 winget 用 Delivery Optimization 下载时文件会一次预分配到接近全部大小，这个数不可靠 |
-| scoop | 按 scoop 输出的英文行首识别：正在添加 bucket、正在下载、正在校验、正在解压、正在运行安装程序 / 安装脚本、正在完成 | 无 |
+| scoop | 按 scoop 输出的英文行首识别：正在添加 bucket、正在下载、正在校验、正在解压、正在运行安装程序 / 安装脚本、正在完成 | 自带下载器：输出被重定向时不画进度条，只写 `Downloading <url> (75.4 MB)...`，总量取这里的大小（按区域格式、一位小数，1024 进制）；已下载每 500 毫秒用 `os.Stat` 读缓存里本次写入的 `<app>#*.download`（顺序写入、不预分配）。aria2：解析 scoop 转发的读数行 `Download: [#… 12MiB/50MiB(24%) …]`，多个下载相加。缓存目录：`SCOOP_CACHE`、配置的 `cache_path`、`SCOOP` / 配置的 `root_path` / `~\scoop` 下的 `cache` |
 | GitHub | 正在下载 → 正在校验 → 正在运行安装程序 | 下载时的实际字节；总量取 Release 资产的大小，没有时用 `Content-Length` |
 
 状态：`Unknown`（读取失败，不允许安装）、`NotInstalled`、`Installed`、`UpdateAvailable`、`Unavailable`（来源不可用）。`External` 表示软件是由清单里的检测规则认出的，不是从该来源装的：不安装、也不从该来源更新。
@@ -62,8 +62,8 @@ winget 和 scoop 另有 `Uninstall`，不在接口里：由 [internal/uninstall]
 
 | 方法 | 实现 |
 |---|---|
-| `Check` | PowerShell 中找得到 `scoop` 命令（找不到时先补上注册表里的用户和系统 PATH，认出 AppShelf 启动后才装的 scoop）；没有时，非管理员运行可由 `Fix` 安装 |
-| `Fix` | 官方安装器 `irm get.scoop.sh \| iex` 装到当前用户；PowerShell 不允许本地脚本且没有组策略决定时，先按官方说明 `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`；装完找不到 `scoop` 即失败。以管理员运行时官方安装器拒绝，直接报错 |
+| `Check` | PowerShell 中找得到 `scoop` 命令（找不到时先补上注册表里的用户和系统 PATH，认出 AppShelf 启动后才装的 scoop）；没有时，非管理员运行可由 `Fix` 安装。有 scoop 但用户和全局目录下都没有 `apps\aria2\current`、且配置没有把 `aria2-enabled` 设为 false 时，报告缺少辅助组件 `Helper: "aria2"` |
+| `Fix` | 官方安装器 `irm get.scoop.sh \| iex` 装到当前用户；PowerShell 不允许本地脚本且没有组策略决定时，先按官方说明 `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`；装完找不到 `scoop` 即失败。以管理员运行时官方安装器拒绝，直接报错。之后（或已有 scoop 时只做这一步）缺 aria2 就 `scoop install aria2`；aria2 失败时报错并说明 scoop 本身可以使用 |
 | `Statuses` | `scoop export`（JSON）读已装软件；先 `scoop update` 更新 scoop 和 bucket，再 `scoop status -l` 读可用更新 |
 | `Recheck` | `scoop export` 加 `scoop status -l`，不联网更新 |
 | `Search` | `scoop search <q>`，`q` 先转义（scoop 把它当正则表达式），取前 30 项 |
@@ -73,7 +73,7 @@ winget 和 scoop 另有 `Uninstall`，不在接口里：由 [internal/uninstall]
 
 - scoop 同名软件只能装一个，所以按软件名匹配所有 bucket：从别的 bucket 装的也算已装，并注明“通过 X 安装”。
 - 读取状态、安装、更新和卸载的 scoop 调用同一时间只运行一个（搜索不受限制）。scoop 的退出码不总是可靠，最终以执行后的复查为准。
-- 本机没有 scoop，scoop 的实现按 scoop 源码编写，真实运行未验证；只读集成测试在没有 scoop 时跳过。
+- 本机没有 scoop，scoop 的实现按 scoop 源码编写，真实运行未验证；只读集成测试在没有 scoop 时跳过。2026-11-09 起本机装有 scoop（无其他软件），下载进度用 `scoop download go`（只下载到缓存）实测过输出格式和 `.download` 文件增长。
 
 只用于展示：
 

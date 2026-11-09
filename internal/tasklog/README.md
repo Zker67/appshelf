@@ -9,7 +9,7 @@
 | `New(file, changed)` | 写到 `file`（可为 nil）；每次有新输出或进度时调用 `changed` |
 | `Write(p)` | 原样写进文件；按行整理：`\r` 表示这一行重新绘制（`\r\n` 仍是换行），去掉 ANSI 转义和控制字符，制表符换成空格，去掉行尾空格，丢掉只有 spinner 或进度条字符的行，连续空行只留一个；超过 16 KiB 没有换行的输出切成一行 |
 | `Lines(from)` | 从第 `from` 行起的行、实际起点 `Start`（更早的行被丢弃时大于 `from`）、下次读取的游标 `Next`，以及还在刷新的当前行 `Live` |
-| `ReportProgress(p)` / `Progress()` | 实现 `source.ProgressReporter`：来源用 `source.ReportProgress(log, p)` 报告阶段和下载字节 |
+| `ReportProgress(p)` / `Progress()` | 实现 `source.ProgressReporter`：来源用 `source.ReportProgress(log, p)` 报告阶段和下载字节；记下时按最近约 3 秒的已下载字节算出下载速度 `Speed`（两次报告相隔不到 0.5 秒时为 0），阶段变化或字节回退时重新计算 |
 | `Close()` | 结束当前行并关闭文件；之后的输出只留在内存 |
 
 内存里最多保留最后 2000 行（`MaxLines`），完整内容在日志文件里。

@@ -22,7 +22,8 @@ AppShelf 只允许运行一个实例；再次启动时，已经打开的窗口�
 |---|---|---|
 | winget（App Installer） | winget 来源的安装和更新 | winget 软件显示“不可用”，不能安装 |
 | PowerShell 模块 `Microsoft.WinGet.Client` | 读取 winget 软件的安装状态、可用更新和搜索；安装、更新、卸载经它调用 winget 的 COM 接口，显示真实下载进度（模块无法加载时退回 winget 命令，只有阶段） | 第一次检测到缺少时弹出「准备安装来源」，可直接安装；之后在“设置 → 安装来源”点“安装模块”。执行 `Install-Module Microsoft.WinGet.Client -Scope CurrentUser` |
-| scoop | scoop 来源，可选 | scoop 软件显示“不可用：未安装 scoop”，不影响其他来源；第一次检测到时在「准备安装来源」里可直接安装，之后在“设置 → 安装来源”点“安装 scoop”。执行官方安装器 `irm get.scoop.sh \| iex`（当前用户，不需要管理员；以管理员运行 AppShelf 时不能安装） |
+| scoop | scoop 来源，可选 | scoop 软件显示“不可用：未安装 scoop”，不影响其他来源；第一次检测到时在「准备安装来源」里可直接安装，之后在“设置 → 安装来源”点“安装 scoop”。执行官方安装器 `irm get.scoop.sh \| iex`（当前用户，不需要管理员；以管理员运行 AppShelf 时不能安装），再 `scoop install aria2` |
+| aria2（scoop 的辅助组件） | scoop 多线程下载 | 没有时 scoop 用自带下载器，照常可用；已有 scoop 但缺 aria2 时，「准备安装来源」和“设置 → 安装来源”提示安装；执行 `scoop config aria2-enabled false` 后不再提示 |
 | 网络访问 `api.github.com` | GitHub 来源的最新 release 和下载 | 是否已装照常显示（检测只看本机注册表），但读不到最新 release：不能检查更新，安装会失败并说明原因 |
 
 AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`），不需要 `pwsh`。每个子进程会补齐该宿主的用户、系统和内置模块搜索目录，并保留自定义路径，避免从 PowerShell 7 启动时读不到已安装的模块；不修改父进程或系统环境。

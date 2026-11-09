@@ -75,6 +75,25 @@ func TestSourceSetup(t *testing.T) {
 		t.Fatalf("available source = %+v, want not fixable", info)
 	}
 
+	// A usable source missing a helper offers it, as scoop does aria2.
+	e.winget.mu.Lock()
+	e.winget.avail = source.Availability{OK: true, Helper: "aria2"}
+	e.winget.mu.Unlock()
+	e.shelf.Refresh()
+	e.until(func() bool { return sourceInfo(e, catalog.Winget).Helper != "" && !e.shelf.Snapshot().Refreshing })
+	if info := sourceInfo(e, catalog.Winget); !info.OK || info.Fixable || info.Helper != "aria2" {
+		t.Fatalf("missing helper = %+v", info)
+	}
+	// An unusable source offers to be fixed, not its helper.
+	e.winget.mu.Lock()
+	e.winget.avail = source.Availability{Reason: "未安装", Fixable: true, Helper: "aria2"}
+	e.winget.mu.Unlock()
+	e.shelf.Refresh()
+	e.until(func() bool { return !sourceInfo(e, catalog.Winget).OK && !e.shelf.Snapshot().Refreshing })
+	if info := sourceInfo(e, catalog.Winget); !info.Fixable || info.Helper != "" {
+		t.Fatalf("unusable with helper = %+v", info)
+	}
+
 	// A source the core does not have cannot be fixed.
 	if err := e.sources.Fix(catalog.Scoop); err == nil {
 		t.Fatal("fixing a source that is not set up succeeded")

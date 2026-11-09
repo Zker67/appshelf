@@ -15,7 +15,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorText, useSources } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { About, Sources, type SourceType } from "@/mygo";
+import { About, Sources, type SourceInfo, type SourceType } from "@/mygo";
 import {
   CheckCircle2Icon,
   DownloadIcon,
@@ -51,19 +51,44 @@ export const setups: Partial<Record<SourceType, Setup>> = {
     command: "Install-Module Microsoft.WinGet.Client -Scope CurrentUser",
   },
   scoop: {
-    name: "scoop",
+    name: "scoop 和 aria2",
     action: "安装 scoop",
-    use: "把软件装在用户目录，安装和更新都不弹窗口",
-    how: "官方安装器，装到当前用户，不需要管理员；PowerShell 禁止本地脚本时按官方说明为当前用户设为 RemoteSigned",
-    command: "irm get.scoop.sh | iex",
+    use: "把软件装在用户目录，安装和更新都不弹窗口；aria2 让 scoop 多线程下载，更快",
+    how: "官方安装器，装到当前用户，不需要管理员；PowerShell 禁止本地脚本时按官方说明为当前用户设为 RemoteSigned；装好后再用 scoop 安装 aria2",
+    command: "irm get.scoop.sh | iex; scoop install aria2",
   },
 };
+
+/** aria2Setup is installing aria2 for a scoop that has none. */
+const aria2Setup: Setup = {
+  name: "aria2",
+  action: "安装 aria2",
+  use: "让 scoop 多线程下载，更快",
+  how: "用 scoop 装到当前用户，不需要管理员；不想用时执行 scoop config aria2-enabled false",
+  command: "scoop install aria2",
+};
+
+/**
+ * setupFor is what installing a source's missing part does now: the
+ * source, or, when it is usable, the helper it misses.
+ */
+export function setupFor(info: SourceInfo): Setup | undefined {
+  if (info.ok && info.helper === "aria2") return aria2Setup;
+  return setups[info.type];
+}
+
+/** needsSetup reports a source AppShelf can set up, or complete. */
+export function needsSetup(info: SourceInfo): boolean {
+  return info.checked && ((!info.ok && !!info.fixable) || (info.ok && !!info.helper));
+}
 
 export type SetupPhase = "idle" | "running" | "done" | "failed";
 
 // The phases are shared by the prompt and the settings, which can both
 // start a setup and show it running.
 const phases = new Map<SourceType, SetupPhase>();
+/** names are what each setup started installs, for the title bar. */
+const names = new Map<SourceType, string>();
 const listeners = new Set<() => void>();
 let version = 0;
 
@@ -94,9 +119,9 @@ export function useRunningSetups(): SourceType[] {
  * runSetup installs what a source misses. While it runs, the title bar
  * shows it (SetupActivity), covering nothing; a toast tells how it ended.
  */
-export async function runSetup(type: SourceType) {
-  const setup = setups[type];
+export async function runSetup(type: SourceType, setup: Setup | undefined = setups[type]) {
   if (!setup || phases.get(type) === "running") return;
+  names.set(type, setup.name);
   setPhase(type, "running");
   try {
     await Sources.fix(type);
@@ -118,18 +143,20 @@ export async function runSetup(type: SourceType) {
 /** SetupButton starts or retries a source's setup, and shows it running. */
 export function SetupButton({
   type,
+  setup = setups[type],
   onStart,
   className,
 }: {
   type: SourceType;
+  /** setup is what it installs, the source's by default. */
+  setup?: Setup;
   /** onStart, when set, is called instead of starting, as to confirm first. */
   onStart?: () => void;
   className?: string;
 }) {
-  const setup = setups[type];
   const phase = useSetupPhase(type);
   if (!setup) return null;
-  const start = onStart ?? (() => void runSetup(type));
+  const start = onStart ?? (() => void runSetup(type, setup));
   return (
     <Button
       size="sm"
@@ -192,8 +219,9 @@ function PhasePill({ phase }: { phase: SetupPhase }) {
 }
 
 /** SetupCard is a source to set up, in the prompt. */
-function SetupCard({ type, index }: { type: SourceType; index: number }) {
-  const setup = setups[type];
+function SetupCard({ info, index }: { info: SourceInfo; index: number }) {
+  const type = info.type;
+  const setup = setupFor(info);
   const phase = useSetupPhase(type);
   if (!setup) return null;
   return (
@@ -228,7 +256,7 @@ function SetupCard({ type, index }: { type: SourceType; index: number }) {
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{setup.use}</p>
         </div>
-        <SetupButton type={type} className="shrink-0" />
+        <SetupButton type={type} setup={setup} className="shrink-0" />
       </div>
       <div className="mt-3 flex items-center gap-2 rounded-lg border border-border/70 bg-muted/50 py-1 pr-1 pl-2.5">
         <TerminalIcon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -255,7 +283,10 @@ function SetupCard({ type, index }: { type: SourceType; index: number }) {
  */
 export function SourceSetupPrompt() {
   const { data } = useSources();
-  const [types, setTypes] = useState<SourceType[]>([]);
+  // The sources as they were when the prompt opened: what each card offers
+  // stays while it installs, though the sources are checked again.
+  const [shown, setShown] = useState<SourceInfo[]>([]);
+  const types = shown.map((s) => s.type);
   const [open, setOpen] = useState(false);
   const decided = useRef(false);
   useEffect(() => {
@@ -267,9 +298,9 @@ export function SourceSetupPrompt() {
     const ours = data.sources.filter((s) => setups[s.type]);
     if (ours.length === 0 || ours.some((s) => !s.checked)) return;
     decided.current = true;
-    const missing = ours.filter((s) => s.fixable).map((s) => s.type);
+    const missing = ours.filter(needsSetup);
     if (missing.length > 0) {
-      setTypes(missing);
+      setShown(missing);
       setOpen(true);
     }
   }, [data]);
@@ -303,8 +334,8 @@ export function SourceSetupPrompt() {
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 px-6 py-5">
-          {types.map((t, i) => (
-            <SetupCard key={t} type={t} index={i} />
+          {shown.map((info, i) => (
+            <SetupCard key={info.type} info={info} index={i} />
           ))}
         </div>
         <div className="flex items-center gap-3 border-t bg-muted/30 px-6 py-3.5">
@@ -328,7 +359,7 @@ export function SourceSetupPrompt() {
 export function SetupActivity({ onOpen }: { onOpen: () => void }) {
   const running = useRunningSetups();
   if (running.length === 0) return null;
-  const names = running.map((t) => setups[t]?.name ?? t).join("、");
+  const label = running.map((t) => names.get(t) ?? setups[t]?.name ?? t).join("、");
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -339,7 +370,7 @@ export function SetupActivity({ onOpen }: { onOpen: () => void }) {
         >
           <span className="shimmer pointer-events-none absolute inset-0" aria-hidden />
           <LoaderCircleIcon className="relative size-3.5 animate-spin" />
-          <span className="relative max-w-48 truncate">正在安装 {names}</span>
+          <span className="relative max-w-48 truncate">正在安装 {label}</span>
         </button>
       </TooltipTrigger>
       <TooltipContent>可以继续使用，装好后会通知你；点击查看安装来源</TooltipContent>

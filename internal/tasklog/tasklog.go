@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"appshelf/internal/runner"
 	"appshelf/internal/source"
@@ -31,7 +32,20 @@ type Log struct {
 	cr       bool   // a carriage return came last: the line redraws, unless a newline follows
 	progress source.Progress
 	closed   bool
+	// samples are the bytes downloaded as reported, oldest first, over the
+	// last speedWindow and one before it, for the speed.
+	samples []sample
+	now     func() time.Time
 }
+
+type sample struct {
+	at   time.Time
+	done int64
+}
+
+// speedWindow is how far back the speed looks: long enough to smooth out
+// bursts, short enough to follow a change.
+const speedWindow = 3 * time.Second
 
 // New returns a log writing to file, which may be nil, and calling changed,
 // when not nil, after new output or progress.
@@ -39,7 +53,7 @@ func New(file io.WriteCloser, changed func()) *Log {
 	if changed == nil {
 		changed = func() {}
 	}
-	return &Log{file: file, changed: changed}
+	return &Log{file: file, changed: changed, now: time.Now}
 }
 
 // Write records output. A failing file does not fail the task: the lines
@@ -116,12 +130,39 @@ func isControl(r rune) bool { return r < 0x20 || r == 0x7f }
 // isNoise reports a line of nothing but a spinner or a progress bar.
 func isNoise(line string) bool { return strings.Trim(line, `-\|/ █▒░▓`) == "" }
 
-// ReportProgress records how far the task has come.
+// ReportProgress records how far the task has come, with the speed of its
+// download worked out from the bytes reported over the last seconds: a new
+// stage, or bytes going back, as of the next file, starts it afresh.
 func (l *Log) ReportProgress(p source.Progress) {
 	l.mu.Lock()
+	now := l.now()
+	if p.Stage != l.progress.Stage || p.Done < l.progress.Done || p.Done == 0 {
+		l.samples = l.samples[:0]
+	}
+	if p.Done > 0 {
+		l.samples = append(l.samples, sample{now, p.Done})
+		for len(l.samples) > 1 && !l.samples[1].at.After(now.Add(-speedWindow)) {
+			l.samples = l.samples[1:]
+		}
+	}
+	p.Speed = speedOf(l.samples)
 	l.progress = p
 	l.mu.Unlock()
 	l.changed()
+}
+
+// speedOf is the bytes a second between the oldest sample and the newest,
+// 0 until half a second apart.
+func speedOf(s []sample) int64 {
+	if len(s) < 2 {
+		return 0
+	}
+	first, last := s[0], s[len(s)-1]
+	dt := last.at.Sub(first.at)
+	if dt < 500*time.Millisecond {
+		return 0
+	}
+	return int64(float64(last.done-first.done) / dt.Seconds())
 }
 
 // Progress returns what was last reported.

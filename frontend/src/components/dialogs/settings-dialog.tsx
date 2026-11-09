@@ -5,7 +5,7 @@ import logo from "@/assets/logo.png";
 import { CopyButton } from "@/components/common";
 import { TokenRow } from "@/components/github-token";
 import { SourceIcon } from "@/components/source-badge";
-import { runSetup, SetupButton, setups } from "@/components/source-setup";
+import { needsSetup, runSetup, SetupButton, setupFor } from "@/components/source-setup";
 import { Pill } from "@/components/status-badge";
 import {
   AlertDialog,
@@ -193,7 +193,7 @@ function SourcesTab() {
 
 function SourceRow({ info, refreshing }: { info: SourceInfo; refreshing: boolean }) {
   const [confirm, setConfirm] = useState(false);
-  const setup = setups[info.type];
+  const setup = setupFor(info);
   return (
     <div className="flex items-center gap-3 px-4 py-3">
       <SourceIcon type={info.type} className="size-4 text-muted-foreground" />
@@ -217,9 +217,9 @@ function SourceRow({ info, refreshing }: { info: SourceInfo; refreshing: boolean
       <span className="min-w-0 flex-1 text-xs break-words text-muted-foreground select-text">
         {info.reason}
       </span>
-      {setup && info.checked && !info.ok && info.fixable && (
+      {setup && needsSetup(info) && (
         <>
-          <SetupButton type={info.type} onStart={() => setConfirm(true)} />
+          <SetupButton type={info.type} setup={setup} onStart={() => setConfirm(true)} />
           <AlertDialog open={confirm} onOpenChange={setConfirm}>
             <AlertDialogContent>
               <AlertDialogHeader>
@@ -233,7 +233,7 @@ function SourceRow({ info, refreshing }: { info: SourceInfo; refreshing: boolean
               </code>
               <AlertDialogFooter>
                 <AlertDialogCancel>取消</AlertDialogCancel>
-                <AlertDialogAction onClick={() => void runSetup(info.type)}>
+                <AlertDialogAction onClick={() => void runSetup(info.type, setup)}>
                   <DownloadIcon />
                   安装
                 </AlertDialogAction>

@@ -71,6 +71,9 @@ type Availability struct {
 	// Fixable means AppShelf can fix it, as by installing the WinGet
 	// PowerShell module.
 	Fixable bool
+	// Helper names what a usable source misses and works better with,
+	// which its Fix installs, as aria2 for scoop; "" when none.
+	Helper string
 }
 
 // Result is what an install or update did, beyond succeeding.
@@ -94,6 +97,9 @@ type Progress struct {
 	// Percent is how far the stage has come, 0 to 100, as the source
 	// reports it without bytes; 0 when unknown.
 	Percent float64
+	// Speed is how many bytes a second the download comes at, worked out
+	// by the task's log from Done; sources leave it 0.
+	Speed int64
 }
 
 // ProgressReporter is a log that also shows the progress of the work it

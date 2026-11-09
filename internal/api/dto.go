@@ -216,6 +216,9 @@ type TaskEntry struct {
 	// Percent is how far its stage has come, 0 to 100, when the source
 	// reports a percentage without bytes; 0 when unknown.
 	Percent float64 `json:"percent,omitempty"`
+	// Speed is the download's bytes a second over the last seconds, when
+	// its bytes are known.
+	Speed int64 `json:"speed,omitempty"`
 	// Interactive means a failed removal can run again with its
 	// uninstaller's window.
 	Interactive bool `json:"interactive,omitempty"`
@@ -349,6 +352,9 @@ type SourceInfo struct {
 	// Fixable means the source is unavailable and AppShelf can fix it:
 	// install winget's module, or scoop.
 	Fixable bool `json:"fixable,omitempty"`
+	// Helper names what a usable source misses and AppShelf can install,
+	// as aria2 for scoop.
+	Helper string `json:"helper,omitempty"`
 }
 
 // RateInfo is a GitHub request quota as last reported.

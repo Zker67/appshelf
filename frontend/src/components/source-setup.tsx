@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorText, useSources } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { About, Sources, type SourceType } from "@/mygo";
@@ -83,22 +84,27 @@ export function useSetupPhase(type: SourceType): SetupPhase {
   return phases.get(type) ?? "idle";
 }
 
-/** runSetup installs what a source misses, telling how it went in a toast. */
+/** useRunningSetups lists the sources being set up. */
+export function useRunningSetups(): SourceType[] {
+  useSyncExternalStore(subscribe, () => version);
+  return [...phases].filter(([, p]) => p === "running").map(([t]) => t);
+}
+
+/**
+ * runSetup installs what a source misses. While it runs, the title bar
+ * shows it (SetupActivity), covering nothing; a toast tells how it ended.
+ */
 export async function runSetup(type: SourceType) {
   const setup = setups[type];
   if (!setup || phases.get(type) === "running") return;
   setPhase(type, "running");
-  const id = toast.loading(`正在安装 ${setup.name}`, {
-    description: "可以继续使用，装好后会告诉你",
-  });
   try {
     await Sources.fix(type);
     setPhase(type, "done");
-    toast.success(`已安装 ${setup.name}`, { id, description: "已重新检查来源", duration: 5000 });
+    toast.success(`已安装 ${setup.name}`, { description: "已重新检查来源", duration: 4000 });
   } catch (err) {
     setPhase(type, "failed");
     toast.error(`安装 ${setup.name} 失败`, {
-      id,
       description: errorText(err),
       duration: 15000,
       action: {
@@ -312,5 +318,31 @@ export function SourceSetupPrompt() {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * SetupActivity is the setups running, in the title bar: a small chip that
+ * covers nothing, and opens the sources' settings.
+ */
+export function SetupActivity({ onOpen }: { onOpen: () => void }) {
+  const running = useRunningSetups();
+  if (running.length === 0) return null;
+  const names = running.map((t) => setups[t]?.name ?? t).join("、");
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="anim-fade relative mr-1 flex h-7 items-center gap-1.5 overflow-hidden rounded-full bg-primary/10 pr-3 pl-2 text-xs font-medium text-primary ring-1 ring-primary/25 transition-colors ring-inset outline-none hover:bg-primary/16 focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <span className="shimmer pointer-events-none absolute inset-0" aria-hidden />
+          <LoaderCircleIcon className="relative size-3.5 animate-spin" />
+          <span className="relative max-w-48 truncate">正在安装 {names}</span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>可以继续使用，装好后会通知你；点击查看安装来源</TooltipContent>
+    </Tooltip>
   );
 }

@@ -1,5 +1,6 @@
 import logo from "@/assets/logo.png";
 import { DiscoverIcon, InstalledIcon, ShelfIcon, UpdatesIcon } from "@/components/nav-icons";
+import { SetupActivity } from "@/components/source-setup";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -136,6 +137,7 @@ function Tools() {
   };
   return (
     <div className="app-no-drag flex items-center gap-0.5">
+      <SetupActivity onOpen={() => actions.openSettings("sources")} />
       <Button
         variant="ghost"
         size="sm"

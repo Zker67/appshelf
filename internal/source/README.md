@@ -19,11 +19,11 @@ winget 和 scoop 另有 `Uninstall`，不在接口里：由 [internal/uninstall]
 
 ## 进度
 
-`Progress{Stage, Done, Total}` 是一个任务当前的阶段（如“正在下载”）和下载字节数（未知时为 0）。来源用 `source.ReportProgress(log, p)` 报告：交给来源的日志实现了 `ProgressReporter`（[internal/tasklog](../tasklog/README.md)）时记下进度，否则忽略。
+`Progress{Stage, Done, Total, Percent}` 是一个任务当前的阶段（如“正在下载”）、下载字节数（未知时为 0），以及来源只给百分比时的百分比（0–100，未知时为 0）。界面有字节总数或百分比时显示确定进度，都没有时显示不确定动画，不编造数值；下载和安装不拼成一个整体百分比。来源用 `source.ReportProgress(log, p)` 报告：交给来源的日志实现了 `ProgressReporter`（[internal/tasklog](../tasklog/README.md)）时记下进度，否则忽略。
 
-| 来源 | 阶段 | 下载字节 |
+| 来源 | 阶段 | 下载进度 |
 |---|---|---|
-| winget | 正在准备 → 正在下载（输出里出现下载地址时）→ 正在安装 / 正在更新 / 正在卸载 | winget 重定向输出时没有进度条：下载期间每 500 毫秒读一次 `%TEMP%\WinGet\<ID>.<版本>\` 下本次写入的文件大小作为已下载；总量未知 |
+| winget | 正在准备 → 正在下载 → 正在安装 / 正在更新 / 正在卸载 → 正在完成，来自 COM 接口的进度记录 | COM 回报的真实百分比（`Percent`），没有字节数；安装、卸载阶段有百分比时同样显示（多数安装程序没有）。退回命令行时：命令行重定向输出没有进度条，只按输出里的下载地址识别阶段，并读 `%TEMP%\WinGet\<ID>.<版本>\` 的大小作为已下载；本机 winget 用 Delivery Optimization 下载时文件会一次预分配到接近全部大小，这个数不可靠 |
 | scoop | 按 scoop 输出的英文行首识别：正在添加 bucket、正在下载、正在校验、正在解压、正在运行安装程序 / 安装脚本、正在完成 | 无 |
 | GitHub | 正在下载 → 正在校验 → 正在运行安装程序 | 下载时的实际字节；总量取 Release 资产的大小，没有时用 `Content-Length` |
 
@@ -37,13 +37,15 @@ winget 和 scoop 另有 `Uninstall`，不在接口里：由 [internal/uninstall]
 | `Statuses` | 一次 `Get-WinGetPackage` 全量查询（本机实测 318 项约 2.3 秒，含 PowerShell 启动），按 ID 不区分大小写地挑出清单里的软件；`IsUpdateAvailable` 和 `AvailableVersions` 给出可用更新 |
 | `Recheck` | `Get-WinGetPackage -Id <id> -MatchOption EqualsCaseInsensitive` |
 | `Search` | `Find-WinGetPackage -Query <q> -Source winget -Count 50`，只读 ID 和名称，在常驻的 PowerShell（`runner.Worker`）里执行；不读版本，版本由 `SearchVersions` 补 |
-| `Install` | `winget install --id <id> --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity --no-upgrade` |
-| `Upgrade` | 同上，动词换成 `upgrade`，没有 `--no-upgrade` |
-| `Uninstall` | `winget uninstall --id <id> --exact --source <winget 或 msstore> --silent --accept-source-agreements --disable-interactivity`；用卸载程序窗口重试时 `--silent` 换成 `--interactive`。找不到包（`0x8A150014`）视为已不在，由复查确认 |
+| `Install` | 在 `Start-Job` 里 `Install-WinGetPackage -Id <id> -MatchOption EqualsCaseInsensitive -Source winget -Mode Default`（winget COM 接口）；先 `Get-WinGetPackage` 查到已装就返回“已安装”，不安装。模块无法加载时退回 `winget install --id <id> --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity --no-upgrade` |
+| `Upgrade` | `Update-WinGetPackage`，参数同上；退回命令行时动词换成 `upgrade`，没有 `--no-upgrade` |
+| `Uninstall` | `Uninstall-WinGetPackage -Source <winget 或 msstore> -Mode Silent`，用卸载程序窗口重试时 `-Mode Interactive`；先查不到包就视为已不在，由复查确认。退回命令行时 `winget uninstall --id <id> --exact --source <来源> --silent`（或 `--interactive`）`--accept-source-agreements --disable-interactivity`，找不到包（`0x8A150014`）同样视为已不在 |
 
-- 检测不区分大小写，宁可多认出已装、跳过安装；安装用 `--exact`，大小写不符时 winget 找不到包而失败，也不会装错。
+- 检测不区分大小写，宁可多认出已装、跳过安装；安装按完整 ID 匹配（COM 不区分大小写，winget 源里的 ID 不区分大小写也唯一；命令行用 `--exact`），并指定来源，不按名称模糊安装。
+- 安装、更新、卸载的进度：模块的 cmdlet 把进度写成 PowerShell 进度记录，控制台宿主读不到，嵌套 `[powershell]::Create()` 运行会一直等待（本机实测）；放进 `Start-Job` 后由外层每 300 毫秒读 `ChildJobs[0].Progress`，按行写出 `@@progress<Tab>状态<Tab>百分比`，Go 端（`com.go` 的 `comLog`）报告成进度，不写进日志；日志只记执行的 cmdlet、阶段变化和结果。结果按 `ExtendedErrorCode` 的 HRESULT 复用命令行退出码的中文说明。
+- 结束 AppShelf 会终止外层 PowerShell，作业进程随之退出，但 COM 服务端已开始的安装可能继续完成，与命令行方式相同。
 - 没能关联到 winget 源的已装软件 ID 以 `ARP\`、`MSIX\` 开头，不会和清单里的 ID 混淆。
-- 安装、更新和卸载的 winget 命令同一时间只运行一个。
+- 安装、更新和卸载同一时间只运行一个（COM 和命令行共用一把锁）。
 - 搜索不读模块对象的 `Version`：它要为每个结果从 CDN 下载 `versionData.mszyml` 和清单，逐个进行，50 个结果实测 30–55 秒。改为 ID、名称和版本分开读后，宽泛的词（如 `player`、`browser`）50 项约 0.2 秒、版本约 0.4 秒（本机实测）。
 - 退出码：`0x8A150061`（已安装）记为跳过；`0x8A150109` 成功但需要重启；`0x8A150014`、`0x8A150016`、`0x8A15002B`、`0x8A150101`、`0x8A150102`、`0x8A15010C` 各有中文原因；其他退出码附上输出末尾。
 

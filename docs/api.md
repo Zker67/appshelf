@@ -126,7 +126,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | | `SetNote` | 改一个软件的备注（Markdown），返回保存后的内容，空字符串即删除；不重新读取本机状态。`SaveApp` 编辑已有软件时保留原备注，只有新建时采用传入的备注 |
 | | `Export`、`ReadImport`、`ApplyImport` | 导出到用户选择的文件；导入先读文件返回合并预览和令牌，确认后再合并 |
 | `Tasks` | `Start` | 安装、更新不预览，界面点了就调用：先等正在读取的状态（如刚加入的软件，最多 2 分钟），再逐个核对，只把可执行的加入队列，没有可执行的返回错误。动作只接受 `install`、`upgrade`；`uninstall` 只能经 `Installed.StartUninstall` 加入 |
-| | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列。每项有动作（`install`、`upgrade`、`uninstall`）、状态、阶段 `stage`（如“正在下载”）和下载字节 `done` / `total`（未知时省略）；`interactive` 表示这个失败的卸载可以用卸载程序窗口重试，`leftovers` 表示这个成功的卸载可以查找残留 |
+| | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列。每项有动作（`install`、`upgrade`、`uninstall`）、状态、阶段 `stage`（如“正在下载”）、下载字节 `done` / `total` 和来源只给百分比时的 `percent`（0–100，未知时省略）；`interactive` 表示这个失败的卸载可以用卸载程序窗口重试，`leftovers` 表示这个成功的卸载可以查找残留 |
 | | `RetryInteractive(id)` | 失败的卸载改为打开卸载程序窗口再执行一次（winget 用 `--interactive`，注册表程序用不带静默参数的卸载命令） |
 | | `Log(id, from)` | 应用内日志：从第 `from` 行起的整理后的行 `lines`、实际起点 `start`（更早的行已丢弃时大于 `from`）、下次的游标 `next`、还在刷新的当前行 `live`、任务是否结束 `done`。内存里每个任务最多保留最后 2000 行，完整内容用 `OpenLog` 打开日志文件 |
 | | `FindLeftovers(id)` | 为卸载成功的任务查找残留（目录、`HKCU\Software` 下的设置、快捷方式、开机启动项），返回令牌和每一项的 ID、类型、路径、分数、等级（`high` / `medium` / `low`）、理由和是否默认勾选；只读 |
@@ -172,7 +172,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `source.Source`（`internal/source`） | 一种安装来源 | `Type`、`Check`（可用性）、`Statuses`（批量读状态）、`Recheck`（单项复查）、`Install`、`Upgrade`；能搜索的来源再实现 `source.Searcher` |
 | `source.Status` | 一个软件在本机的状态 | `Unknown`（未知）、`NotInstalled`、`Installed`、`UpdateAvailable`、`Unavailable`（来源不可用）；`Blocked()` 为真时不允许安装或更新；`External` 表示由检测规则认出、不是从该来源装的 |
 | `queue.Executor`（`internal/queue`） | 队列执行一项所需的能力 | `Status(ctx, item)`（执行前后复查；卸载项由 `queue` 换算成“还在 / 已不在”）、`Run(ctx, item, log)`（输出写进 `tasklog.Log`）、`OpenLog`、`Finished`；由 `internal/core` 实现 |
-| `source.Progress`、`source.ReportProgress` | 任务的阶段和下载字节 | 来源报告给任务日志，`queue` 每 250 毫秒最多通知一次 |
+| `source.Progress`、`source.ReportProgress` | 任务的阶段、下载字节和百分比 | 来源报告给任务日志，`queue` 每 250 毫秒最多通知一次 |
 | `tasklog.Log`（`internal/tasklog`） | 一个任务的日志 | 原样写文件，同时整理成行留在内存（最多 2000 行），供 `Tasks.Log` 增量读取 |
 | `uninstall.Runner`（`internal/uninstall`） | 卸载 | `PlanFor` 只按读到的信息给出卸载方式；`Inspect` 读本机现状和签名；`Run` 执行并等卸载程序副本结束；`Present` 判断程序是否还在 |
 | `leftover`（`internal/leftover`） | 卸载残留 | `Find` 只读查找并打分；`Clean` 只清理传入的项，文件进回收站、注册表先备份 |

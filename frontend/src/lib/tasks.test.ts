@@ -24,13 +24,21 @@ describe("formatElapsed", () => {
 
 describe("taskProgress", () => {
   it("has a percent only with a known size", () => {
-    expect(taskProgress({ done: 50, total: 200 })).toEqual({ percent: 25, bytes: "50 B / 200 B" });
+    expect(taskProgress({ done: 50, total: 200 })).toEqual({ percent: 25, text: "50 B / 200 B" });
     expect(taskProgress({ done: 2048, total: 0 })).toEqual({
       percent: null,
-      bytes: "已下载 2.0 KB",
+      text: "已下载 2.0 KB",
     });
-    expect(taskProgress({})).toEqual({ percent: null, bytes: "" });
+    expect(taskProgress({})).toEqual({ percent: null, text: "" });
     expect(taskProgress({ done: 300, total: 200 }).percent).toBe(100);
+  });
+
+  it("takes the source's percentage without bytes, never making one up", () => {
+    expect(taskProgress({ percent: 42.4 })).toEqual({ percent: 42.4, text: "42%" });
+    expect(taskProgress({ percent: 0 })).toEqual({ percent: null, text: "" });
+    expect(taskProgress({ percent: 130 }).percent).toBe(100);
+    // Bytes with a size come first.
+    expect(taskProgress({ done: 50, total: 200, percent: 90 }).percent).toBe(25);
   });
 });
 

@@ -425,6 +425,11 @@ export interface TaskEntry {
   done?: number;
   total?: number;
   /**
+   * Percent is how far its stage has come, 0 to 100, when the source
+   * reports a percentage without bytes; 0 when unknown.
+   */
+  percent?: number;
+  /**
    * Interactive means a failed removal can run again with its
    * uninstaller's window.
    */

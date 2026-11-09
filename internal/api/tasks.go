@@ -81,7 +81,7 @@ func (t *Tasks) List() TaskList {
 			ID: it.ID, AppID: it.App.ID, Name: it.App.Name, Icon: icon,
 			Action: actionOf(it.Action), State: taskStateOf(it.State), Message: it.Message,
 			HasLog: it.LogPath != "", Started: it.Started, Ended: it.Ended,
-			Stage: it.Stage, Done: it.Progress.Done, Total: it.Progress.Total,
+			Stage: it.Stage, Done: it.Progress.Done, Total: it.Progress.Total, Percent: it.Progress.Percent,
 			Interactive: it.State == queue.Failed && interactiveRetry(it),
 			Leftovers:   canFindLeftovers(it),
 		})

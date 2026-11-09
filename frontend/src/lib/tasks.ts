@@ -15,20 +15,28 @@ export function formatElapsed(seconds: number): string {
 
 /** TaskProgress is what a running task's bar shows. */
 export interface TaskProgress {
-  /** percent is 0–100 when the size is known, else null: the bar flows. */
+  /**
+   * percent is 0–100 when the size or the source's percentage is known,
+   * else null: the bar flows rather than make a number up.
+   */
   percent: number | null;
-  /** bytes is the download as text, or "" when there is none. */
-  bytes: string;
+  /** text is how far it has come, as "12 MB / 50 MB" or "45%", or "". */
+  text: string;
 }
 
-export function taskProgress(t: Pick<TaskEntry, "done" | "total">): TaskProgress {
+export function taskProgress(t: Pick<TaskEntry, "done" | "total" | "percent">): TaskProgress {
   const done = t.done ?? 0;
   const total = t.total ?? 0;
   if (total > 0) {
     const percent = Math.min(100, Math.max(0, (done / total) * 100));
-    return { percent, bytes: `${formatBytes(done)} / ${formatBytes(total)}` };
+    return { percent, text: `${formatBytes(done)} / ${formatBytes(total)}` };
   }
-  return { percent: null, bytes: done > 0 ? `已下载 ${formatBytes(done)}` : "" };
+  const reported = t.percent ?? 0;
+  if (reported > 0) {
+    const percent = Math.min(100, reported);
+    return { percent, text: `${Math.round(percent)}%` };
+  }
+  return { percent: null, text: done > 0 ? `已下载 ${formatBytes(done)}` : "" };
 }
 
 /** LineKind is how a line of a log is shown. */

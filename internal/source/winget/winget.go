@@ -1,7 +1,9 @@
 // Package winget installs apps with winget. It reads what is installed and
 // what has updates through the Microsoft.WinGet.Client PowerShell module,
-// whose objects come back as JSON, and installs with the winget command,
-// by exact ID from the winget source.
+// whose objects come back as JSON. It installs, updates and removes by
+// exact ID through the module's cmdlets, winget's COM interface, which
+// report how far the download has come; with the winget command when the
+// module cannot be loaded.
 package winget
 
 import (
@@ -434,24 +436,45 @@ var codeTexts = map[uint32]string{
 // Install installs the app's package by its exact ID from the winget
 // source; an installed package is left as it is.
 func (s *Source) Install(ctx context.Context, app catalog.App, log io.Writer) (source.Result, error) {
-	return s.run(ctx, log, "install", app.Source.ID, "--no-upgrade")
+	res, err := s.viaCOM(ctx, log, comOp{Verb: "install", ID: app.Source.ID, Source: "winget", Mode: "Default"}, "正在安装")
+	if errors.Is(err, errUnavailable) {
+		return s.run(ctx, log, "install", app.Source.ID, "--no-upgrade")
+	}
+	return res, err
 }
 
 // Upgrade updates the app's package by its exact ID.
 func (s *Source) Upgrade(ctx context.Context, app catalog.App, log io.Writer) (source.Result, error) {
-	return s.run(ctx, log, "upgrade", app.Source.ID)
+	res, err := s.viaCOM(ctx, log, comOp{Verb: "upgrade", ID: app.Source.ID, Source: "winget", Mode: "Default"}, "正在更新")
+	if errors.Is(err, errUnavailable) {
+		return s.run(ctx, log, "upgrade", app.Source.ID)
+	}
+	return res, err
 }
 
 // Uninstall removes a package by its exact ID, from the source that knows
 // it ("winget" or "msstore"), silently unless interactive asks for the
 // uninstaller's window.
 func (s *Source) Uninstall(ctx context.Context, id, src string, interactive bool, log io.Writer) (source.Result, error) {
+	if src == "" {
+		src = "winget"
+	}
+	mode := "Silent"
+	if interactive {
+		mode = "Interactive"
+	}
+	res, err := s.viaCOM(ctx, log, comOp{Verb: "uninstall", ID: id, Source: src, Mode: mode}, "正在卸载")
+	if errors.Is(err, errUnavailable) {
+		return s.uninstallCLI(ctx, id, src, interactive, log)
+	}
+	return res, err
+}
+
+// uninstallCLI removes a package with the winget command.
+func (s *Source) uninstallCLI(ctx context.Context, id, src string, interactive bool, log io.Writer) (source.Result, error) {
 	mode := "--silent"
 	if interactive {
 		mode = "--interactive"
-	}
-	if src == "" {
-		src = "winget"
 	}
 	path, err := exec.LookPath("winget")
 	if err != nil {
@@ -511,7 +534,14 @@ func (s *Source) run(ctx context.Context, log io.Writer, verb, id string, extra 
 
 // interpret turns winget's exit code into a result.
 func interpret(res runner.Result) (source.Result, error) {
-	switch res.Code() {
+	return interpretCode(res.Code(), res.Tail(2))
+}
+
+// interpretCode turns a code of winget's, the command's exit code or the
+// COM interface's HRESULT, into a result; detail says more of a code
+// without a text of its own.
+func interpretCode(code uint32, detail string) (source.Result, error) {
+	switch code {
 	case 0:
 		return source.Result{}, nil
 	case codeAlreadyInstalled:
@@ -531,12 +561,12 @@ func interpret(res runner.Result) (source.Result, error) {
 	case codeCanceledByUser:
 		return source.Result{}, errors.New("安装被取消")
 	}
-	if text, ok := codeTexts[res.Code()]; ok {
-		return source.Result{}, fmt.Errorf("%s（winget 退出码 0x%08X）", text, res.Code())
+	if text, ok := codeTexts[code]; ok {
+		return source.Result{}, fmt.Errorf("%s（winget 退出码 0x%08X）", text, code)
 	}
-	msg := fmt.Sprintf("winget 退出码 0x%08X", res.Code())
-	if tail := res.Tail(2); tail != "" {
-		msg += "：" + tail
+	msg := fmt.Sprintf("winget 退出码 0x%08X", code)
+	if detail != "" {
+		msg += "：" + detail
 	}
 	return source.Result{}, errors.New(msg)
 }

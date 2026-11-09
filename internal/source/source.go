@@ -91,6 +91,9 @@ type Progress struct {
 	Stage string // what it does now, as "正在下载"
 	Done  int64  // bytes downloaded, 0 when none or unknown
 	Total int64  // the size of the download, 0 when unknown
+	// Percent is how far the stage has come, 0 to 100, as the source
+	// reports it without bytes; 0 when unknown.
+	Percent float64
 }
 
 // ProgressReporter is a log that also shows the progress of the work it

@@ -280,8 +280,8 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
                   {t.stage || verbs[t.action].doing}
                 </span>
                 <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
-                  {progress.bytes}
-                  {progress.bytes && elapsed && " · "}
+                  {progress.text}
+                  {progress.text && elapsed && " · "}
                   {elapsed}
                 </span>
               </div>

@@ -65,3 +65,4 @@ plans/
 | [任务进度、日志、卸载与残留清理](./2026-11-08-tasks-uninstall/00-overview.md) | `[in-progress]` | 四期：任务阶段与进度、软件内实时日志；注册表读全字段、先显示后补全、监听自动刷新；按来源卸载（winget / scoop / 应用商店 / 注册表卸载命令，执行后复查）；卸载后残留打分、逐项确认、注册表备份、文件进回收站；追加独立的“卸载”页签（按大小和安装时间挑选，后由下一个计划改为上次打开时间）。已实现并通过自动检查和本机只读测试，真实卸载和窗口验收待用户完成，见 [实施报告](./2026-11-08-tasks-uninstall/09-implementation-report.md) |
 | [卸载页按上次打开时间挑选](./2026-11-09-last-opened/00-overview.md) | `[in-progress]` | 新增 `internal/usage` 读取 UserAssist 启动记录（开始菜单、任务栏、桌面、资源管理器）和正在运行的进程，按目录 / 应用包 / scoop 归到程序；卸载页“安装时间”分组和排序换成“上次打开”；等待用户在真实窗口验收 |
 | [修复卸载误报失败](./2026-11-09-uninstall-false-failure/00-overview.md) | `[in-progress]` | winget 卸载后也等 NSIS / Inno Setup 的卸载程序副本结束再复查；重试时程序已不在算卸载成功；跳过的卸载任务立刻移出本机已装列表；等待用户真实卸载验收 |
+| [winget 改走 COM 接口显示真实进度](./2026-11-09-winget-com-progress/00-overview.md) | `[in-progress]` | winget 安装、更新、卸载经 `Microsoft.WinGet.Client` 模块在后台作业里调用 COM，读出真实下载百分比；进度模型增加百分比；模块不可用时退回命令行 |

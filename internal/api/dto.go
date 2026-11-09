@@ -213,6 +213,9 @@ type TaskEntry struct {
 	// means the size is unknown.
 	Done  int64 `json:"done,omitempty"`
 	Total int64 `json:"total,omitempty"`
+	// Percent is how far its stage has come, 0 to 100, when the source
+	// reports a percentage without bytes; 0 when unknown.
+	Percent float64 `json:"percent,omitempty"`
 	// Interactive means a failed removal can run again with its
 	// uninstaller's window.
 	Interactive bool `json:"interactive,omitempty"`

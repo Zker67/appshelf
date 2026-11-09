@@ -90,6 +90,8 @@ type Fetchers struct {
 	// GitHubRelease returns the latest release and the installer AppShelf
 	// would choose for an app of the repository.
 	GitHubRelease func(ctx context.Context, app catalog.App) (github.Release, github.Asset, error)
+	// GitHubReleases returns a repository's latest releases, newest first.
+	GitHubReleases func(ctx context.Context, repo string) ([]github.Release, error)
 }
 
 // Details reads the details of packages and keeps them on disk.
@@ -100,8 +102,9 @@ type Details struct {
 	dir       string
 	now       func() time.Time
 
-	mu  sync.Mutex
-	mem map[string]cached
+	mu    sync.Mutex
+	mem   map[string]cached
+	notes map[string]cachedNotes
 }
 
 type cached struct {
@@ -119,6 +122,7 @@ func NewDetails(fetch Fetchers, dir, manifests string) *Details {
 		dir:       dir,
 		now:       time.Now,
 		mem:       map[string]cached{},
+		notes:     map[string]cachedNotes{},
 	}
 }
 
@@ -240,7 +244,13 @@ type manifest struct {
 	ShortDescription string   `yaml:"ShortDescription"`
 	Description      string   `yaml:"Description"`
 	ReleaseNotesURL  string   `yaml:"ReleaseNotesUrl"`
+	ReleaseNotes     string   `yaml:"ReleaseNotes"`
 	Tags             []string `yaml:"Tags"`
+	// Of an installer manifest, or a singleton one.
+	InstallerURL string `yaml:"InstallerUrl"`
+	Installers   []struct {
+		InstallerURL string `yaml:"InstallerUrl"`
+	} `yaml:"Installers"`
 }
 
 // ParseManifest reads a winget manifest.
@@ -279,23 +289,32 @@ func (d *Details) getManifest(ctx context.Context, path string) (manifest, error
 	return ParseManifest(data)
 }
 
-// winget reads a package version's manifests from the community
-// repository: the version manifest, then the default locale's and the
-// Chinese one side by side, the latter for the descriptions.
+// winget reads a package version's details from the community repository.
 func (d *Details) winget(ctx context.Context, id, version string) (PackageDetails, error) {
-	if version == "" {
-		return PackageDetails{}, errors.New("不知道这个软件包的版本")
-	}
-	dir := ManifestDir(id, version)
-	base := dir + "/" + url.PathEscape(id)
-	top, err := d.getManifest(ctx, base+".yaml")
-	if errors.Is(err, errMissing) {
-		return PackageDetails{}, errors.New("winget 仓库里没有这个版本的清单")
-	}
+	m, top, err := d.wingetManifest(ctx, id, version)
 	if err != nil {
 		return PackageDetails{}, err
 	}
-	m := top
+	return wingetDetails(m, top, version), nil
+}
+
+// wingetManifest reads a package version's manifests: the version's, and
+// the default locale's merged with the Chinese one's descriptions. top is
+// the version's manifest; m has the locale's fields.
+func (d *Details) wingetManifest(ctx context.Context, id, version string) (m, top manifest, err error) {
+	if version == "" {
+		return manifest{}, manifest{}, errors.New("不知道这个软件包的版本")
+	}
+	dir := ManifestDir(id, version)
+	base := dir + "/" + url.PathEscape(id)
+	top, err = d.getManifest(ctx, base+".yaml")
+	if errors.Is(err, errMissing) {
+		return manifest{}, manifest{}, errors.New("winget 仓库里没有这个版本的清单")
+	}
+	if err != nil {
+		return manifest{}, manifest{}, err
+	}
+	m = top
 	if !strings.EqualFold(top.ManifestType, "singleton") {
 		locale := cmp.Or(top.DefaultLocale, "en-US")
 		var zh manifest
@@ -310,7 +329,7 @@ func (d *Details) winget(ctx context.Context, id, version string) (PackageDetail
 			if errors.Is(err, errMissing) {
 				err = errors.New("winget 仓库里缺少这个版本的语言清单")
 			}
-			return PackageDetails{}, err
+			return manifest{}, manifest{}, err
 		}
 		if zhErr == nil {
 			m.ShortDescription = cmp.Or(zh.ShortDescription, m.ShortDescription)
@@ -318,8 +337,14 @@ func (d *Details) winget(ctx context.Context, id, version string) (PackageDetail
 			if len(zh.Tags) > 0 {
 				m.Tags = zh.Tags
 			}
+			m.ReleaseNotes = cmp.Or(zh.ReleaseNotes, m.ReleaseNotes)
 		}
 	}
+	return m, top, nil
+}
+
+// wingetDetails is what a version's manifests say of the package.
+func wingetDetails(m, top manifest, version string) PackageDetails {
 	det := PackageDetails{
 		Name:         m.PackageName,
 		Publisher:    m.Publisher,
@@ -336,7 +361,7 @@ func (d *Details) winget(ctx context.Context, id, version string) (PackageDetail
 	if desc := strings.TrimSpace(m.Description); desc != "" && desc != det.Summary {
 		det.Description = desc
 	}
-	return det, nil
+	return det
 }
 
 func (d *Details) scoop(ctx context.Context, ref string) (PackageDetails, error) {

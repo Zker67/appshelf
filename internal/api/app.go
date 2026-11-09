@@ -173,10 +173,13 @@ type App struct {
 	// packages the installed list shows up to date.
 	upgraded map[int]bool
 
-	mu       sync.Mutex
-	imports  map[string]*core.Import
-	deleted  map[string]deletion
-	scans    map[string]*leftoverScan
+	mu      sync.Mutex
+	imports map[string]*core.Import
+	deleted map[string]deletion
+	scans   map[string]*leftoverScan
+	// spaces are the data directories each program's last Space found,
+	// by key and then ID, for OpenLocation.
+	spaces   map[string]map[string]string
 	order    []string // tokens of imports and deletions, oldest first
 	searchMu sync.Mutex
 	search   context.CancelFunc
@@ -200,6 +203,7 @@ func New(hooks Hooks) *App {
 		loop:    newLoop(),
 		imports: map[string]*core.Import{},
 		scans:   map[string]*leftoverScan{},
+		spaces:  map[string]map[string]string{},
 		deleted: map[string]deletion{},
 	}
 	a.note = newNotifier(80*time.Millisecond, func(c Change) {

@@ -71,6 +71,7 @@ import {
 } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
+import { UpdateDetail } from "./detail";
 
 type View = "updates" | "auto" | "held" | "history";
 
@@ -136,6 +137,7 @@ export function UpdatesPage() {
   const listRef = useRef<HTMLDivElement>(null);
   const order = useMemo(() => shownUpdates.map((i) => i.key), [shownUpdates]);
   const rows = useList(order, false);
+  const focused = view === "updates" && rows.focus ? byKey.get(rows.focus) : undefined;
   const selected = [...rows.selected]
     .map((k) => byKey.get(k))
     .filter((i): i is UpdateItem => !!i && !i.pending);
@@ -176,7 +178,7 @@ export function UpdatesPage() {
   const layout = useDefaultLayout({
     id: "updates",
     storage: localStorage,
-    panelIds: ["side", "list"],
+    panelIds: focused ? ["side", "list", "detail"] : ["side", "list"],
   });
   const checkedAt = formatClock(list?.checkedAt);
   const nextAt = formatDateTime(list?.nextCheck);
@@ -387,6 +389,24 @@ export function UpdatesPage() {
           </SelectionBar>
         </div>
       </ResizablePanel>
+      {focused && (
+        <>
+          <ResizableHandle />
+          <ResizablePanel
+            id="detail"
+            defaultSize={380}
+            minSize={320}
+            maxSize={600}
+            groupResizeBehavior="preserve-pixel-size"
+          >
+            <UpdateDetail
+              item={focused}
+              onClose={rows.closeDetails}
+              onUpdate={() => actions.update([focused.key])}
+            />
+          </ResizablePanel>
+        </>
+      )}
     </ResizablePanelGroup>
   );
 }

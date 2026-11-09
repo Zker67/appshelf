@@ -42,7 +42,9 @@ type Release struct {
 	Prerelease  bool      `json:"prerelease"`
 	PublishedAt time.Time `json:"published_at"`
 	HTMLURL     string    `json:"html_url"`
-	Assets      []Asset   `json:"assets"`
+	// Body is the release's notes, in Markdown.
+	Body   string  `json:"body"`
+	Assets []Asset `json:"assets"`
 }
 
 // Repo is a repository as the API returns it.
@@ -284,6 +286,26 @@ func (s *Source) Latest(ctx context.Context, repo string) (Release, error) {
 		return Release{}, errors.New("没有正式版 release")
 	}
 	return rel, nil
+}
+
+// Releases returns a repository's latest releases, newest first, drafts
+// left out.
+func (s *Source) Releases(ctx context.Context, repo string) ([]Release, error) {
+	var rels []Release
+	err := s.get(ctx, "/repos/"+repo+"/releases?per_page=30", &rels)
+	if errors.Is(err, errNotFound) {
+		return nil, errors.New("仓库不存在")
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := rels[:0]
+	for _, r := range rels {
+		if !r.Draft && r.Tag != "" {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 // Repository reads a repository.

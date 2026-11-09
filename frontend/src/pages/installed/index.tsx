@@ -70,6 +70,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
+import { InstalledDetail } from "./detail";
 import { InstalledOverview } from "./overview";
 
 const sortItems: Array<{ value: InstalledSort; label: string }> = [
@@ -155,6 +156,8 @@ export function InstalledPage() {
   const order = useMemo(() => shown.map((e) => e.key), [shown]);
   const byKey = useMemo(() => new Map(entries.map((e) => [e.key, e])), [entries]);
   const list = useList(order, false);
+  // The details show for a row opened in the list, not on the overview.
+  const focused = !overview && list.focus ? byKey.get(list.focus) : undefined;
   const selected = [...list.selected]
     .map((k) => byKey.get(k))
     .filter((e): e is InstalledEntry => !!e);
@@ -234,7 +237,7 @@ export function InstalledPage() {
   const layout = useDefaultLayout({
     id: "installed",
     storage: localStorage,
-    panelIds: ["side", "list"],
+    panelIds: focused ? ["side", "list", "detail"] : ["side", "list"],
   });
   const at = formatDateTime(data?.at);
 
@@ -515,6 +518,31 @@ export function InstalledPage() {
           </SelectionBar>
         </div>
       </ResizablePanel>
+      {focused && (
+        <>
+          <ResizableHandle />
+          <ResizablePanel
+            id="detail"
+            defaultSize={380}
+            minSize={320}
+            maxSize={600}
+            groupResizeBehavior="preserve-pixel-size"
+          >
+            <InstalledDetail
+              entry={focused}
+              update={focused.source ? updateOf.get(sourceKey(focused.source)) : undefined}
+              adding={quick.adding.has(focused.key)}
+              addHint={quick.hint}
+              onClose={list.closeDetails}
+              onUpdate={() => actions.updateInstalled([focused.key])}
+              onAdd={() => add([focused])}
+              onShow={() => nav.showInShelf(focused.inShelf)}
+              onFind={() => findSource(focused)}
+              onUninstall={() => actions.previewUninstall([focused.key])}
+            />
+          </ResizablePanel>
+        </>
+      )}
     </ResizablePanelGroup>
   );
 }

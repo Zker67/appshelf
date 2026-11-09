@@ -73,7 +73,7 @@ export interface Fact {
 }
 
 /** FactGrid sets facts in two columns; an odd one out spans both. */
-function FactGrid({ facts, loading = 0 }: { facts: Fact[]; loading?: number }) {
+export function FactGrid({ facts, loading = 0 }: { facts: Fact[]; loading?: number }) {
   const narrow = facts.filter((f) => !f.wide);
   const cells = [
     ...narrow.map((f, i) => ({
@@ -292,6 +292,7 @@ export function PackageInfo({
   overview,
   facts: own = [],
   latest,
+  first = [],
   tabs: extra = [],
 }: {
   pkgRef: PackageRef | null;
@@ -301,6 +302,8 @@ export function PackageInfo({
   facts?: Fact[];
   /** The latest version the caller knows, over the source's. */
   latest?: string;
+  /** The caller's tabs, before the source's. */
+  first?: DetailTab[];
   /** The caller's tabs, after the source's. */
   tabs?: DetailTab[];
 }) {
@@ -333,7 +336,9 @@ export function PackageInfo({
         </div>
       </>,
     );
-    return <DetailTabs tabs={[tab, ...extra]} pending={pkgRef?.type === "winget" ? 1 : 0} />;
+    return (
+      <DetailTabs tabs={[...first, tab, ...extra]} pending={pkgRef?.type === "winget" ? 1 : 0} />
+    );
   }
 
   if (q.isError) {
@@ -346,7 +351,7 @@ export function PackageInfo({
         </div>
       </>,
     );
-    return <DetailTabs tabs={[tab, ...extra]} />;
+    return <DetailTabs tabs={[...first, tab, ...extra]} />;
   }
 
   const d: PackageDetails = q.data ?? {};
@@ -417,5 +422,5 @@ export function PackageInfo({
       ),
     });
   }
-  return <DetailTabs tabs={[...tabs, ...extra]} />;
+  return <DetailTabs tabs={[...first, ...tabs, ...extra]} />;
 }

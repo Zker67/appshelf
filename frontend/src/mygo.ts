@@ -227,6 +227,9 @@ export interface LeftoverScan {
   items: LeftoverItem[];
 }
 
+/** LocationFrom is how a program's directory is known. */
+export type LocationFrom = "registry" | "guessed" | "scoop" | "store";
+
 /** MergeCounts is what importing a catalog changes. */
 export interface MergeCounts {
   addedApps: number;
@@ -273,6 +276,24 @@ export interface ReleaseInfo {
   url?: string;
   asset?: string;
   assetError?: string;
+}
+
+export interface ReleaseNote {
+  version: string;
+  title?: string;
+  published?: string;
+  body?: string;
+  url?: string;
+  prerelease?: boolean;
+}
+
+export interface ReleaseNotes {
+  notes: ReleaseNote[];
+  from?: string;
+  repo?: string;
+  link?: string;
+  more?: boolean;
+  reason?: string;
 }
 
 export interface RuleSuggestion {
@@ -394,6 +415,45 @@ export interface SourcesOverview {
   githubTokenFrom: TokenSource;
   githubRate: RateInfo;
   githubSearchRate: RateInfo;
+}
+
+/**
+ * SpaceInfo is the room a program takes, measured: its directory, and the
+ * directories that may hold its data. For display only.
+ */
+export interface SpaceInfo {
+  key: string;
+  /**
+   * Location is the program's directory, From how it is known; empty
+   * when not known. Openable means it is there to open.
+   */
+  location?: string;
+  from?: LocationFrom;
+  openable?: boolean;
+  /** Program is the size of the directory, when Measured. */
+  program?: number;
+  measured?: boolean;
+  /** Note says why the directory was not measured. */
+  note?: string;
+  /** Registered is the registry's estimate of its size. */
+  registered?: number;
+  /**
+   * Data are directories named as the program, which may hold its
+   * settings and caches, the surer first; DataSize is their sizes.
+   */
+  data: SpaceItem[];
+  dataSize?: number;
+}
+
+/** SpaceItem is a directory that may hold a program's data. */
+export interface SpaceItem {
+  /** ID names it for OpenLocation. */
+  id: string;
+  path: string;
+  size?: number;
+  level: LeftoverLevel;
+  /** Reasons are why it is thought the program's. */
+  reasons: string[];
 }
 
 /** StatusState is what is known of an app on this machine. */
@@ -897,6 +957,14 @@ export const Discover = {
     return call("Discover.Details", ref);
   },
   /**
+   * ReleaseNotes returns what changed in the versions of a package after
+   * from, the version installed, up to ref.Version. It is for display:
+   * failing to read them changes nothing else.
+   */
+  releaseNotes(ref: PackageRef, from: string): Promise<ReleaseNotes> {
+    return call("Discover.ReleaseNotes", ref, from);
+  },
+  /**
    * Search searches winget and scoop side by side and sends each source's
    * results as they come. A new search cancels the one under way. winget's
    * results come first without versions, and again once the versions are
@@ -938,6 +1006,14 @@ export const Installed = {
     return call("Installed.List");
   },
   /**
+   * OpenLocation opens a program's directory in Explorer, or with id one of
+   * the data directories its last Space found. The page names the program
+   * and the directory, never a path: Go resolves them.
+   */
+  openLocation(key: string, id: string): Promise<void> {
+    return call("Installed.OpenLocation", key, id);
+  },
+  /**
    * PreviewUninstall says what removing the programs would do: how, with
    * what command, and what to know first. Nothing runs.
    */
@@ -947,6 +1023,14 @@ export const Installed = {
   /** Refresh reads what is installed again. */
   refresh(): Promise<void> {
     return call("Installed.Refresh");
+  },
+  /**
+   * Space measures the room a program takes: its directory, and the
+   * directories named as it that may hold its data, looked for as leftovers
+   * are but with the program still installed. Nothing is changed.
+   */
+  space(key: string): Promise<SpaceInfo> {
+    return call("Installed.Space", key);
   },
   /**
    * StartUninstall checks the programs again and queues those that can be

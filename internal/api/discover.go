@@ -227,6 +227,23 @@ func (d *Discover) Details(ctx context.Context, ref discover.PackageRef) (discov
 	return det, err
 }
 
+// ReleaseNotes returns what changed in the versions of a package after
+// from, the version installed, up to ref.Version. It is for display:
+// failing to read them changes nothing else.
+func (d *Discover) ReleaseNotes(ctx context.Context, ref discover.PackageRef, from string) (discover.ReleaseNotes, error) {
+	a := d.a
+	<-a.ready
+	if a.cfg.Details == nil {
+		return discover.ReleaseNotes{}, errors.New("更新日志暂时无法读取")
+	}
+	notes, err := a.cfg.Details.ReleaseNotes(ctx, ref, from)
+	if ref.Type == catalog.GitHub || notes.Repo != "" {
+		// GitHub's quota shows in the sources.
+		a.note.mark(ChangedSources)
+	}
+	return notes, err
+}
+
 // SuggestRules proposes detection rules for an app of a GitHub repository,
 // from the programs installed and from the repository's name.
 func (d *Discover) SuggestRules(repo string) []discover.RuleSuggestion {

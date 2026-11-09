@@ -191,10 +191,11 @@ func main() {
 			iconBase = "http://icon.localhost"
 		}
 		details := discover.NewDetails(discover.Fetchers{
-			WingetLatest:  w.LatestVersion,
-			ScoopInfo:     sc.Info,
-			GitHubRepo:    gh.Repository,
-			GitHubRelease: gh.Describe,
+			WingetLatest:   w.LatestVersion,
+			ScoopInfo:      sc.Info,
+			GitHubRepo:     gh.Repository,
+			GitHubRelease:  gh.Describe,
+			GitHubReleases: gh.Releases,
 		}, filepath.Join(cacheDir, "details"), "")
 
 		shelf.Start(ctx, api.Config{

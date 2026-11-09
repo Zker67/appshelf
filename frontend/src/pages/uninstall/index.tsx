@@ -82,6 +82,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
+import { UninstallDetail } from "./detail";
 
 const sortItems: Array<{ value: RemovalSort; label: string }> = [
   { value: "size", label: "占用空间" },
@@ -162,6 +163,7 @@ export function UninstallPage() {
   const order = useMemo(() => shown.map((e) => e.key), [shown]);
   const byKey = useMemo(() => new Map(entries.map((e) => [e.key, e])), [entries]);
   const list = useList(order, false);
+  const focused = view === "list" && list.focus ? byKey.get(list.focus) : undefined;
   const selected = [...list.selected]
     .map((k) => byKey.get(k))
     .filter((e): e is InstalledEntry => !!e && !busy.has(e.key));
@@ -217,7 +219,7 @@ export function UninstallPage() {
   const layout = useDefaultLayout({
     id: "uninstall",
     storage: localStorage,
-    panelIds: ["side", "list"],
+    panelIds: focused ? ["side", "list", "detail"] : ["side", "list"],
   });
   const loading = isPending || (!data?.loaded && entries.length === 0);
   const shownSize = totalSize(shown);
@@ -494,6 +496,25 @@ export function UninstallPage() {
           </SelectionBar>
         </div>
       </ResizablePanel>
+      {focused && (
+        <>
+          <ResizableHandle />
+          <ResizablePanel
+            id="detail"
+            defaultSize={380}
+            minSize={320}
+            maxSize={600}
+            groupResizeBehavior="preserve-pixel-size"
+          >
+            <UninstallDetail
+              entry={focused}
+              task={busy.get(focused.key)}
+              onClose={list.closeDetails}
+              onUninstall={() => uninstall([focused])}
+            />
+          </ResizablePanel>
+        </>
+      )}
     </ResizablePanelGroup>
   );
 }

@@ -516,7 +516,7 @@ export function DiscoverPage() {
               onClick={() => add([...list.selected], false)}
             >
               <PlusIcon />
-              加入清单{addable.length > 0 && ` ${addable.length}`}
+              加入清单
             </Button>
             <Button
               size="sm"

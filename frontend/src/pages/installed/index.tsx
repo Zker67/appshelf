@@ -496,11 +496,11 @@ export function InstalledPage() {
               onClick={() => actions.updateInstalled(updatable.map((e) => e.key))}
             >
               <ArrowUpCircleIcon />
-              更新{updatable.length > 0 && ` ${updatable.length}`}
+              更新
             </Button>
             <Button size="sm" disabled={addable.length === 0} onClick={() => add(selected)}>
               <PlusIcon />
-              加入清单{addable.length > 0 && ` ${addable.length}`}
+              加入清单
             </Button>
             <Button
               size="sm"
@@ -510,7 +510,7 @@ export function InstalledPage() {
               onClick={() => actions.previewUninstall(selected.map((e) => e.key))}
             >
               <PackageXIcon />
-              卸载{selected.length > 0 && ` ${selected.length}`}
+              卸载
             </Button>
           </SelectionBar>
         </div>

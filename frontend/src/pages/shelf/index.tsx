@@ -393,7 +393,7 @@ export function ShelfPage() {
               onClick={() => actions.install(selected.map((a) => a.app.id))}
             >
               <DownloadIcon />
-              安装{installable > 0 && ` ${installable}`}
+              安装
             </Button>
             <Button
               size="sm"
@@ -402,7 +402,7 @@ export function ShelfPage() {
               onClick={() => actions.upgrade(selected.map((a) => a.app.id))}
             >
               <ArrowUpCircleIcon />
-              更新{updatable > 0 && ` ${updatable}`}
+              更新
             </Button>
             <CategoryPicker
               value={{ id: "__none" }}

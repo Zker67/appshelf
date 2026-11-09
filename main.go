@@ -41,6 +41,9 @@ func main() {
 		return // the running AppShelf comes to the front
 	}
 	mygo.Use(updater.Plugin)
+	// The update window reads AppShelf's releases through a feed that
+	// copes with a proxy failing on github.com (selfupdate.go).
+	useUpdateFeed()
 
 	// Development builds, and copies not installed where they can be
 	// replaced, cannot update themselves.

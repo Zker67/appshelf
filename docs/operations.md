@@ -98,7 +98,7 @@ go tool mygo build              # 先构建前端，再输出到 build/windows-a
 
 ## 部署
 
-自更新使用 MyGo 的更新机制：`mygo.json` 的 `updates.github` 指向公开仓库 `Zker67/appshelf`，安装版的 AppShelf 读取该仓库最新正式 release 中的 `update-windows-amd64.json`，下载更新包并用内置公钥验证签名后替换自己。开发版（`go tool mygo dev`）不能自更新，“设置 → 关于”会说明。
+自更新使用 MyGo 的更新机制：`mygo.json` 的 `updates.github` 指向公开仓库 `Zker67/appshelf`，安装版的 AppShelf 读取该仓库最新正式 release 中的 `update-windows-amd64.json`，下载更新包并用内置公钥验证签名后替换自己。取文件的方式见 [selfupdate.go](../selfupdate.go)：清单地址带随机参数 `?t=` 避开中间缓存；github.com 6 秒内不开始响应或出错时，改走 GitHub API（`api.github.com/repos/Zker67/appshelf/releases/...`，不登录每小时 60 次，只在 github.com 失败时才用）取同一个文件；网络问题、超时、429 或 5xx 时自动重试，共 5 次。下载到一半断开不会接着下，更新窗口报错后再检查一次即可。开发版（`go tool mygo dev`）不能自更新，“设置 → 关于”会说明。
 
 ### 签名密钥
 

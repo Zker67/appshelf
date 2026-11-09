@@ -8,10 +8,12 @@ import {
 } from "@/components/dialogs/add-dialog";
 import { AppEditor } from "@/components/dialogs/app-editor";
 import { HelpDialog } from "@/components/dialogs/help-dialog";
+import { LeftoversDialog, type LeftoversRequest } from "@/components/dialogs/leftovers-dialog";
 import { NoteEditor, type NoteRequest } from "@/components/dialogs/note-editor";
 import { PreviewDialog, type PreviewRequest } from "@/components/dialogs/preview-dialog";
 import { SettingsDialog, type SettingsTab } from "@/components/dialogs/settings-dialog";
 import { TasksSheet } from "@/components/dialogs/tasks-sheet";
+import { UninstallDialog, type UninstallRequest } from "@/components/dialogs/uninstall-dialog";
 import type { AddTarget } from "@/lib/add-target";
 import type { App, ShelfApp, TaskAction } from "@/mygo";
 import { createContext, use, useMemo, useState, type ReactNode } from "react";
@@ -22,6 +24,10 @@ interface Actions {
   previewInstalledUpdates: (keys: string[]) => void;
   /** previewUpdates previews updates of packages, by source key. */
   previewUpdates: (keys: string[]) => void;
+  /** previewUninstall shows what removing programs would do, by key of the installed list. */
+  previewUninstall: (keys: string[]) => void;
+  /** findLeftovers looks for what a removal left behind. */
+  findLeftovers: (taskId: number, name: string) => void;
   /** add adds packages to the catalog with a category and tags. */
   add: (items: AddCandidate[], opts?: { install?: boolean; target?: AddTarget }) => void;
   /** edit edits an app, or adds one by hand with what is known of it. */
@@ -42,6 +48,8 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
   // A request stays after its dialog closes, for the dialog to animate out;
   // a new one remounts the dialog by its seq.
   const [preview, setPreview] = useState<PreviewRequest | null>(null);
+  const [uninstall, setUninstall] = useState<UninstallRequest | null>(null);
+  const [leftovers, setLeftovers] = useState<LeftoversRequest | null>(null);
   const [add, setAdd] = useState<AddDialogRequest | null>(null);
   const [edit, setEdit] = useState<{
     app?: App;
@@ -61,6 +69,8 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
         setPreview({ ids: keys, action: "upgrade", installed: true, seq: next(), open: true }),
       previewUpdates: (keys) =>
         setPreview({ ids: keys, action: "upgrade", updates: true, seq: next(), open: true }),
+      previewUninstall: (keys) => setUninstall({ keys, seq: next(), open: true }),
+      findLeftovers: (taskId, name) => setLeftovers({ taskId, name, seq: next(), open: true }),
       add: (items, opts) =>
         setAdd({
           items,
@@ -94,6 +104,17 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
         request={preview}
         onClose={() => setPreview((p) => p && { ...p, open: false })}
         onStarted={() => setTasks(true)}
+      />
+      <UninstallDialog
+        key={`u${uninstall?.seq ?? 0}`}
+        request={uninstall}
+        onClose={() => setUninstall((u) => u && { ...u, open: false })}
+        onStarted={() => setTasks(true)}
+      />
+      <LeftoversDialog
+        key={`l${leftovers?.seq ?? 0}`}
+        request={leftovers}
+        onClose={() => setLeftovers((l) => l && { ...l, open: false })}
       />
       <AddDialog
         key={`a${add?.seq ?? 0}`}

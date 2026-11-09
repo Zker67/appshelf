@@ -3,6 +3,7 @@ package scoop
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -182,5 +183,36 @@ func TestInstalledAppsGlobal(t *testing.T) {
 	}
 	if got["vscode"].Global != true || got["git"].Global || got["git"].Update != "2.56.0" {
 		t.Errorf("apps: %+v", apps)
+	}
+}
+
+// stageRecorder is a log that keeps the stages reported.
+type stageRecorder struct {
+	strings.Builder
+	stages []string
+}
+
+func (r *stageRecorder) ReportProgress(p source.Progress) {
+	if n := len(r.stages); n == 0 || r.stages[n-1] != p.Stage {
+		r.stages = append(r.stages, p.Stage)
+	}
+}
+
+func TestProgressFollowsScoopsSteps(t *testing.T) {
+	rec := &stageRecorder{}
+	p := newProgress(rec, "update")
+	// scoop update git, as scoop 0.5 writes it.
+	out := "Updating one outdated app:\r\nUpdating 'git' (2.45.0 -> 2.45.1)\nDownloading new version\n" +
+		"PortableGit-2.45.1-64-bit.7z.exe (61.5 MB) [====] 100%\n" +
+		"Checking hash of PortableGit-2.45.1-64-bit.7z.exe ... ok.\nUninstalling 'git' (2.45.0)\nRemoving shim 'git.shim'.\n" +
+		"Installing 'git' (2.45.1) [64bit] from 'main' bucket\nExtracting PortableGit-2.45.1-64-bit.7z.exe ... done.\n" +
+		`Linking ~\scoop\apps\git\current => ~\scoop\apps\git\2.45.1` + "\nCreating shim for 'git'.\n'git' (2.45.1) was installed successfully!\n"
+	io.WriteString(p, out)
+	want := []string{"正在准备", "正在更新", "正在下载", "正在校验", "正在移除旧版本", "正在安装新版本", "正在解压", "正在完成"}
+	if strings.Join(rec.stages, ",") != strings.Join(want, ",") {
+		t.Fatalf("stages = %q, want %q", rec.stages, want)
+	}
+	if rec.String() != out {
+		t.Fatal("the output must reach the log")
 	}
 }

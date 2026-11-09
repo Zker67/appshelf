@@ -40,14 +40,16 @@ const (
 // Entry is an installed program.
 type Entry struct {
 	// Key identifies the entry among the others: "winget:git.git",
-	// "arp:machine\x64\<key>", "msix:<package>", "scoop:7zip" or
-	// "reg:<registry key>", in lower case.
+	// "arp:machine\x64\<key>", "msix:<package>" or "scoop:7zip", in lower
+	// case. A program only the registry lists has the "arp:" key winget
+	// would give it, so that it keeps its key once winget is read.
 	Key       string
 	Name      string
 	Version   string
 	Publisher string
 	Kind      Kind
 	WingetID  string // of a Winget entry
+	StoreID   string // of a Store entry of the msstore source
 	Bucket    string // of a Scoop entry
 	ScoopName string // of a Scoop entry
 	Update    string // the newer version its source has, when there is one
@@ -59,8 +61,17 @@ type Entry struct {
 	Location string // the registry's InstallLocation
 	// Scope is the registry's: "Machine" or "User", when known.
 	Scope string
-	// PackageFamily is the family name of a Store entry's package.
-	PackageFamily string
+	// PackageFamily is the family name of a Store entry's package, and
+	// PackageFullName its full name, when winget lists it as MSIX\<name>.
+	PackageFamily   string
+	PackageFullName string
+	// Size is the registry's estimate in bytes, InstallDate its date as
+	// YYYY-MM-DD; both empty when unknown.
+	Size        int64
+	InstallDate string
+	// Reg is the program's registry entry, when it has one: how to remove
+	// it, and where it is.
+	Reg *detect.Entry
 }
 
 // RuleName is the name a detection rule would match: the registry's name,
@@ -97,6 +108,8 @@ func Build(pkgs []winget.Package, wingetOK bool, apps []scoop.App, reg []detect.
 		e.Icon = r.DisplayIcon
 		e.Location = r.InstallLocation
 		e.Scope = r.Scope
+		e.Size, e.InstallDate = r.EstimatedSize, r.InstallDate
+		e.Reg = &r
 		if e.Version == "" {
 			e.Version = r.DisplayVersion
 		}
@@ -115,9 +128,9 @@ func Build(pkgs []winget.Package, wingetOK bool, apps []scoop.App, reg []detect.
 		case hasPrefixFold(p.ID, `MSIX\`):
 			full := p.ID[len(`MSIX\`):]
 			e.Key, e.Kind = "msix:"+strings.ToLower(full), Store
-			e.PackageFamily = familyName(full)
+			e.PackageFamily, e.PackageFullName = familyName(full), full
 		case strings.EqualFold(p.Source, "msstore"):
-			e.Key, e.Kind = "msstore:"+strings.ToLower(p.ID), Store
+			e.Key, e.Kind, e.StoreID = "msstore:"+strings.ToLower(p.ID), Store, p.ID
 		case strings.EqualFold(p.Source, "winget"):
 			e.Key, e.Kind, e.WingetID, e.Update = "winget:"+strings.ToLower(p.ID), Winget, p.ID, p.Update
 			if i, ok := nameEntry(p.Name, p.Version, reg, byName, used); ok {
@@ -141,9 +154,10 @@ func Build(pkgs []winget.Package, wingetOK bool, apps []scoop.App, reg []detect.
 				continue
 			}
 			out = append(out, Entry{
-				Key: "reg:" + strings.ToLower(r.Key), Name: r.DisplayName, Version: r.DisplayVersion,
+				Key: ArpKey(r), Name: r.DisplayName, Version: r.DisplayVersion,
 				Publisher: r.Publisher, Kind: Local, DisplayName: r.DisplayName,
 				Icon: r.DisplayIcon, Location: r.InstallLocation, Scope: r.Scope,
+				Size: r.EstimatedSize, InstallDate: r.InstallDate, Reg: &r,
 			})
 		}
 	}
@@ -171,6 +185,12 @@ func Build(pkgs []winget.Package, wingetOK bool, apps []scoop.App, reg []detect.
 		}
 	}
 	return out
+}
+
+// ArpKey is the key of a program of the registry, as winget names it
+// ARP\<scope>\<arch>\<key>.
+func ArpKey(r detect.Entry) string {
+	return "arp:" + strings.ToLower(r.Scope+`\`+r.Arch+`\`+r.Name)
 }
 
 // arpEntry finds the registry key winget names ARP\<scope>\<arch>\<key>,
@@ -292,6 +312,9 @@ type List struct {
 	At      time.Time
 	// Notes say what could not be read, for the user.
 	Notes []string
+	// Partial means only the registry was read yet: winget's sources and
+	// updates, scoop and the Store's apps follow.
+	Partial bool
 }
 
 // Load reads the sources side by side and builds the entries.

@@ -25,6 +25,8 @@ import (
 	"appshelf/internal/source/scoop"
 	"appshelf/internal/source/winget"
 	"appshelf/internal/state"
+	"appshelf/internal/uninstall"
+	"appshelf/internal/watch"
 )
 
 var catalogFiles = []mygo.FileFilter{{Name: "AppShelf 清单", Extensions: []string{"json"}}}
@@ -118,11 +120,14 @@ func main() {
 			token = os.Getenv("GITHUB_TOKEN")
 		}
 
-		var (
-			w  *winget.Source
-			sc *scoop.Source
-			gh *github.Source
-		)
+		w, sc := winget.New(), scoop.New()
+		var gh *github.Source
+		// AppShelf never removes itself: its directory is that of its
+		// executable.
+		selfDir := ""
+		if exe, err := os.Executable(); err == nil {
+			selfDir = filepath.Dir(exe)
+		}
 		ctx := context.Background()
 		c, err := core.Open(ctx, core.Config{
 			Paths: core.Paths{
@@ -131,11 +136,12 @@ func main() {
 				Logs:    logsDir,
 			},
 			Sources: func(store *state.Store) []source.Source {
-				w, sc = winget.New(), scoop.New()
 				gh = github.New(github.Options{Store: store, TempDir: filepath.Join(tempDir, "AppShelf"), Token: token, Version: app.Version()})
 				return []source.Source{w, sc, gh}
 			},
-			Post: shelf.Post,
+			Post:        shelf.Post,
+			Progress:    shelf.Progress,
+			Uninstaller: uninstall.New(uninstall.Options{SelfDir: selfDir}, w, sc),
 		})
 		if err != nil {
 			mygo.Dialog.Error("AppShelf 无法启动", err.Error())
@@ -163,13 +169,18 @@ func main() {
 		}, filepath.Join(cacheDir, "details"), "")
 
 		shelf.Start(ctx, api.Config{
-			Core:     c,
-			Sources:  api.SourceAPIs{Winget: w, Scoop: sc, GitHub: gh},
-			Icons:    iconService,
-			Details:  details,
-			Scan:     detect.Scan,
+			Core:    c,
+			Sources: api.SourceAPIs{Winget: w, Scoop: sc, GitHub: gh},
+			Icons:   iconService,
+			Details: details,
+			Scan:    detect.Scan,
+			Watch: func(ctx context.Context, changed func()) error {
+				_, err := watch.Watch(ctx, watch.InstalledKeys(), watch.ScoopDirs(), changed)
+				return err
+			},
 			Version:  app.Version(),
 			DataDir:  dataDir,
+			Protect:  []string{dataDir, logsDir, cacheDir, selfDir},
 			Settings: settings,
 			IconBase: iconBase,
 

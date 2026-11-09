@@ -46,7 +46,8 @@ AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\Syst
 | `%AppData%\AppShelf\settings.json` | 外观（跟随系统、浅色、深色）；更新设置 `updates`：`checkEvery`（`off`、`1h`、`3h`、`6h`、`12h`、`24h`，默认 `6h`）、`quiet`（不发通知）、`background`（关闭窗口后留在托盘）；`sourceSetupSeen`（已回答首次「准备安装来源」提示，不再自动弹出） |
 | `%AppData%\AppShelf\github-token.bin` | 设置里填写的 GitHub token，以当前 Windows 用户的 DPAPI 加密；复制到别的电脑或用户下无法解密。不入库、不随清单导出 |
 | 当前用户的 `HKCU\...\Run` 启动项 | 打开“开机时启动”后由 MyGo 写入，可在设置里关闭，或在任务管理器的“启动应用”里禁用 |
-| `%AppData%\AppShelf\logs\` | 每次安装或更新一份日志，`YYYYMMDD-HHMMSS-<install|upgrade>-<软件 ID>.log`；任务面板的“日志”按钮直接打开 |
+| `%AppData%\AppShelf\logs\` | 每次安装、更新或卸载一份日志，`YYYYMMDD-HHMMSS-<install|upgrade|uninstall>-<软件 ID>.log`（Windows 不允许的字符换成 `_`）；任务面板里直接显示日志内容，“打开日志文件”打开完整文件 |
+| `%AppData%\AppShelf\backups\` | 清理卸载残留前导出的注册表，每次清理一个 `leftovers-<时间>-<软件名>\` 目录，里面是 `.reg` 文件，双击可导回；不会自动删除。文件和目录残留移到回收站，不在这里 |
 | `%AppData%\AppShelf\updater.json` | MyGo 更新器的设置 |
 | `%AppData%\AppShelf\window-state.json` | MyGo 记住的窗口位置和大小 |
 | `%LocalAppData%\AppShelf\icons\`、`details\` | 图标和软件详情的缓存，只用于展示，可以随时删除 |
@@ -82,6 +83,17 @@ go tool mygo build              # 先构建前端，再输出到 build/windows-a
 | `APPSHELF_TEST_GITHUB_ARGS` | 可选：它的安装参数 |
 
 例如：`APPSHELF_INSTALL_TEST=1 APPSHELF_TEST_WINGET_ID=<包 ID> CGO_ENABLED=0 go test ./internal/source/winget -run TestInstall -v`。
+
+- 会真实卸载软件的测试同样默认不运行，需要用户授权并指定一个可以卸载的测试程序：
+
+| 环境变量 | 作用 |
+|---|---|
+| `APPSHELF_UNINSTALL_TEST=1` | 打开卸载集成测试 |
+| `APPSHELF_UNINSTALL_REG` | 测试程序的注册表项，写成 `<Machine|User>\<X64|X86>\<Uninstall 下的键名>` |
+
+例如：`APPSHELF_UNINSTALL_TEST=1 APPSHELF_UNINSTALL_REG='User\X64\<键名>' CGO_ENABLED=0 go test ./internal/uninstall -run TestUninstallRealOptIn -v`。它按注册表的卸载命令静默卸载，结束后检查注册表项已不在。
+
+- 只读的本机测试（`internal/uninstall` 为本机每个程序生成卸载方式、读签名；`internal/watch` 监听真实注册表；`internal/detect` 扫描注册表）默认运行，不改变本机。`internal/leftover` 和 `internal/api` 的残留测试会在 `%LOCALAPPDATA%\AppShelfTest-*` 和 `HKCU\Software\AppShelfTest-*` 下造测试数据再清理：被清理的测试文件会进回收站，其余测试数据在测试结束时删除。
 
 ## 部署
 

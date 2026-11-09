@@ -466,6 +466,7 @@ func (s *Source) Install(ctx context.Context, app catalog.App, log io.Writer) (s
 		return source.Result{}, err
 	}
 	defer os.Remove(path)
+	source.ReportProgress(log, source.Progress{Stage: "正在运行安装程序"})
 	code, err := s.runInstaller(path, app.Source.InstallerArgs, log)
 	if err != nil {
 		return source.Result{}, err
@@ -520,7 +521,14 @@ func (s *Source) download(ctx context.Context, a Asset, log io.Writer) (string, 
 	}
 	path := f.Name()
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), resp.Body)
+	total := a.Size
+	if total <= 0 {
+		total = max(resp.ContentLength, 0)
+	}
+	counter := &downloadCounter{log: log, total: total}
+	source.ReportProgress(log, source.Progress{Stage: "正在下载", Total: total})
+	n, err := io.Copy(io.MultiWriter(f, h, counter), resp.Body)
+	source.ReportProgress(log, source.Progress{Stage: "正在校验", Done: n, Total: total})
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -544,6 +552,23 @@ func (s *Source) download(ctx context.Context, a Asset, log io.Writer) (string, 
 		fmt.Fprintf(log, "已下载 %d 字节（GitHub 没有给出 SHA-256：%s）\n", n, sum)
 	}
 	return path, nil
+}
+
+// downloadCounter reports the bytes of a download as they come, every
+// 256 KiB.
+type downloadCounter struct {
+	log         io.Writer
+	total       int64
+	done, shown int64
+}
+
+func (c *downloadCounter) Write(p []byte) (int, error) {
+	c.done += int64(len(p))
+	if c.done-c.shown >= 256<<10 {
+		c.shown = c.done
+		source.ReportProgress(c.log, source.Progress{Stage: "正在下载", Done: c.done, Total: c.total})
+	}
+	return len(p), nil
 }
 
 // runInstaller runs an .msi with Windows Installer, passively unless args

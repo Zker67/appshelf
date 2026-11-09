@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -80,15 +81,79 @@ func readEntry(k registry.Key) (Entry, bool) {
 	if p, _, err := k.GetStringValue("ParentKeyName"); err == nil && p != "" {
 		return Entry{}, false
 	}
-	ver, _, _ := k.GetStringValue("DisplayVersion")
-	pub, _, _ := k.GetStringValue("Publisher")
-	icon, _, _ := k.GetStringValue("DisplayIcon")
-	loc, _, _ := k.GetStringValue("InstallLocation")
-	return Entry{
-		DisplayName:     strings.TrimSpace(name),
-		DisplayVersion:  strings.TrimSpace(ver),
-		Publisher:       strings.TrimSpace(pub),
-		DisplayIcon:     strings.TrimSpace(icon),
-		InstallLocation: strings.TrimSpace(loc),
-	}, true
+	str := func(name string) string {
+		v, _, _ := k.GetStringValue(name)
+		return strings.TrimSpace(v)
+	}
+	num := func(name string) uint64 {
+		v, _, _ := k.GetIntegerValue(name)
+		return v
+	}
+	e := Entry{
+		DisplayName:          strings.TrimSpace(name),
+		DisplayVersion:       str("DisplayVersion"),
+		Publisher:            str("Publisher"),
+		DisplayIcon:          str("DisplayIcon"),
+		InstallLocation:      str("InstallLocation"),
+		UninstallString:      str("UninstallString"),
+		QuietUninstallString: str("QuietUninstallString"),
+		WindowsInstaller:     num("WindowsInstaller") == 1,
+		NoRemove:             num("NoRemove") == 1,
+		InstallDate:          installDate(str("InstallDate")),
+		InstallSource:        str("InstallSource"),
+	}
+	// EstimatedSize is in KiB; some installers write nonsense.
+	if kb := num("EstimatedSize"); kb > 0 && kb < 1<<32 {
+		e.EstimatedSize = int64(kb) << 10
+	}
+	fillLocation(&e)
+	if strings.Contains(e.InstallLocation, "~") {
+		e.InstallLocation = longPath(e.InstallLocation)
+	}
+	return e, true
+}
+
+// longPath expands an 8.3 path, as C:\PROGRA~1, to its long form, for paths
+// to compare; a path that cannot be expanded stays.
+func longPath(p string) string {
+	in, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return p
+	}
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	n, err := windows.GetLongPathName(in, &buf[0], uint32(len(buf)))
+	if err != nil || n == 0 || int(n) > len(buf) {
+		return p
+	}
+	return windows.UTF16ToString(buf[:n])
+}
+
+// Lookup reads one program's key again: scope "Machine" or "User", arch
+// "X64" or "X86", and the key's name. ok is false when the key is gone or
+// is not a program Scan lists.
+func Lookup(scope, arch, name string) (Entry, bool, error) {
+	root, access := registry.CURRENT_USER, uint32(0)
+	switch {
+	case strings.EqualFold(scope, "Machine") && strings.EqualFold(arch, "X86"):
+		root, access = registry.LOCAL_MACHINE, registry.WOW64_32KEY
+	case strings.EqualFold(scope, "Machine"):
+		root, access = registry.LOCAL_MACHINE, registry.WOW64_64KEY
+	}
+	if name == "" || strings.ContainsAny(name, `\/`) {
+		return Entry{}, false, errors.New("注册表键名无效")
+	}
+	k, err := registry.OpenKey(root, uninstallPath+`\`+name, registry.QUERY_VALUE|access)
+	if errors.Is(err, registry.ErrNotExist) {
+		return Entry{}, false, nil
+	}
+	if err != nil {
+		return Entry{}, false, fmt.Errorf("读取注册表失败：%w", err)
+	}
+	defer k.Close()
+	e, ok := readEntry(k)
+	if !ok {
+		return Entry{}, false, nil
+	}
+	e.Name, e.Scope, e.Arch = name, scope, arch
+	return e, true, nil
 }

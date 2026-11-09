@@ -110,7 +110,7 @@ func Tail(output []byte, n int) string {
 		if i := strings.LastIndexByte(line, '\r'); i >= 0 {
 			line = line[i+1:]
 		}
-		line = strings.TrimSpace(stripANSI(line))
+		line = strings.TrimSpace(StripANSI(line))
 		if line == "" || strings.Trim(line, `-\|/ █▒░▓`) == "" {
 			continue
 		}
@@ -122,7 +122,8 @@ func Tail(output []byte, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-func stripANSI(s string) string {
+// StripANSI removes the escape sequences of colored or redrawn output.
+func StripANSI(s string) string {
 	if !strings.Contains(s, "\x1b[") {
 		return s
 	}

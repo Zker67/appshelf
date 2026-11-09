@@ -101,7 +101,7 @@ func TestBuild(t *testing.T) {
 		t.Errorf("scoop = %+v", rg)
 	}
 	// winget lists the registry's programs: none comes twice.
-	if _, ok := m[`reg:hkcu\only`]; ok {
+	if _, ok := m[`arp:user\x64\only`]; ok {
 		t.Error("registry entry listed although winget was read")
 	}
 	// Sorted by name.
@@ -118,9 +118,40 @@ func TestBuildWithoutWinget(t *testing.T) {
 		t.Fatalf("got %d entries, want the registry's %d", len(entries), len(registry))
 	}
 	for _, e := range entries {
-		if e.Kind != Local || !strings.HasPrefix(e.Key, "reg:") || e.DisplayName == "" {
+		if e.Kind != Local || !strings.HasPrefix(e.Key, "arp:") || e.DisplayName == "" || e.Reg == nil {
 			t.Errorf("entry = %+v", e)
 		}
+	}
+	// A program of the registry keeps its key once winget is read: winget
+	// names it the same way.
+	withWinget := map[string]bool{}
+	for _, e := range Build(packages, true, nil, registry) {
+		withWinget[e.Key] = true
+	}
+	for _, key := range []string{`arp:machine\x86\old tool`, `arp:machine\x64\7-zip`} {
+		found := false
+		for _, e := range entries {
+			found = found || e.Key == key
+		}
+		if !found || !withWinget[key] {
+			t.Errorf("key %s: registry only %v, with winget %v", key, found, withWinget[key])
+		}
+	}
+}
+
+func TestBuildCarriesRegistryFields(t *testing.T) {
+	reg := []detect.Entry{{DisplayName: "Tool", Name: "Tool", Scope: "User", Arch: "X64", EstimatedSize: 2048, InstallDate: "2026-01-02", UninstallString: `"C:\Tool\uninst.exe"`}}
+	pkgs := []winget.Package{{ID: `ARP\User\X64\Tool`, Name: "Tool"}, {ID: `MSIX\Pkg_1.0_x64__pub`, Name: "Pkg"}}
+	byKey := map[string]Entry{}
+	for _, e := range Build(pkgs, true, nil, reg) {
+		byKey[e.Key] = e
+	}
+	tool := byKey[`arp:user\x64\tool`]
+	if tool.Size != 2048 || tool.InstallDate != "2026-01-02" || tool.Reg == nil || tool.Reg.UninstallString != `"C:\Tool\uninst.exe"` {
+		t.Errorf("tool = %+v", tool)
+	}
+	if p := byKey[`msix:pkg_1.0_x64__pub`]; p.PackageFullName != "Pkg_1.0_x64__pub" || p.PackageFamily != "Pkg_pub" {
+		t.Errorf("msix = %+v", p)
 	}
 }
 

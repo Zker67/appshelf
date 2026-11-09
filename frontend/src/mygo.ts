@@ -134,6 +134,14 @@ export interface InstalledEntry {
   mode?: UpdateMode;
   /** Hold is why its update is not offered. */
   hold?: UpdateHold;
+  /**
+   * Size is the registry's estimate in bytes; Installed the date it was
+   * installed, YYYY-MM-DD; Location its directory. Each is empty when
+   * unknown.
+   */
+  size?: number;
+  installed?: string;
+  location?: string;
 }
 
 /** InstalledKind is where an installed program comes from. */
@@ -144,8 +152,68 @@ export interface InstalledList {
   entries: InstalledEntry[];
   loaded: boolean;
   loading: boolean;
+  /**
+   * Partial means only the registry's programs are listed yet: sources,
+   * updates, scoop and the Store's apps are still being read.
+   */
+  partial: boolean;
   at?: string;
   notes: string[];
+}
+
+/** LeftoverItem is something a removed program may have left behind. */
+export interface LeftoverItem {
+  id: string;
+  kind: LeftoverKind;
+  /**
+   * Path is a file's or a registry key's; Value the name of a registry
+   * value.
+   */
+  path: string;
+  value?: string;
+  score: number;
+  level: LeftoverLevel;
+  reasons: LeftoverReason[];
+  /** Checked is whether it is chosen at first: the sure ones only. */
+  checked: boolean;
+}
+
+/** LeftoverKind is what a leftover is. */
+export type LeftoverKind = "dir" | "shortcut" | "regkey" | "regvalue";
+
+/** LeftoverLevel is how sure a leftover is. */
+export type LeftoverLevel = "high" | "medium" | "low";
+
+/** LeftoverOutcome is what cleaning one leftover did. */
+export interface LeftoverOutcome {
+  id: string;
+  ok: boolean;
+  error?: string;
+}
+
+/** LeftoverReason is one thing for or against a leftover, with its points. */
+export interface LeftoverReason {
+  text: string;
+  delta: number;
+}
+
+/** LeftoverResult is what cleaning did. */
+export interface LeftoverResult {
+  outcomes: LeftoverOutcome[];
+  cleaned: number;
+  failed: number;
+  /** BackupDir is where the registry was exported first, "" when none. */
+  backupDir?: string;
+}
+
+/**
+ * LeftoverScan is what was found of a removed program, under a token to
+ * clean it with.
+ */
+export interface LeftoverScan {
+  token: string;
+  name: string;
+  items: LeftoverItem[];
 }
 
 /** MergeCounts is what importing a catalog changes. */
@@ -340,8 +408,8 @@ export interface TagInfo {
   count: number;
 }
 
-/** TaskAction is installing or updating. */
-export type TaskAction = "install" | "upgrade";
+/** TaskAction is installing, updating or removing. */
+export type TaskAction = "install" | "upgrade" | "uninstall";
 
 /** TaskEntry is an install or update in the queue. */
 export interface TaskEntry {
@@ -355,6 +423,24 @@ export interface TaskEntry {
   hasLog: boolean;
   started?: string;
   ended?: string;
+  /** Stage is what a running task does now, as "正在下载". */
+  stage?: string;
+  /**
+   * Done and Total are the bytes of its download, when known: Total 0
+   * means the size is unknown.
+   */
+  done?: number;
+  total?: number;
+  /**
+   * Interactive means a failed removal can run again with its
+   * uninstaller's window.
+   */
+  interactive?: boolean;
+  /**
+   * Leftovers means the program removed can be searched for what it
+   * left behind.
+   */
+  leftovers?: boolean;
 }
 
 /** TaskList is the queue. */
@@ -368,6 +454,21 @@ export interface TaskList {
   stopping: boolean;
 }
 
+/** TaskLog is part of a task's output, as clean lines. */
+export interface TaskLog {
+  /**
+   * Lines are the lines from Start on; ask from Next for the new ones.
+   * Start is larger than asked when older lines were dropped.
+   */
+  lines: string[];
+  start: number;
+  next: number;
+  /** Live is the line being written, which may still change. */
+  live?: string;
+  /** Done means the task ended: no more lines come. */
+  done: boolean;
+}
+
 /** TaskState is where a task is. */
 export type TaskState = "waiting" | "running" | "succeeded" | "skipped" | "failed";
 
@@ -376,6 +477,40 @@ export type ThemeSource = "system" | "light" | "dark";
 
 /** TokenSource is where the GitHub token comes from. */
 export type TokenSource = "" | "saved" | "env";
+
+/** UninstallPreview is what removing a program would do. */
+export interface UninstallPreview {
+  key: string;
+  name: string;
+  version?: string;
+  publisher?: string;
+  icon: string;
+  kind: InstalledKind;
+  runnable: boolean;
+  /** Plan is "卸载", or why it will not run. */
+  plan: string;
+  /**
+   * Method is how it is removed, as "winget"; Installer the installer
+   * that made a program of the registry, as "Inno Setup".
+   */
+  method: string;
+  installer?: string;
+  /** Command is what runs; Quiet means without asking. */
+  command: string;
+  quiet: boolean;
+  /** Notes are what to know first, as a program running. */
+  notes: string[];
+  location?: string;
+  size?: number;
+  /** Signer is who signed its uninstaller, Signed whether validly. */
+  signer?: string;
+  signed?: boolean;
+  /**
+   * InShelf are the catalog's apps that are this program: they stay in
+   * the catalog.
+   */
+  inShelf: string[];
+}
 
 /** UpdateHold is why an available update is not offered. */
 export type UpdateHold = "" | "ignore" | "skip" | "snooze";
@@ -619,13 +754,37 @@ export const Shelf = {
  * preview of what each would do.
  */
 export const Tasks = {
+  /**
+   * CleanLeftovers cleans the finds chosen of a FindLeftovers: files and
+   * directories go to the Recycle Bin, registry keys and values are exported
+   * to the backups first. Each is checked again before it is cleaned.
+   */
+  cleanLeftovers(token: string, ids: string[]): Promise<LeftoverResult> {
+    return call("Tasks.CleanLeftovers", token, ids);
+  },
   /** ClearDone removes the finished tasks. */
   clearDone(): Promise<void> {
     return call("Tasks.ClearDone");
   },
+  /**
+   * FindLeftovers looks for what a program removed by a task left behind:
+   * its directories, settings, shortcuts and startup entries, each scored
+   * with its reasons. Nothing is cleaned.
+   */
+  findLeftovers(id: number): Promise<LeftoverScan> {
+    return call("Tasks.FindLeftovers", id);
+  },
   /** List returns the tasks. */
   list(): Promise<TaskList> {
     return call("Tasks.List");
+  },
+  /** Log returns a task's output from line from on, to show in the window. */
+  log(id: number, from: number): Promise<TaskLog> {
+    return call("Tasks.Log", id, from);
+  },
+  /** OpenBackup opens the directory CleanLeftovers saved the registry to. */
+  openBackup(token: string): Promise<void> {
+    return call("Tasks.OpenBackup", token);
   },
   /** OpenLog opens a task's log. */
   openLog(id: number): Promise<void> {
@@ -645,6 +804,13 @@ export const Tasks = {
   /** Retry queues a failed task again. */
   retry(id: number): Promise<void> {
     return call("Tasks.Retry", id);
+  },
+  /**
+   * RetryInteractive runs a failed removal again with its uninstaller's
+   * window, for the user to finish it there.
+   */
+  retryInteractive(id: number): Promise<void> {
+    return call("Tasks.RetryInteractive", id);
   },
   /**
    * Start queues the apps whose preview, made again now, can run, and
@@ -766,6 +932,13 @@ export const Installed = {
   list(): Promise<InstalledList> {
     return call("Installed.List");
   },
+  /**
+   * PreviewUninstall says what removing the programs would do: how, with
+   * what command, and what to know first. Nothing runs.
+   */
+  previewUninstall(keys: string[]): Promise<UninstallPreview[]> {
+    return call("Installed.PreviewUninstall", keys);
+  },
   /** PreviewUpdates checks current source state without changing the catalog. */
   previewUpdates(keys: string[]): Promise<PreviewEntry[]> {
     return call("Installed.PreviewUpdates", keys);
@@ -773,6 +946,14 @@ export const Installed = {
   /** Refresh reads what is installed again. */
   refresh(): Promise<void> {
     return call("Installed.Refresh");
+  },
+  /**
+   * StartUninstall checks the programs again and queues those that can be
+   * removed. Each is checked once more right before it runs, and counts as
+   * removed only when it is then gone. The catalog keeps its apps.
+   */
+  startUninstall(keys: string[]): Promise<number> {
+    return call("Installed.StartUninstall", keys);
   },
   /**
    * StartUpdates resolves and checks the targets again, then uses only Upgrade.

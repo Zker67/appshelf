@@ -16,6 +16,8 @@ AppShelf 是桌面应用，不对外提供网络 API。需要稳定维护的合�
 
 winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时读取，不落盘。
 
+清理卸载残留时，注册表项和值先用 `reg export` 导出到 `%AppData%\AppShelf\backups\leftovers-<YYYYMMDD-HHMMSS>-<软件名>\NN-<路径>.reg`，双击可以导回；文件和目录移到回收站，不在这里备份。AppShelf 不会自动删除这些备份。
+
 缓存放在 `%LocalAppData%\AppShelf\`（MyGo 的 `PathCache`），只用于展示，删掉后会重新下载或读取：
 
 | 目录 | 内容 |
@@ -122,14 +124,21 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | | `SetCategory`、`SetTag`、`Add/Rename/DeleteCategory`、`Add/Rename/DeleteTag` | 批量设分类、加或去标签；分类和标签的管理 |
 | | `SetNote` | 改一个软件的备注（Markdown），返回保存后的内容，空字符串即删除；不重新读取本机状态。`SaveApp` 编辑已有软件时保留原备注，只有新建时采用传入的备注 |
 | | `Export`、`ReadImport`、`ApplyImport` | 导出到用户选择的文件；导入先读文件返回合并预览和令牌，确认后再合并 |
-| `Tasks` | `Preview`、`Start` | 预览每个软件将安装、更新还是跳过及原因；`Start` 重新预览后只把可执行的加入队列，没有可执行的返回错误 |
-| | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列 |
+| `Tasks` | `Preview`、`Start` | 预览每个软件将安装、更新还是跳过及原因；`Start` 重新预览后只把可执行的加入队列，没有可执行的返回错误。动作只接受 `install`、`upgrade`；`uninstall` 只能经 `Installed.StartUninstall` 加入 |
+| | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列。每项有动作（`install`、`upgrade`、`uninstall`）、状态、阶段 `stage`（如“正在下载”）和下载字节 `done` / `total`（未知时省略）；`interactive` 表示这个失败的卸载可以用卸载程序窗口重试，`leftovers` 表示这个成功的卸载可以查找残留 |
+| | `RetryInteractive(id)` | 失败的卸载改为打开卸载程序窗口再执行一次（winget 用 `--interactive`，注册表程序用不带静默参数的卸载命令） |
+| | `Log(id, from)` | 应用内日志：从第 `from` 行起的整理后的行 `lines`、实际起点 `start`（更早的行已丢弃时大于 `from`）、下次的游标 `next`、还在刷新的当前行 `live`、任务是否结束 `done`。内存里每个任务最多保留最后 2000 行，完整内容用 `OpenLog` 打开日志文件 |
+| | `FindLeftovers(id)` | 为卸载成功的任务查找残留（目录、`HKCU\Software` 下的设置、快捷方式、开机启动项），返回令牌和每一项的 ID、类型、路径、分数、等级（`high` / `medium` / `low`）、理由和是否默认勾选；只读 |
+| | `CleanLeftovers(token, ids)` | 清理这次查找里选中的项（只按 ID 选择，前端传不了路径）：文件和目录移到回收站，注册表先导出备份再删除；每项清理前重新检查。返回每项结果、清理数、失败数和备份目录 |
+| | `OpenBackup(token)` | 打开这次清理的注册表备份目录 |
 | `Sources` | `Overview`、`Fix`、`DismissSetup`、`SetGitHubToken`、`ClearGitHubToken`、`Search`、`CheckGitHub` | 来源是否可用、能否由 AppShelf 修复（`fixable`）、首次准备提示是否已回答（`setupSeen`）、GitHub token 来自哪里（`githubTokenFrom`：`saved`、`env` 或空，token 本身不回到前端）和 GitHub 额度；`SetGitHubToken` 验证后加密保存并立即使用，`ClearGitHubToken` 删除保存的 token、回落到环境变量；`Fix` 按来源安装缺少的部分（winget 的 PowerShell 模块、scoop 本身）；编辑软件时搜索 winget 或 scoop；检查 GitHub 仓库会装哪个文件 |
 | `Discover` | `Search(query, Channel<SearchBatch>)` | winget 和 scoop 并行搜索，每个来源的结果一到就发出；新的搜索取消上一次。winget 先发不带版本的结果，读到版本后同一来源再发一次（前端按来源整批替换）；各来源结果缓存 10 分钟 |
 | | `Warm()` | 页面显示时调用，立即返回；在后台启动 winget 搜索用的 PowerShell 并打开 winget 源，让第一次搜索也快 |
 | | `SearchGitHub`、`Details`、`SuggestRules` | GitHub 搜索（按需）；软件详情（只用于展示）；GitHub 软件的检测规则建议（先本机已装的程序，最后是仓库名） |
-| `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的；第一次调用时开始读取 |
+| `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的，带注册表里的大小 `size`、安装日期 `installed`（`YYYY-MM-DD`）和安装目录 `location`；第一次调用时开始读取，先给出只含注册表的列表（`partial` 为真），读完 winget、scoop 和应用商店后替换。AppShelf 之外安装或卸载软件时自动重读 |
 | | `PreviewUpdates`、`StartUpdates` | 按已识别的本机 key 批量预览、确认后直接更新 winget / scoop 软件，不要求先加入清单 |
+| | `PreviewUninstall(keys)` | 按本机 key 预览卸载，什么都不执行：卸载方式 `method`（winget、scoop、应用商店、卸载程序）、安装程序类型 `installer`、命令 `command`、是否静默 `quiet`、能否执行 `runnable` 和原因 `plan`、提示 `notes`（正在运行、需要管理员权限、运行库等）、卸载程序的签名 `signer` / `signed`、对应的清单软件 `inShelf` |
+| | `StartUninstall(keys)` | 重新预览后把能卸载的加入队列，一个都不能时返回原因；清单里的软件保留，卸载后重读它的状态 |
 | `Updates` | `List`、`Check` | 清单软件和本机 winget / scoop 软件按来源 key 合并的更新（含被搁置的，`count` 只数提供的）、更新方式不是默认的软件（`rules`）、检查时间和 AppShelf 自身的新版本；`Check` 立即检查 |
 | | `Preview`、`Start` | 按来源 key 预览和开始更新：清单里已读到状态的走 `Tasks` 的路径，其余走 `Installed` 的路径；前端只传 key，Go 重新解析来源 |
 | | `SetMode`、`Skip`、`Snooze`、`Restore` | 设为提醒 / 自动更新 / 忽略（不能自动更新时返回原因；开启时有更新立即排队）；跳过当前最新版本；暂缓 1–90 天；恢复提醒 |
@@ -161,7 +170,12 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 |---|---|---|
 | `source.Source`（`internal/source`） | 一种安装来源 | `Type`、`Check`（可用性）、`Statuses`（批量读状态）、`Recheck`（单项复查）、`Install`、`Upgrade`；能搜索的来源再实现 `source.Searcher` |
 | `source.Status` | 一个软件在本机的状态 | `Unknown`（未知）、`NotInstalled`、`Installed`、`UpdateAvailable`、`Unavailable`（来源不可用）；`Blocked()` 为真时不允许安装或更新；`External` 表示由检测规则认出、不是从该来源装的 |
-| `queue.Executor`（`internal/queue`） | 队列执行一项所需的能力 | `Status`（执行前复查）、`Run`、`OpenLog`、`Finished`（执行后复查）；由 `internal/core` 实现 |
+| `queue.Executor`（`internal/queue`） | 队列执行一项所需的能力 | `Status(ctx, item)`（执行前后复查；卸载项由 `queue` 换算成“还在 / 已不在”）、`Run(ctx, item, log)`（输出写进 `tasklog.Log`）、`OpenLog`、`Finished`；由 `internal/core` 实现 |
+| `source.Progress`、`source.ReportProgress` | 任务的阶段和下载字节 | 来源报告给任务日志，`queue` 每 250 毫秒最多通知一次 |
+| `tasklog.Log`（`internal/tasklog`） | 一个任务的日志 | 原样写文件，同时整理成行留在内存（最多 2000 行），供 `Tasks.Log` 增量读取 |
+| `uninstall.Runner`（`internal/uninstall`） | 卸载 | `PlanFor` 只按读到的信息给出卸载方式；`Inspect` 读本机现状和签名；`Run` 执行并等卸载程序副本结束；`Present` 判断程序是否还在 |
+| `leftover`（`internal/leftover`） | 卸载残留 | `Find` 只读查找并打分；`Clean` 只清理传入的项，文件进回收站、注册表先备份 |
+| `watch.Watch`（`internal/watch`） | 外部变化 | 监听 Uninstall 键、应用包仓库键和 scoop `apps` 目录，变化时通知 `internal/api` 重读本机已装 |
 | `core.Core`（`internal/core`） | 清单、状态、来源和队列的汇总 | 清单与状态图只在 `internal/api` 的循环 goroutine 上访问；`PreviewUpdates` 可在循环外批量读取来源，不改清单或状态图；后台结果通过 `Config.Post` 交回循环 |
 | `api.App`（`internal/api`） | 绑定服务、事件 | 方法经循环 goroutine 读写 core，写完标记变化种类，由通知器合并后发 `changed` |
 | `inventory`、`discover`、`icons` | 本机已装、搜索排序与详情、图标 | inventory 可提供直接更新的精确候选 key 和来源；安装状态及是否可更新仍由来源复查决定，详情和图标不参与判断 |
@@ -172,6 +186,14 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 2. 预览只用于展示；队列执行到某一项时再复查一次：已安装就跳过，状态不确定就记为失败、不执行。
 3. 执行后再复查：安装程序报告成功、但仍检测不到软件时，记为失败。
 4. winget 安装使用精确 ID 并指定 `winget` 源；scoop 按软件名匹配所有 bucket（scoop 同名软件只能装一个）；GitHub 安装包无法唯一确定时拒绝安装，下载后校验大小和 SHA-256。
+
+### 防误删流程
+
+1. 卸载对象只来自 Go 自己读到的本机已装列表：前端只传 key，不能传命令、路径或注册表位置。
+2. 不卸载 winget、scoop 本身和 AppShelf 自己，不卸载注册表标明 `NoRemove` 的程序、框架包和 Windows 自带的应用包；找不到卸载命令或 MSI 产品代码时不执行。
+3. 每次卸载都先预览，由用户确认；排队后执行前再复查，程序已不在就跳过。
+4. 执行后复查：卸载程序报告成功、但程序还在时，记为失败；复查无法确认时也记为失败；卸载程序报错、但程序已不在时，记为成功并附上卸载程序的报告。
+5. 残留只在卸载成功后由用户点“查找残留”时查找，从不自动清理；只有“很可能是残留”的默认勾选。盘符根目录、系统和共享目录、AppShelf 自己的目录、其他已装程序的目录（含上下级）一律不列出、不清理；注册表只处理 `HKCU\Software` 下的键和当前用户开机启动项的值。文件进回收站，注册表先备份，备份失败就不删除。
 
 ## 变更规则
 

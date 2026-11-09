@@ -85,6 +85,28 @@ type Result struct {
 	GitHub *state.GitHubRecord
 }
 
+// Progress is how far an install, update or uninstall has come, as far as
+// it can be read: a stage, and the bytes of a download.
+type Progress struct {
+	Stage string // what it does now, as "正在下载"
+	Done  int64  // bytes downloaded, 0 when none or unknown
+	Total int64  // the size of the download, 0 when unknown
+}
+
+// ProgressReporter is a log that also shows the progress of the work it
+// records.
+type ProgressReporter interface {
+	ReportProgress(p Progress)
+}
+
+// ReportProgress tells the log of an install or update how far it has
+// come, when the log shows progress; other logs ignore it.
+func ReportProgress(log io.Writer, p Progress) {
+	if r, ok := log.(ProgressReporter); ok {
+		r.ReportProgress(p)
+	}
+}
+
 // SearchResult is a package a search found, to fill in an app's source.
 type SearchResult struct {
 	ID      string // winget's package ID, or scoop's bucket/name

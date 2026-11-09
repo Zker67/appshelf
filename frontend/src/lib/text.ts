@@ -52,6 +52,20 @@ export function formatClock(value: string | Date | undefined | null): string {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+/** formatBytes writes a size as people read it: 12.3 MB. */
+export function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  const digits = i === 0 || v >= 100 ? 0 : 1;
+  return `${v.toFixed(digits)} ${units[i]}`;
+}
+
 /** formatCount writes a count of things with its unit, as "12 个软件". */
 export function formatCount(n: number, unit = "个软件"): string {
   return `${n} ${unit}`;

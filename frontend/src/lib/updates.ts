@@ -94,3 +94,30 @@ export function installedMatches(e: InstalledEntry, f: InstalledFilter): boolean
 export function isAllInstalled(f: InstalledFilter): boolean {
   return f.kinds.size === 0 && f.update === "all" && f.shelf === "all";
 }
+
+/** InstalledSort is the order of the installed list. */
+export type InstalledSort = "name" | "size" | "date";
+
+/**
+ * sortInstalled orders programs by name, as Go lists them, or by size or
+ * install date, largest and newest first; those of unknown size or date go
+ * last, by name.
+ */
+export function sortInstalled(
+  entries: readonly InstalledEntry[],
+  by: InstalledSort,
+): InstalledEntry[] {
+  if (by === "name") return [...entries];
+  const value = (e: InstalledEntry) => (by === "size" ? (e.size ?? 0) : (e.installed ?? ""));
+  return entries
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => {
+      const x = value(a.e);
+      const y = value(b.e);
+      if (x === y) return a.i - b.i;
+      if (!x) return 1;
+      if (!y) return -1;
+      return x < y ? 1 : -1;
+    })
+    .map(({ e }) => e);
+}

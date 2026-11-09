@@ -49,7 +49,7 @@
 
 ## 应用源码层
 
-Go 模块 `appshelf`，最初由 `mygo init -template native` 生成，0.2.0 起界面换成 `frontend/` 的 Web 前端。Go 依赖：MyGo、`golang.org/x/sys`（读注册表、调用 `ShellExecuteExW`）、`go.yaml.in/yaml/v3`（读 winget-pkgs 的清单文件），版本见 `go.mod`。
+Go 模块 `appshelf`，最初由 `mygo init -template native` 生成，0.2.0 起界面换成 `frontend/` 的 Web 前端。Go 依赖：MyGo、`golang.org/x/sys`（读写注册表、调用 `ShellExecuteExW`、监听注册表和目录变化、移到回收站）、`go.yaml.in/yaml/v3`（读 winget-pkgs 的清单文件），版本见 `go.mod`。
 
 | 路径 | 职责 |
 |---|---|
@@ -66,13 +66,13 @@ Go 模块 `appshelf`，最初由 `mygo init -template native` 生成，0.2.0 起
 
 | 层 | 包 | 职责 |
 |---|---|---|
-| 1 | `internal/api` | 前端调用的绑定服务和 `changed` 事件；一个循环 goroutine 串行读写 `core` |
-| 2 | `internal/core`、`internal/icons`、`internal/discover` | 清单、本机状态、来源和队列的汇总；图标的查找、下载和缓存；搜索排序、软件详情和检测规则建议 |
-| 3 | `internal/queue`、`internal/inventory` | 逐个执行的安装队列，执行前后都复查；本机已装程序的汇总与对照 |
-| 4 | `internal/source/winget`、`internal/source/scoop`、`internal/source/github` | 三个安装来源 |
-| 5 | `internal/source`、`internal/runner`、`internal/detect` | 来源接口和状态类型；外部命令、PowerShell 脚本、提权启动安装程序；注册表扫描、检测规则和规则建议 |
+| 1 | `internal/api` | 前端调用的绑定服务和 `changed` 事件；一个循环 goroutine 串行读写 `core`；卸载和残留清理的入口 |
+| 2 | `internal/core`、`internal/icons`、`internal/discover` | 清单、本机状态、来源和队列的汇总，安装和卸载的预览与排队；图标的查找、下载和缓存；搜索排序、软件详情和检测规则建议 |
+| 3 | `internal/queue`、`internal/inventory` | 逐个执行的任务队列（安装、更新、卸载），执行前后都复查；本机已装程序的汇总与对照 |
+| 4 | `internal/source/winget`、`internal/source/scoop`、`internal/source/github`、`internal/uninstall`、`internal/tasklog`、`internal/leftover` | 三个安装来源；卸载方式与执行；任务日志与进度；卸载残留的查找与清理 |
+| 5 | `internal/source`、`internal/runner`、`internal/detect` | 来源接口、状态和进度类型；外部命令、PowerShell 脚本、提权启动安装程序；注册表扫描（含卸载命令、大小、日期、推断的安装位置）、检测规则和规则建议 |
 | 6 | `internal/catalog`、`internal/state`、`internal/version` | 清单的格式、校验、编辑、导入合并；本机状态；版本号规范化和比较 |
-| 7 | `internal/jsonfile`、`internal/secret` | JSON 原子写入；以当前用户 DPAPI 加密保存机密 |
+| 7 | `internal/jsonfile`、`internal/secret`、`internal/procs`、`internal/watch` | JSON 原子写入；以当前用户 DPAPI 加密保存机密；某目录下的程序是否在运行；监听已装程序的注册表键和 scoop 目录 |
 
 前端只调用 `internal/api` 绑定的服务（客户端由 `go tool mygo generate` 生成到 `frontend/src/mygo.ts`），图标走 Go 注册的 `icon` 协议；安装判断、检测和队列都在 Go 端。
 

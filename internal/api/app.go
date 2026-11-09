@@ -124,9 +124,15 @@ type Config struct {
 	Details *discover.Details
 	// Scan reads the registry's programs (detect.Scan).
 	Scan func() ([]detect.Entry, error)
+	// Watch calls changed, until ctx ends, when what is installed may have
+	// changed outside AppShelf (watch.Watch); nil watches nothing.
+	Watch func(ctx context.Context, changed func()) error
 	// Version is AppShelf's.
-	Version  string
-	DataDir  string
+	Version string
+	DataDir string
+	// Protect are AppShelf's own directories, never cleaned as a removed
+	// program's leftovers.
+	Protect  []string
 	Settings string // the settings file
 	IconBase string
 	// TokenFile keeps the GitHub token entered in the settings, encrypted;
@@ -155,6 +161,7 @@ type App struct {
 	mu       sync.Mutex
 	imports  map[string]*core.Import
 	deleted  map[string]deletion
+	scans    map[string]*leftoverScan
 	order    []string // tokens of imports and deletions, oldest first
 	searchMu sync.Mutex
 	search   context.CancelFunc
@@ -177,6 +184,7 @@ func New(hooks Hooks) *App {
 		ready:   make(chan struct{}),
 		loop:    newLoop(),
 		imports: map[string]*core.Import{},
+		scans:   map[string]*leftoverScan{},
 		deleted: map[string]deletion{},
 	}
 	a.note = newNotifier(80*time.Millisecond, func(c Change) {
@@ -210,6 +218,10 @@ func (a *App) Post(fn func()) {
 	})
 }
 
+// Progress tells the pages the tasks changed, as a task reports progress
+// or writes output: the core's Config.Progress.
+func (a *App) Progress() { a.note.mark(ChangedTasks) }
+
 // Start runs the loop with the core, reads the states and lists what is
 // installed. ctx ends the loop.
 func (a *App) Start(ctx context.Context, cfg Config) {
@@ -225,6 +237,11 @@ func (a *App) Start(ctx context.Context, cfg Config) {
 		go a.upd.run(ctx)
 		a.write([]ChangeKind{ChangedShelf}, func() { a.core.Refresh() })
 		a.inv.refresh(0)
+		if cfg.Watch != nil {
+			if err := cfg.Watch(ctx, a.inv.outside); err != nil {
+				log.Printf("appshelf: not watching the installed programs: %v", err)
+			}
+		}
 		if cfg.Icons != nil {
 			cfg.Icons.Warm()
 		}
@@ -280,6 +297,7 @@ func (a *App) remember(fn func(token string)) string {
 	a.order = append(a.order, token)
 	for len(a.order) > 20 {
 		delete(a.imports, a.order[0])
+		delete(a.scans, a.order[0])
 		delete(a.deleted, a.order[0])
 		a.order = a.order[1:]
 	}

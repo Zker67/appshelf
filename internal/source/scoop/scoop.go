@@ -453,13 +453,35 @@ const upgradeScript = scoopPrelude + `
 exit $LASTEXITCODE
 `
 
+const uninstallScript = scoopPrelude + `
+if ($P.Global) {
+  & scoop uninstall ([string]$P.Name) --global
+} else {
+  & scoop uninstall ([string]$P.Name)
+}
+exit $LASTEXITCODE
+`
+
+// Uninstall removes an app scoop installed, for all users when global,
+// which needs administrator rights.
+func (s *Source) Uninstall(ctx context.Context, name string, global bool, log io.Writer) (source.Result, error) {
+	if log != nil {
+		flag := ""
+		if global {
+			flag = " --global"
+		}
+		fmt.Fprintf(log, "> scoop uninstall %s%s\n\n", name, flag)
+	}
+	return s.run(ctx, uninstallScript, map[string]any{"Name": name, "Global": global}, log, "uninstall", catalog.App{Source: catalog.Source{Type: catalog.Scoop, Name: name}})
+}
+
 // Install installs bucket/name, adding the bucket first when needed.
 func (s *Source) Install(ctx context.Context, app catalog.App, log io.Writer) (source.Result, error) {
 	in := map[string]any{"Bucket": app.Source.Bucket, "Name": app.Source.Name, "BucketUrl": app.Source.BucketURL}
 	if log != nil {
 		fmt.Fprintf(log, "> scoop install %s/%s\n\n", app.Source.Bucket, app.Source.Name)
 	}
-	return s.run(ctx, installScript, in, log, app)
+	return s.run(ctx, installScript, in, log, "install", app)
 }
 
 // Upgrade updates the app.
@@ -467,13 +489,16 @@ func (s *Source) Upgrade(ctx context.Context, app catalog.App, log io.Writer) (s
 	if log != nil {
 		fmt.Fprintf(log, "> scoop update %s\n\n", app.Source.Name)
 	}
-	return s.run(ctx, upgradeScript, map[string]any{"Name": app.Source.Name}, log, app)
+	return s.run(ctx, upgradeScript, map[string]any{"Name": app.Source.Name}, log, "update", app)
 }
 
-func (s *Source) run(ctx context.Context, script string, in map[string]any, log io.Writer, app catalog.App) (source.Result, error) {
+func (s *Source) run(ctx context.Context, script string, in map[string]any, log io.Writer, verb string, app catalog.App) (source.Result, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := runner.PowerShell(ctx, script, in, nil, runner.Options{Log: log})
+	if log == nil {
+		log = io.Discard
+	}
+	_, err := runner.PowerShell(ctx, script, in, nil, runner.Options{Log: newProgress(log, verb)})
 	var se *runner.ScriptError
 	if errors.As(err, &se) {
 		switch se.ExitCode {

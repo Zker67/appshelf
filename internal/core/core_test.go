@@ -426,3 +426,18 @@ func TestDeleteAndEditApps(t *testing.T) {
 		t.Errorf("saved %d apps", len(saved.Apps))
 	}
 }
+
+func TestFileName(t *testing.T) {
+	for in, want := range map[string]string{
+		`uninstall-uninstall:arp:machine\x64\{AB}`: `uninstall-uninstall_arp_machine_x64_{AB}`,
+		"install-a_1":        "install-a_1",
+		"a<b>c\"d|e?f*g/h. ": "a_b_c_d_e_f_g_h",
+	} {
+		if got := fileName(in); got != want {
+			t.Errorf("fileName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := fileName(strings.Repeat("长", 100)); len(got) > 80 {
+		t.Errorf("long name kept %d bytes", len(got))
+	}
+}

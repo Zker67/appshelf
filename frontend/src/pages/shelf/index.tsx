@@ -17,7 +17,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { errorText, useShelf } from "@/lib/api";
+import { errorText, useInstalled, useShelf } from "@/lib/api";
 import {
   countStatus,
   emptyFilter,
@@ -139,6 +139,15 @@ export function ShelfPage() {
   const remove = (targets: ShelfApp[]) => {
     void deleteApps(targets.map((t) => ({ id: t.app.id, name: t.app.name })));
   };
+  // The programs of this machine that are apps of the catalog, to remove
+  // them from the machine.
+  const { data: installed } = useInstalled();
+  const uninstallKeys = (ids: string[]) => {
+    const want = new Set(ids);
+    return (installed?.entries ?? [])
+      .filter((e) => e.inShelf.some((id) => want.has(id)))
+      .map((e) => e.key);
+  };
   const act: RowActions = {
     open: list.open,
     clickRow: list.clickRow,
@@ -147,6 +156,8 @@ export function ShelfPage() {
       list.selected.has(id) ? selected : [byId.get(id)].filter((a): a is ShelfApp => !!a),
     install: (ids) => actions.preview(ids, "install"),
     upgrade: (ids) => actions.preview(ids, "upgrade"),
+    uninstallKeys,
+    uninstall: (keys) => actions.previewUninstall(keys),
     edit: (app) => actions.edit(app),
     note: (item) => actions.editNote(item),
     remove,

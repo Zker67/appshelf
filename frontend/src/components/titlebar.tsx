@@ -15,7 +15,8 @@ import { cn } from "@/lib/utils";
 import { About, type ThemeSource } from "@/mygo";
 import { useActions } from "@/state/actions";
 import { useNav, type Page } from "@/state/nav";
-import { ListChecksIcon, LoaderCircleIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
+import { queueProgress } from "@/lib/tasks";
+import { ListChecksIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { toast } from "sonner";
 
@@ -119,12 +120,45 @@ const themes: Array<{ value: ThemeSource; label: string; icon: typeof SunIcon }>
   { value: "dark", label: "深色", icon: MoonIcon },
 ];
 
+/** ProgressRing shows how far the tasks have come, turning while one runs. */
+function ProgressRing({ value, spinning }: { value: number; spinning: boolean }) {
+  const r = 6;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden>
+      <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2" className="stroke-primary/20" />
+      <circle
+        cx="8"
+        cy="8"
+        r={r}
+        fill="none"
+        strokeWidth="2"
+        strokeLinecap="round"
+        className="stroke-primary transition-[stroke-dashoffset] duration-500 ease-out"
+        strokeDasharray={c}
+        strokeDashoffset={c * (1 - Math.max(value, spinning ? 0.06 : 0))}
+      />
+      {spinning && (
+        <circle
+          cx="8"
+          cy="8"
+          r={r}
+          fill="none"
+          strokeWidth="2"
+          strokeLinecap="round"
+          className="origin-center animate-spin stroke-primary/60 [animation-duration:1.4s]"
+          strokeDasharray={`${c * 0.18} ${c}`}
+        />
+      )}
+    </svg>
+  );
+}
+
 function Tools() {
   const actions = useActions();
   const { data: tasks } = useTasks();
   const { data: about } = useAbout();
-  const pending =
-    tasks?.items.filter((t) => t.state === "waiting" || t.state === "running").length ?? 0;
+  const progress = queueProgress(tasks?.items ?? []);
   const theme = themes.find((t) => t.value === about?.theme) ?? themes[0]!;
   const ThemeIcon = theme.icon;
   const setTheme = async (value: string) => {
@@ -144,15 +178,18 @@ function Tools() {
         className="gap-1.5 text-muted-foreground hover:text-foreground"
         onClick={actions.openTasks}
       >
-        {tasks?.running ? (
-          <LoaderCircleIcon className="animate-spin text-primary" />
+        {progress.active ? (
+          <ProgressRing
+            value={progress.total ? progress.done / progress.total : 0}
+            spinning={!!tasks?.running}
+          />
         ) : (
           <ListChecksIcon />
         )}
         任务
-        {pending > 0 && (
+        {progress.active && (
           <span className="rounded-full bg-primary/15 px-1.5 text-[10px] leading-4 font-semibold text-primary tabular-nums">
-            {pending}
+            {progress.done}/{progress.total}
           </span>
         )}
       </Button>

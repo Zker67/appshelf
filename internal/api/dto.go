@@ -163,19 +163,25 @@ type AddResult struct {
 	Failed []AddFailure `json:"failed"`
 }
 
-// TaskAction is installing or updating.
+// TaskAction is installing, updating or removing.
 type TaskAction string
 
 const (
-	ActionInstall TaskAction = "install"
-	ActionUpgrade TaskAction = "upgrade"
+	ActionInstall   TaskAction = "install"
+	ActionUpgrade   TaskAction = "upgrade"
+	ActionUninstall TaskAction = "uninstall"
 )
 
-func (a TaskAction) queue() queue.Action {
-	if a == ActionUpgrade {
-		return queue.Upgrade
+// queue returns the action of installing or updating apps of the catalog;
+// ok is false for any other, as removing, which goes by the installed list.
+func (a TaskAction) queue() (queue.Action, bool) {
+	switch a {
+	case ActionInstall:
+		return queue.Install, true
+	case ActionUpgrade:
+		return queue.Upgrade, true
 	}
-	return queue.Install
+	return 0, false
 }
 
 // PreviewEntry is what installing or updating an app would do.
@@ -219,6 +225,125 @@ type TaskEntry struct {
 	HasLog  bool       `json:"hasLog"`
 	Started time.Time  `json:"started,omitzero"`
 	Ended   time.Time  `json:"ended,omitzero"`
+	// Stage is what a running task does now, as "正在下载".
+	Stage string `json:"stage,omitempty"`
+	// Done and Total are the bytes of its download, when known: Total 0
+	// means the size is unknown.
+	Done  int64 `json:"done,omitempty"`
+	Total int64 `json:"total,omitempty"`
+	// Interactive means a failed removal can run again with its
+	// uninstaller's window.
+	Interactive bool `json:"interactive,omitempty"`
+	// Leftovers means the program removed can be searched for what it
+	// left behind.
+	Leftovers bool `json:"leftovers,omitempty"`
+}
+
+// LeftoverKind is what a leftover is.
+type LeftoverKind string
+
+const (
+	LeftoverDir      LeftoverKind = "dir"
+	LeftoverShortcut LeftoverKind = "shortcut"
+	LeftoverRegKey   LeftoverKind = "regkey"
+	LeftoverRegValue LeftoverKind = "regvalue"
+)
+
+// LeftoverLevel is how sure a leftover is.
+type LeftoverLevel string
+
+const (
+	LeftoverHigh   LeftoverLevel = "high"
+	LeftoverMedium LeftoverLevel = "medium"
+	LeftoverLow    LeftoverLevel = "low"
+)
+
+// LeftoverReason is one thing for or against a leftover, with its points.
+type LeftoverReason struct {
+	Text  string `json:"text"`
+	Delta int    `json:"delta"`
+}
+
+// LeftoverItem is something a removed program may have left behind.
+type LeftoverItem struct {
+	ID   string       `json:"id"`
+	Kind LeftoverKind `json:"kind"`
+	// Path is a file's or a registry key's; Value the name of a registry
+	// value.
+	Path    string           `json:"path"`
+	Value   string           `json:"value,omitempty"`
+	Score   int              `json:"score"`
+	Level   LeftoverLevel    `json:"level"`
+	Reasons []LeftoverReason `json:"reasons"`
+	// Checked is whether it is chosen at first: the sure ones only.
+	Checked bool `json:"checked"`
+}
+
+// LeftoverScan is what was found of a removed program, under a token to
+// clean it with.
+type LeftoverScan struct {
+	Token string         `json:"token"`
+	Name  string         `json:"name"`
+	Items []LeftoverItem `json:"items"`
+}
+
+// LeftoverOutcome is what cleaning one leftover did.
+type LeftoverOutcome struct {
+	ID    string `json:"id"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// LeftoverResult is what cleaning did.
+type LeftoverResult struct {
+	Outcomes []LeftoverOutcome `json:"outcomes"`
+	Cleaned  int               `json:"cleaned"`
+	Failed   int               `json:"failed"`
+	// BackupDir is where the registry was exported first, "" when none.
+	BackupDir string `json:"backupDir,omitempty"`
+}
+
+// UninstallPreview is what removing a program would do.
+type UninstallPreview struct {
+	Key       string        `json:"key"`
+	Name      string        `json:"name"`
+	Version   string        `json:"version,omitempty"`
+	Publisher string        `json:"publisher,omitempty"`
+	Icon      string        `json:"icon"`
+	Kind      InstalledKind `json:"kind"`
+	Runnable  bool          `json:"runnable"`
+	// Plan is "卸载", or why it will not run.
+	Plan string `json:"plan"`
+	// Method is how it is removed, as "winget"; Installer the installer
+	// that made a program of the registry, as "Inno Setup".
+	Method    string `json:"method"`
+	Installer string `json:"installer,omitempty"`
+	// Command is what runs; Quiet means without asking.
+	Command string `json:"command"`
+	Quiet   bool   `json:"quiet"`
+	// Notes are what to know first, as a program running.
+	Notes    []string `json:"notes"`
+	Location string   `json:"location,omitempty"`
+	Size     int64    `json:"size,omitempty"`
+	// Signer is who signed its uninstaller, Signed whether validly.
+	Signer string `json:"signer,omitempty"`
+	Signed bool   `json:"signed,omitempty"`
+	// InShelf are the catalog's apps that are this program: they stay in
+	// the catalog.
+	InShelf []string `json:"inShelf"`
+}
+
+// TaskLog is part of a task's output, as clean lines.
+type TaskLog struct {
+	// Lines are the lines from Start on; ask from Next for the new ones.
+	// Start is larger than asked when older lines were dropped.
+	Lines []string `json:"lines"`
+	Start int      `json:"start"`
+	Next  int      `json:"next"`
+	// Live is the line being written, which may still change.
+	Live string `json:"live,omitempty"`
+	// Done means the task ended: no more lines come.
+	Done bool `json:"done"`
 }
 
 // TaskList is the queue.
@@ -337,6 +462,12 @@ type InstalledEntry struct {
 	Mode UpdateMode `json:"mode,omitempty"`
 	// Hold is why its update is not offered.
 	Hold UpdateHold `json:"hold,omitempty"`
+	// Size is the registry's estimate in bytes; Installed the date it was
+	// installed, YYYY-MM-DD; Location its directory. Each is empty when
+	// unknown.
+	Size      int64  `json:"size,omitempty"`
+	Installed string `json:"installed,omitempty"`
+	Location  string `json:"location,omitempty"`
 }
 
 // InstalledList is what is installed.
@@ -344,8 +475,11 @@ type InstalledList struct {
 	Entries []InstalledEntry `json:"entries"`
 	Loaded  bool             `json:"loaded"`
 	Loading bool             `json:"loading"`
-	At      time.Time        `json:"at,omitzero"`
-	Notes   []string         `json:"notes"`
+	// Partial means only the registry's programs are listed yet: sources,
+	// updates, scoop and the Store's apps are still being read.
+	Partial bool      `json:"partial"`
+	At      time.Time `json:"at,omitzero"`
+	Notes   []string  `json:"notes"`
 }
 
 // TokenSource is where the GitHub token comes from.

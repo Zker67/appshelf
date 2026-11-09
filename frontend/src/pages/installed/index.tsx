@@ -8,12 +8,21 @@ import { AddTargetChip } from "@/components/add-target";
 import { AppIcon } from "@/components/app-icon";
 import { Chip, EmptyState, SearchBox, SelectionBar, WideLabel } from "@/components/common";
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
+import { UninstallButton } from "@/components/dialogs/uninstall-dialog";
 import { AddButton, InShelfButton } from "@/components/row-actions";
 import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
 import { SourceBadge, SourceIcon } from "@/components/source-badge";
 import { Pill } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,13 +30,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { UpdateMenu } from "@/components/update-menu";
 import { errorText, useInstalled, useUpdates } from "@/lib/api";
 import { sourceID, sourceKey } from "@/lib/shelf";
-import { formatDateTime, matches } from "@/lib/text";
+import { formatBytes, formatDateTime, matches } from "@/lib/text";
 import {
   allInstalled,
   holdText,
   installedMatches,
   isAllInstalled,
+  sortInstalled,
   type InstalledFilter,
+  type InstalledSort,
   type ShelfGroup,
   type UpdateGroup,
 } from "@/lib/updates";
@@ -38,6 +49,7 @@ import { useActions } from "@/state/actions";
 import { useNav } from "@/state/nav";
 import { useQuickAdd } from "@/state/quick-add";
 import {
+  ArrowDownWideNarrowIcon,
   ArrowUpCircleIcon,
   BellOffIcon,
   CheckIcon,
@@ -45,8 +57,10 @@ import {
   LayoutDashboardIcon,
   LayersIcon,
   LayoutGridIcon,
+  LoaderCircleIcon,
   MonitorCheckIcon,
   PlusIcon,
+  PackageXIcon,
   RefreshCwIcon,
   SearchIcon,
   SearchXIcon,
@@ -58,6 +72,19 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
 import { InstalledOverview } from "./overview";
+
+const sortItems: Array<{ value: InstalledSort; label: string }> = [
+  { value: "name", label: "名称" },
+  { value: "size", label: "占用空间" },
+  { value: "date", label: "安装日期" },
+];
+
+const sortKey = "installed.sort";
+
+function savedSort(): InstalledSort {
+  const v = localStorage.getItem(sortKey);
+  return sortItems.some((i) => i.value === v) ? (v as InstalledSort) : "name";
+}
 
 const kindItems: Array<{ value: InstalledKind; label: string }> = [
   { value: "winget", label: "winget" },
@@ -97,18 +124,27 @@ export function InstalledPage() {
   const [filter, setFilter] = useState<InstalledFilter>(allInstalled);
   // The page opens on the overview; a filter or a search shows the list.
   const [overview, setOverview] = useState(true);
+  const [sort, setSortState] = useState<InstalledSort>(savedSort);
+  const setSort = (v: string) => {
+    const next = sortItems.find((i) => i.value === v)?.value ?? "name";
+    setSortState(next);
+    localStorage.setItem(sortKey, next);
+  };
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const entries = useMemo(() => data?.entries ?? [], [data]);
   const shown = useMemo(
     () =>
-      entries.filter(
-        (e) =>
-          installedMatches(e, filter) &&
-          matches(query, [e.name, e.publisher, e.source ? sourceID(e.source) : ""]),
+      sortInstalled(
+        entries.filter(
+          (e) =>
+            installedMatches(e, filter) &&
+            matches(query, [e.name, e.publisher, e.source ? sourceID(e.source) : ""]),
+        ),
+        sort,
       ),
-    [entries, filter, query],
+    [entries, filter, query, sort],
   );
   // What the updates know of the packages with an update, as whether they
   // can update on their own.
@@ -301,6 +337,21 @@ export function InstalledPage() {
             <div className="flex min-w-0 items-center gap-2">
               <span className="min-w-0 truncate text-sm font-semibold">本机已装</span>
               <Chip icon={LayersIcon}>{overview ? entries.length : shown.length} 个</Chip>
+              {data?.partial && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Chip tone="primary" className="anim-fade">
+                        <LoaderCircleIcon className="size-3.5 animate-spin" />
+                        <WideLabel>正在补充来源</WideLabel>
+                      </Chip>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-80">
+                    先列出了注册表里的程序；winget 的来源与更新、scoop 和应用商店应用读完后补上
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {(data?.notes.length ?? 0) > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -330,6 +381,31 @@ export function InstalledPage() {
               inputRef={searchRef}
               className="mx-auto w-full max-w-sm min-w-40"
             />
+            {!overview && (
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="shrink-0" aria-label="排序">
+                        <ArrowDownWideNarrowIcon />
+                        <WideLabel>{sortItems.find((i) => i.value === sort)?.label}</WideLabel>
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>排序</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-36">
+                  <DropdownMenuLabel>排序</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={sort} onValueChange={setSort}>
+                    {sortItems.map((i) => (
+                      <DropdownMenuRadioItem key={i.value} value={i.value}>
+                        {i.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <AddTargetChip />
             <Tooltip>
               <TooltipTrigger asChild>
@@ -406,6 +482,7 @@ export function InstalledPage() {
                     onFind={() => findSource(e)}
                     onShow={() => nav.showInShelf(e.inShelf)}
                     onUpdate={() => actions.previewInstalledUpdates([e.key])}
+                    onUninstall={() => actions.previewUninstall([e.key])}
                     update={e.source ? updateOf.get(sourceKey(e.source)) : undefined}
                   />
                 ))}
@@ -428,6 +505,16 @@ export function InstalledPage() {
               <PlusIcon />
               加入清单{addable.length > 0 && ` ${addable.length}`}
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="hover:border-destructive/40 hover:text-destructive"
+              disabled={selected.length === 0}
+              onClick={() => actions.previewUninstall(selected.map((e) => e.key))}
+            >
+              <PackageXIcon />
+              卸载{selected.length > 0 && ` ${selected.length}`}
+            </Button>
           </SelectionBar>
         </div>
       </ResizablePanel>
@@ -448,6 +535,7 @@ function EntryRow({
   onFind,
   onShow,
   onUpdate,
+  onUninstall,
   update,
 }: {
   entry: InstalledEntry;
@@ -462,6 +550,7 @@ function EntryRow({
   onFind: () => void;
   onShow: () => void;
   onUpdate: () => void;
+  onUninstall: () => void;
   /** update is what the updates know of its package. */
   update?: UpdateItem;
 }) {
@@ -509,6 +598,12 @@ function EntryRow({
           {e.publisher && <span className="min-w-0 truncate">{e.publisher}</span>}
         </div>
       </div>
+      {(e.size || e.installed) && (
+        <div className="hidden w-[84px] shrink-0 flex-col items-end gap-0.5 text-[11px] leading-tight text-muted-foreground tabular-nums @[760px]:flex">
+          {e.size ? <span>{formatBytes(e.size)}</span> : null}
+          {e.installed && <span>{e.installed}</span>}
+        </div>
+      )}
       <div className="flex shrink-0 items-center gap-1">
         {held && (
           <Pill tone="muted">
@@ -559,6 +654,10 @@ function EntryRow({
           更新
         </Button>
       )}
+      <UninstallButton
+        onClick={onUninstall}
+        className="opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
+      />
       <div className="flex w-[104px] shrink-0 justify-end">
         {inShelf ? (
           <InShelfButton onClick={onShow} />

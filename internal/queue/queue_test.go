@@ -4,13 +4,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"appshelf/internal/catalog"
 	"appshelf/internal/source"
+	"appshelf/internal/uninstall"
 )
 
 // fake plays a source: before[id] and after[id] are the states it reports
@@ -31,7 +36,8 @@ func newFake() *fake {
 	return &fake{before: map[string]source.Status{}, after: map[string]source.Status{}, ran: map[string]bool{}, runErr: map[string]error{}, result: map[string]source.Result{}}
 }
 
-func (f *fake) Status(_ context.Context, a catalog.App) source.Status {
+func (f *fake) Status(_ context.Context, it Item) source.Status {
+	a := it.App
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.ran[a.ID] {
@@ -40,7 +46,8 @@ func (f *fake) Status(_ context.Context, a catalog.App) source.Status {
 	return f.before[a.ID]
 }
 
-func (f *fake) Run(_ context.Context, a catalog.App, _ Action, _ io.Writer) (source.Result, error) {
+func (f *fake) Run(_ context.Context, it Item, _ io.Writer) (source.Result, error) {
+	a := it.App
 	if f.gate != nil {
 		<-f.gate
 	}
@@ -281,4 +288,165 @@ func TestRetryStopAndDuplicates(t *testing.T) {
 	if len(q.Items()) != 0 {
 		t.Errorf("left %+v", q.Items())
 	}
+}
+
+// talker is a fake whose runs write output and report progress, then wait
+// on gate.
+type talker struct {
+	*fake
+	wrote chan struct{}
+}
+
+func (t *talker) Run(ctx context.Context, it Item, log io.Writer) (source.Result, error) {
+	fmt.Fprint(log, "downloading\r\n")
+	source.ReportProgress(log, source.Progress{Stage: "正在下载", Done: 10, Total: 100})
+	t.wrote <- struct{}{}
+	return t.fake.Run(ctx, it, log)
+}
+
+func TestRunningItemShowsStageProgressAndLog(t *testing.T) {
+	f := newFake()
+	f.gate = make(chan struct{})
+	f.before["a"] = source.Status{State: source.NotInstalled}
+	f.after["a"] = source.Status{State: source.Installed, Version: "1"}
+	tk := &talker{fake: f, wrote: make(chan struct{})}
+	var pokes atomic.Int32
+	q := New(context.Background(), tk, nil)
+	q.SetProgress(func() { pokes.Add(1) })
+	q.Add([]catalog.App{appOf("a")}, Install)
+	<-tk.wrote
+
+	it := q.Items()[0]
+	if it.State != Running || it.Stage != "正在下载" || it.Progress.Done != 10 || it.Progress.Total != 100 {
+		t.Fatalf("running item = %+v", it)
+	}
+	c, ok := q.Log(it.ID, 0)
+	if !ok || len(c.Lines) != 1 || c.Lines[0] != "downloading" {
+		t.Fatalf("log = %+v %v", c, ok)
+	}
+	close(f.gate)
+	wait(t, q)
+	it = q.Items()[0]
+	if it.State != Succeeded || it.Stage != "" || it.Progress != (source.Progress{}) {
+		t.Fatalf("finished item = %+v", it)
+	}
+	// The log stays readable after the item ends, with the queue's lines.
+	c, _ = q.Log(it.ID, 1)
+	if len(c.Lines) == 0 || !strings.HasPrefix(c.Lines[len(c.Lines)-1], "[AppShelf] 之后的状态") {
+		t.Fatalf("log after = %q", c.Lines)
+	}
+	if pokes.Load() == 0 {
+		t.Fatal("progress was not announced")
+	}
+	if _, ok := q.Log(999, 0); ok {
+		t.Fatal("an unknown item has no log")
+	}
+}
+
+func TestThrottleDelaysTheLastCall(t *testing.T) {
+	var calls atomic.Int32
+	th := throttle{fn: func() { calls.Add(1) }, every: 40 * time.Millisecond}
+	for range 10 {
+		th.poke()
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("calls at once = %d, want 1", n)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("calls after the delay = %d, want 2", n)
+	}
+}
+
+// remover is a fake whose removals take the program away unless kept, and
+// remembers whether they ran with the uninstaller's window.
+type remover struct {
+	*fake
+	interactive []bool
+}
+
+func (r *remover) Run(ctx context.Context, it Item, log io.Writer) (source.Result, error) {
+	r.mu.Lock()
+	r.interactive = append(r.interactive, it.Interactive)
+	r.mu.Unlock()
+	return r.fake.Run(ctx, it, log)
+}
+
+func TestUninstall(t *testing.T) {
+	f := newFake()
+	r := &remover{fake: f}
+	gone := uninstall.Target{Key: "arp:gone", Name: "Gone", Method: uninstall.ByRegistry}
+	stays := uninstall.Target{Key: "arp:stays", Name: "Stays", Method: uninstall.ByRegistry}
+	noisy := uninstall.Target{Key: "arp:noisy", Name: "Noisy", Method: uninstall.ByRegistry}
+	already := uninstall.Target{Key: "arp:already", Name: "Already", Method: uninstall.ByRegistry}
+	unknown := uninstall.Target{Key: "arp:unknown", Name: "Unknown", Method: uninstall.ByRegistry}
+	for _, tg := range []uninstall.Target{gone, stays, noisy} {
+		f.before[UninstallApp(tg).ID] = source.Status{State: source.Installed}
+	}
+	f.after[UninstallApp(gone).ID] = source.Status{State: source.NotInstalled}
+	f.after[UninstallApp(stays).ID] = source.Status{State: source.Installed}
+	f.runErr[UninstallApp(stays).ID] = errors.New("卸载程序以退出码 2 结束")
+	f.after[UninstallApp(noisy).ID] = source.Status{State: source.NotInstalled}
+	f.runErr[UninstallApp(noisy).ID] = errors.New("卸载程序以退出码 5 结束")
+	f.before[UninstallApp(already).ID] = source.Status{State: source.NotInstalled}
+	f.before[UninstallApp(unknown).ID] = source.UnknownStatus("读不到注册表")
+
+	q := New(context.Background(), r, nil)
+	if n := q.AddUninstall([]uninstall.Target{gone, stays, noisy, already, unknown, gone}); n != 5 {
+		t.Fatalf("added %d, want 5: the same program once", n)
+	}
+	wait(t, q)
+	got := map[string]Item{}
+	for _, it := range q.Items() {
+		got[it.Target.Key] = it
+		if it.Action != Uninstall || it.App.ID != "uninstall:"+it.Target.Key {
+			t.Errorf("item = %+v", it)
+		}
+	}
+	check := func(key string, st ItemState, msg string) {
+		t.Helper()
+		if it := got[key]; it.State != st || !strings.Contains(it.Message, msg) {
+			t.Errorf("%s = %s %q, want %s %q", key, it.State, it.Message, st, msg)
+		}
+	}
+	check("arp:gone", Succeeded, "")
+	check("arp:stays", Failed, "退出码 2")
+	check("arp:noisy", Succeeded, "已卸载（卸载程序报告：卸载程序以退出码 5 结束）")
+	check("arp:already", Skipped, "已不在本机")
+	check("arp:unknown", Failed, "无法确认")
+	if slices.Contains(f.runs, UninstallApp(already).ID) || slices.Contains(f.runs, UninstallApp(unknown).ID) {
+		t.Errorf("ran %q: a program gone or unknown must not run", f.runs)
+	}
+
+	// A failed removal retries with its window; an install does not.
+	if !q.RetryInteractive(got["arp:stays"].ID) {
+		t.Fatal("RetryInteractive refused a failed removal")
+	}
+	wait(t, q)
+	if n := len(r.interactive); n == 0 || !r.interactive[n-1] {
+		t.Fatalf("interactive runs = %v", r.interactive)
+	}
+	f.before["x"] = source.Status{State: source.NotInstalled}
+	f.runErr["x"] = errors.New("no")
+	q.Add([]catalog.App{appOf("x")}, Install)
+	wait(t, q)
+	for _, it := range q.Items() {
+		if it.App.ID == "x" && q.RetryInteractive(it.ID) {
+			t.Error("an install retried interactively")
+		}
+	}
+}
+
+func TestUninstallDoesNotRunBesideTheSamePackage(t *testing.T) {
+	f := newFake()
+	f.gate = make(chan struct{})
+	app := catalog.App{ID: "a_git", Name: "Git", Source: catalog.Source{Type: catalog.Winget, ID: "Git.Git"}}
+	f.before[app.ID] = source.Status{State: source.UpdateAvailable, Version: "1", Latest: "2"}
+	q := New(context.Background(), f, nil)
+	q.Add([]catalog.App{app}, Upgrade)
+	if n := q.AddUninstall([]uninstall.Target{{Key: "winget:git.git", Name: "Git", Method: uninstall.ByWinget, WingetID: "Git.Git"}}); n != 0 {
+		t.Fatal("a removal queued beside an update of the same package")
+	}
+	close(f.gate)
+	wait(t, q)
 }

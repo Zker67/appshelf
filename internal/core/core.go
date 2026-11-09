@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +43,11 @@ type Config struct {
 	Sources func(store *state.Store) []source.Source
 	// Post runs a function on the UI thread and redraws.
 	Post func(func())
+	// Progress is called, at most every 250 milliseconds, while a task
+	// reports progress or writes output; nil when nothing listens.
+	Progress func()
+	// Uninstaller removes programs; nil when this build cannot.
+	Uninstaller Uninstaller
 }
 
 // Core is the application.
@@ -52,6 +58,8 @@ type Core struct {
 	cat     *catalog.Catalog
 	store   *state.Store
 	sources map[catalog.SourceType]source.Source
+
+	uninstaller Uninstaller
 
 	statuses    map[string]source.Status
 	refreshing  bool
@@ -81,6 +89,8 @@ func Open(ctx context.Context, cfg Config) (*Core, error) {
 		statuses: map[string]source.Status{},
 		checking: map[string]bool{},
 		avail:    map[catalog.SourceType]source.Availability{},
+
+		uninstaller: cfg.Uninstaller,
 	}
 	cat, err := catalog.Load(cfg.Paths.Catalog)
 	if err != nil {
@@ -110,6 +120,7 @@ func Open(ctx context.Context, cfg Config) (*Core, error) {
 		}
 	}
 	c.Queue = queue.New(ctx, executor{c}, func() { c.post(func() {}) })
+	c.Queue.SetProgress(cfg.Progress)
 	return c, nil
 }
 
@@ -681,13 +692,31 @@ func (c *Core) openLog(what string) (*os.File, string, error) {
 	if err := os.MkdirAll(c.paths.Logs, 0o755); err != nil {
 		return nil, "", err
 	}
-	name := time.Now().Format("20060102-150405") + "-" + what + ".log"
+	name := time.Now().Format("20060102-150405") + "-" + fileName(what) + ".log"
 	path := filepath.Join(c.paths.Logs, name)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, "", err
 	}
 	return f, path, nil
+}
+
+// fileName makes s fit in a file's name: no characters Windows refuses,
+// at most 80 bytes.
+func fileName(s string) string {
+	b := []rune{}
+	for _, r := range s {
+		if r < 0x20 || strings.ContainsRune(`<>:"/\|?*`, r) {
+			r = '_'
+		}
+		b = append(b, r)
+	}
+	out := strings.TrimRight(string(b), ". ")
+	for len(out) > 80 {
+		r := []rune(out)
+		out = string(r[:len(r)-1])
+	}
+	return out
 }
 
 // PreviewItem is what installing or updating an app would do.
@@ -792,15 +821,23 @@ func (c *Core) Enqueue(items []PreviewItem, action queue.Action) int {
 // executor does the queue's work, on its goroutine.
 type executor struct{ c *Core }
 
-func (e executor) Status(ctx context.Context, a catalog.App) source.Status {
-	return e.c.recheck(ctx, a)
+func (e executor) Status(ctx context.Context, it queue.Item) source.Status {
+	if it.Action == queue.Uninstall {
+		return e.c.presence(ctx, it.Target)
+	}
+	return e.c.recheck(ctx, it.App)
 }
 
-func (e executor) Run(ctx context.Context, a catalog.App, action queue.Action, log io.Writer) (source.Result, error) {
+func (e executor) Run(ctx context.Context, it queue.Item, log io.Writer) (source.Result, error) {
+	if it.Action == queue.Uninstall {
+		return e.c.runUninstall(ctx, it, log)
+	}
+	a, action := it.App, it.Action
 	src, ok := e.c.sources[a.Source.Type]
 	if !ok {
 		return source.Result{}, errors.New("不支持的来源")
 	}
+	fmt.Fprintf(log, "AppShelf %s「%s」\n来源：%s %s\n开始：%s\n\n", action, a.Name, a.Source.Type, a.Source.Display(), time.Now().Format(time.DateTime))
 	if action == queue.Upgrade {
 		return src.Upgrade(ctx, a, log)
 	}
@@ -809,19 +846,25 @@ func (e executor) Run(ctx context.Context, a catalog.App, action queue.Action, l
 
 func (e executor) OpenLog(it queue.Item) (io.WriteCloser, string, error) {
 	verb := "install"
-	if it.Action == queue.Upgrade {
+	switch it.Action {
+	case queue.Upgrade:
 		verb = "upgrade"
+	case queue.Uninstall:
+		verb = "uninstall"
 	}
 	f, path, err := e.c.openLog(verb + "-" + it.App.ID)
 	if err != nil {
 		return nil, "", err
 	}
-	fmt.Fprintf(f, "AppShelf %s「%s」\n来源：%s %s\n开始：%s\n\n", it.Action, it.App.Name, it.App.Source.Type, it.App.Source.Display(), time.Now().Format(time.DateTime))
 	return f, path, nil
 }
 
 func (e executor) Finished(it queue.Item, st source.Status, res source.Result) source.Status {
 	c := e.c
+	if it.Action == queue.Uninstall {
+		c.afterUninstall(it.Target)
+		return st
+	}
 	if res.GitHub != nil && st.IsInstalled() {
 		if err := c.store.PutGitHub(it.App.ID, *res.GitHub); err == nil {
 			// The record can change what the state is: read it again.

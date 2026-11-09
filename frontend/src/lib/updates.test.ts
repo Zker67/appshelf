@@ -8,6 +8,7 @@ import {
   installedMatches,
   isAllInstalled,
   noSourceKinds,
+  sortInstalled,
   type InstalledFilter,
 } from "./updates";
 
@@ -84,5 +85,23 @@ describe("held updates in the catalog", () => {
       tone: "muted",
       detail: "2.55",
     });
+  });
+});
+
+describe("sortInstalled", () => {
+  const list = [
+    entry("a", { size: 10, installed: "2026-01-02" }),
+    entry("b"),
+    entry("c", { size: 300, installed: "2025-05-05" }),
+    entry("d", { size: 10, installed: "2026-03-01" }),
+  ];
+  it("keeps Go's order by name", () => {
+    expect(sortInstalled(list, "name").map((e) => e.key)).toEqual(["a", "b", "c", "d"]);
+  });
+  it("puts the largest first, unknown sizes last", () => {
+    expect(sortInstalled(list, "size").map((e) => e.key)).toEqual(["c", "a", "d", "b"]);
+  });
+  it("puts the newest first, unknown dates last", () => {
+    expect(sortInstalled(list, "date").map((e) => e.key)).toEqual(["d", "a", "c", "b"]);
   });
 });

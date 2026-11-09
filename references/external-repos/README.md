@@ -23,6 +23,7 @@ references/external-repos/
 | [Devolutions/UniGetUI](./Devolutions__UniGetUI/README.md) | 未锁定（2026-11-07） | MIT | 已装检测、检查更新、忽略更新、操作队列 | 已调研 |
 | [komi-store/komi-store](./komi-store__komi-store/README.md)（原 GitHub Store） | 未锁定（2026-11-07） | 待核对 | GitHub Releases 选包、版本比较、检查更新 | 已调研 |
 | [crenspire/glass-ui](./crenspire__glass-ui/README.md) | `e74f533`（2026-10-14） | README 写 MIT，无 LICENSE 文件 | 玻璃材质、渐变细边、光影层次 | 借鉴思路 |
+| [BCUninstaller/Bulk-Crap-Uninstaller](./BCUninstaller__Bulk-Crap-Uninstaller/README.md) | `30da609`（2026-09-08） | Apache-2.0 | 卸载器识别、静默参数、执行后确认、残留打分 | 借鉴规则 |
 
 ## 使用边界
 

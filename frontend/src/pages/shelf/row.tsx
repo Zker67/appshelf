@@ -36,6 +36,7 @@ import {
   LoaderCircleIcon,
   MinusIcon,
   NotebookPenIcon,
+  PackageXIcon,
   PanelRightIcon,
   PencilIcon,
   Trash2Icon,
@@ -51,6 +52,9 @@ export interface RowActions {
   targets: (id: string) => ShelfApp[];
   install: (ids: string[]) => void;
   upgrade: (ids: string[]) => void;
+  /** uninstallKeys are the installed programs that are these apps. */
+  uninstallKeys: (ids: string[]) => string[];
+  uninstall: (keys: string[]) => void;
   edit: (app: App) => void;
   /** note writes the app's own note. */
   note: (item: ShelfApp) => void;
@@ -213,6 +217,7 @@ function RowMenu({
   const many = targets.length > 1;
   const canInstall = targets.some((t) => t.status?.state === "notInstalled");
   const canUpgrade = targets.some((t) => t.status?.state === "updateAvailable");
+  const removable = act.uninstallKeys(ids);
   const catOf = new Set(targets.map((t) => t.app.categoryId ?? ""));
   const oneCat = catOf.size === 1 ? [...catOf][0] : undefined;
   const names = new Map([...categories.values()].map((c) => [c.id, c.name]));
@@ -228,6 +233,10 @@ function RowMenu({
       <ContextMenuItem disabled={!canUpgrade} onSelect={() => act.upgrade(ids)}>
         <ArrowUpCircleIcon />
         更新
+      </ContextMenuItem>
+      <ContextMenuItem disabled={removable.length === 0} onSelect={() => act.uninstall(removable)}>
+        <PackageXIcon />
+        从本机卸载…
       </ContextMenuItem>
       <ContextMenuSeparator />
       {!many && (

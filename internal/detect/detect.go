@@ -27,6 +27,22 @@ type Entry struct {
 	// DisplayIcon is the program's icon: a file, maybe with ",index".
 	DisplayIcon     string
 	InstallLocation string
+	// LocationGuessed means InstallLocation was empty and is the directory
+	// of the program's icon or uninstaller.
+	LocationGuessed bool
+
+	// UninstallString and QuietUninstallString are the commands that
+	// remove the program, the second without asking.
+	UninstallString      string
+	QuietUninstallString string
+	// WindowsInstaller means Windows Installer installed it: the key's
+	// name is its product code.
+	WindowsInstaller bool
+	// NoRemove means the program asks not to be removed.
+	NoRemove      bool
+	EstimatedSize int64  // in bytes, 0 when unknown
+	InstallDate   string // YYYY-MM-DD, "" when unknown
+	InstallSource string // where it was installed from
 }
 
 // Result is what a rule found.

@@ -442,6 +442,46 @@ func (s *Source) Upgrade(ctx context.Context, app catalog.App, log io.Writer) (s
 	return s.run(ctx, log, "upgrade", app.Source.ID)
 }
 
+// Uninstall removes a package by its exact ID, from the source that knows
+// it ("winget" or "msstore"), silently unless interactive asks for the
+// uninstaller's window.
+func (s *Source) Uninstall(ctx context.Context, id, src string, interactive bool, log io.Writer) (source.Result, error) {
+	mode := "--silent"
+	if interactive {
+		mode = "--interactive"
+	}
+	if src == "" {
+		src = "winget"
+	}
+	path, err := exec.LookPath("winget")
+	if err != nil {
+		return source.Result{}, errors.New("找不到 winget")
+	}
+	args := []string{"uninstall", "--id", id, "--exact", "--source", src, mode, "--accept-source-agreements", "--disable-interactivity"}
+	s.cli.Lock()
+	defer s.cli.Unlock()
+	if log == nil {
+		log = io.Discard
+	}
+	fmt.Fprintf(log, "> winget %s\n\n", strings.Join(args, " "))
+	p := newProgress(log, id, "正在卸载")
+	source.ReportProgress(log, source.Progress{Stage: "正在卸载"})
+	defer p.close()
+	res, err := runner.Run(ctx, path, args, runner.Options{Log: p})
+	if err != nil {
+		return source.Result{}, err
+	}
+	if res.Code() == codeNoPackageFound {
+		// Gone already, or never there: the check after it tells.
+		return source.Result{}, nil
+	}
+	r, err := interpret(res)
+	if err != nil && res.Code() == codeCanceledByUser {
+		return r, errors.New("卸载被取消")
+	}
+	return r, err
+}
+
 func (s *Source) run(ctx context.Context, log io.Writer, verb, id string, extra ...string) (source.Result, error) {
 	path, err := exec.LookPath("winget")
 	if err != nil {
@@ -452,10 +492,17 @@ func (s *Source) run(ctx context.Context, log io.Writer, verb, id string, extra 
 	args = append(args, extra...)
 	s.cli.Lock()
 	defer s.cli.Unlock()
-	if log != nil {
-		fmt.Fprintf(log, "> winget %s\n\n", strings.Join(args, " "))
+	if log == nil {
+		log = io.Discard
 	}
-	res, err := runner.Run(ctx, path, args, runner.Options{Log: log})
+	fmt.Fprintf(log, "> winget %s\n\n", strings.Join(args, " "))
+	work := "正在安装"
+	if verb == "upgrade" {
+		work = "正在更新"
+	}
+	p := newProgress(log, id, work)
+	defer p.close()
+	res, err := runner.Run(ctx, path, args, runner.Options{Log: p})
 	if err != nil {
 		return source.Result{}, err
 	}

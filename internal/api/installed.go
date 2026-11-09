@@ -25,6 +25,36 @@ type inventoryState struct {
 	loading bool
 	again   bool          // read again after the reading under way
 	maxAge  time.Duration // of the reading asked again
+
+	// settle is when a change seen outside AppShelf is read, once changes
+	// stop coming.
+	settle *time.Timer
+}
+
+// settleDelay is how long the changes of an install or removal outside
+// AppShelf must stop before the list is read again: installers write many
+// keys one after the other.
+var settleDelay = 1500 * time.Millisecond
+
+// outside notes that what is installed may have changed outside AppShelf.
+// The list is read again once the changes stop; while AppShelf's own tasks
+// run it is not, as they read it again when they end.
+func (s *inventoryState) outside() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.settle != nil {
+		s.settle.Reset(settleDelay)
+		return
+	}
+	s.settle = time.AfterFunc(settleDelay, func() {
+		s.mu.Lock()
+		s.settle = nil
+		s.mu.Unlock()
+		if running, _ := s.app.core.Queue.Running(); running {
+			return
+		}
+		s.refresh(0)
+	})
 }
 
 // refresh reads the list again in the background, letting winget's list be
@@ -46,6 +76,7 @@ func (s *inventoryState) refresh(maxAge time.Duration) {
 }
 
 func (s *inventoryState) run(maxAge time.Duration) {
+	s.quick()
 	for {
 		list := inventory.Load(context.Background(), s.app.inventorySources(maxAge))
 		if s.app.cfg.Icons != nil {
@@ -64,6 +95,34 @@ func (s *inventoryState) run(maxAge time.Duration) {
 	s.app.note.mark(ChangedInstalled)
 	// The loop sees the reading end, as a check waits for it.
 	s.app.loop.post(func() {})
+}
+
+// quick shows the registry's programs, which take milliseconds to read,
+// while winget takes seconds: only before a whole list was read, later
+// readings keep the last list until they end.
+func (s *inventoryState) quick() {
+	s.mu.Lock()
+	loaded := s.loaded
+	s.mu.Unlock()
+	if loaded || s.app.cfg.Scan == nil {
+		return
+	}
+	reg, err := s.app.cfg.Scan()
+	if err != nil {
+		return
+	}
+	list := inventory.List{Entries: inventory.Build(nil, false, nil, reg), At: time.Now(), Partial: true}
+	s.mu.Lock()
+	if s.loaded {
+		s.mu.Unlock()
+		return
+	}
+	s.list, s.loaded = list, true
+	s.mu.Unlock()
+	if s.app.cfg.Icons != nil {
+		s.app.cfg.Icons.SetInventory(list.Entries)
+	}
+	s.app.note.mark(ChangedInstalled)
 }
 
 // busy reports whether the list is being read.
@@ -121,7 +180,7 @@ func (s *Installed) List() InstalledList {
 	match := inventory.Match(list.Entries, apps)
 	pol := a.core.Store().Policies()
 	now := time.Now()
-	out := InstalledList{Entries: make([]InstalledEntry, 0, len(list.Entries)), Loaded: loaded, Loading: loading, At: list.At, Notes: list.Notes}
+	out := InstalledList{Entries: make([]InstalledEntry, 0, len(list.Entries)), Loaded: loaded, Loading: loading, Partial: list.Partial, At: list.At, Notes: list.Notes}
 	for _, e := range list.Entries {
 		entry := entryOf(e, match[e.Key])
 		if entry.Source != nil {
@@ -149,6 +208,7 @@ func entryOf(e inventory.Entry, inShelf []string) InstalledEntry {
 		Key: e.Key, Name: e.Name, Version: e.Version, Publisher: e.Publisher,
 		Kind: InstalledKind(e.Kind), Update: e.Update, InShelf: inShelf,
 		Icon: "/i/" + url.PathEscape(e.Key),
+		Size: e.Size, Installed: e.InstallDate, Location: e.Location,
 	}
 	if out.InShelf == nil {
 		out.InShelf = []string{}

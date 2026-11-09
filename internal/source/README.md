@@ -15,6 +15,18 @@
 
 三个来源另外有只用于展示的方法（本机已装、软件详情、GitHub 搜索），见各节末尾。它们的结果不参与安装判断。
 
+winget 和 scoop 另有 `Uninstall`，不在接口里：由 [internal/uninstall](../uninstall/README.md) 直接调用，卸载是否成功同样以执行后的复查为准。
+
+## 进度
+
+`Progress{Stage, Done, Total}` 是一个任务当前的阶段（如“正在下载”）和下载字节数（未知时为 0）。来源用 `source.ReportProgress(log, p)` 报告：交给来源的日志实现了 `ProgressReporter`（[internal/tasklog](../tasklog/README.md)）时记下进度，否则忽略。
+
+| 来源 | 阶段 | 下载字节 |
+|---|---|---|
+| winget | 正在准备 → 正在下载（输出里出现下载地址时）→ 正在安装 / 正在更新 / 正在卸载 | winget 重定向输出时没有进度条：下载期间每 500 毫秒读一次 `%TEMP%\WinGet\<ID>.<版本>\` 下本次写入的文件大小作为已下载；总量未知 |
+| scoop | 按 scoop 输出的英文行首识别：正在添加 bucket、正在下载、正在校验、正在解压、正在运行安装程序 / 安装脚本、正在完成 | 无 |
+| GitHub | 正在下载 → 正在校验 → 正在运行安装程序 | 下载时的实际字节；总量取 Release 资产的大小，没有时用 `Content-Length` |
+
 状态：`Unknown`（读取失败，不允许安装）、`NotInstalled`、`Installed`、`UpdateAvailable`、`Unavailable`（来源不可用）。`External` 表示软件是由清单里的检测规则认出的，不是从该来源装的：不安装、也不从该来源更新。
 
 ## winget（`winget/`）
@@ -27,10 +39,11 @@
 | `Search` | `Find-WinGetPackage -Query <q> -Source winget -Count 50`，只读 ID 和名称，在常驻的 PowerShell（`runner.Worker`）里执行；不读版本，版本由 `SearchVersions` 补 |
 | `Install` | `winget install --id <id> --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity --no-upgrade` |
 | `Upgrade` | 同上，动词换成 `upgrade`，没有 `--no-upgrade` |
+| `Uninstall` | `winget uninstall --id <id> --exact --source <winget 或 msstore> --silent --accept-source-agreements --disable-interactivity`；用卸载程序窗口重试时 `--silent` 换成 `--interactive`。找不到包（`0x8A150014`）视为已不在，由复查确认 |
 
 - 检测不区分大小写，宁可多认出已装、跳过安装；安装用 `--exact`，大小写不符时 winget 找不到包而失败，也不会装错。
 - 没能关联到 winget 源的已装软件 ID 以 `ARP\`、`MSIX\` 开头，不会和清单里的 ID 混淆。
-- 安装和更新的 winget 命令同一时间只运行一个。
+- 安装、更新和卸载的 winget 命令同一时间只运行一个。
 - 搜索不读模块对象的 `Version`：它要为每个结果从 CDN 下载 `versionData.mszyml` 和清单，逐个进行，50 个结果实测 30–55 秒。改为 ID、名称和版本分开读后，宽泛的词（如 `player`、`browser`）50 项约 0.2 秒、版本约 0.4 秒（本机实测）。
 - 退出码：`0x8A150061`（已安装）记为跳过；`0x8A150109` 成功但需要重启；`0x8A150014`、`0x8A150016`、`0x8A15002B`、`0x8A150101`、`0x8A150102`、`0x8A15010C` 各有中文原因；其他退出码附上输出末尾。
 
@@ -54,9 +67,10 @@
 | `Search` | `scoop search <q>`，`q` 先转义（scoop 把它当正则表达式），取前 30 项 |
 | `Install` | bucket 没有添加时先添加：有 `bucketUrl` 就 `scoop bucket add <bucket> <url>`，否则要求 bucket 在 `scoop bucket known` 中；然后 `scoop install <bucket>/<name>` |
 | `Upgrade` | `scoop update <name>` |
+| `Uninstall` | `scoop uninstall <name>`，为所有用户安装的加 `--global`（需要管理员权限） |
 
 - scoop 同名软件只能装一个，所以按软件名匹配所有 bucket：从别的 bucket 装的也算已装，并注明“通过 X 安装”。
-- 读取状态、安装和更新的 scoop 调用同一时间只运行一个（搜索不受限制）。scoop 的退出码不总是可靠，最终以执行后的复查为准。
+- 读取状态、安装、更新和卸载的 scoop 调用同一时间只运行一个（搜索不受限制）。scoop 的退出码不总是可靠，最终以执行后的复查为准。
 - 本机没有 scoop，scoop 的实现按 scoop 源码编写，真实运行未验证；只读集成测试在没有 scoop 时跳过。
 
 只用于展示：

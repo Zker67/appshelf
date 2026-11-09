@@ -266,8 +266,15 @@ func TestInstall(t *testing.T) {
 		t.Errorf("exe ran %q", ran)
 	}
 
-	if _, err := s.Install(context.Background(), ghApp("a_msi", "o/msi", "^App"), nil); err != nil {
+	prog := &progressLog{}
+	if _, err := s.Install(context.Background(), ghApp("a_msi", "o/msi", "^App"), prog); err != nil {
 		t.Fatalf("msi: %v", err)
+	}
+	if got := strings.Join(prog.stages, ","); got != "正在下载,正在校验,正在运行安装程序" {
+		t.Errorf("stages = %s", got)
+	}
+	if prog.checked.Done != int64(len(payload)) || prog.checked.Total != int64(len(payload)) {
+		t.Errorf("the download's bytes = %+v", prog.checked)
 	}
 	if len(ran) != 2 || !strings.HasPrefix(ran[1], "msiexec.exe /i ") || !strings.HasSuffix(ran[1], "/norestart /passive") {
 		t.Errorf("msi ran %q", ran)
@@ -289,6 +296,22 @@ func TestInstall(t *testing.T) {
 	left, _ := os.ReadDir(s.tempDir)
 	if len(left) != 0 {
 		t.Errorf("downloads left behind: %v", left)
+	}
+}
+
+// progressLog is a log that keeps the progress reported.
+type progressLog struct {
+	strings.Builder
+	stages  []string
+	checked source.Progress // when the download ended
+}
+
+func (l *progressLog) ReportProgress(p source.Progress) {
+	if n := len(l.stages); n == 0 || l.stages[n-1] != p.Stage {
+		l.stages = append(l.stages, p.Stage)
+	}
+	if p.Stage == "正在校验" {
+		l.checked = p
 	}
 }
 

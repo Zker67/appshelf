@@ -107,6 +107,10 @@ type fakeWinget struct {
 	pkgs    []winget.Package
 	mu      sync.Mutex
 	queries []string
+	// listBlock, when set, makes reading what is installed wait for it;
+	// lists counts the readings.
+	listBlock chan struct{}
+	lists     int
 
 	versions map[string]string
 	verr     error
@@ -164,6 +168,13 @@ func (w *fakeWinget) Search(ctx context.Context, q string) ([]source.SearchResul
 	return w.results, nil
 }
 func (w *fakeWinget) Installed(context.Context, time.Duration) ([]winget.Package, time.Time, error) {
+	w.mu.Lock()
+	block := w.listBlock
+	w.lists++
+	w.mu.Unlock()
+	if block != nil {
+		<-block
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return slices.Clone(w.pkgs), time.Now(), nil
@@ -249,6 +260,8 @@ type env struct {
 	active   bool
 	// registry are entries the registry has beside Tool's.
 	registry []detect.Entry
+	// uninst plays the removal of programs.
+	uninst *fakeUninstaller
 }
 
 func newEnv(t *testing.T) *env {
@@ -295,10 +308,12 @@ func newEnv(t *testing.T) *env {
 		}
 	}
 	e.winget = newCoreSource(catalog.Winget)
+	e.uninst = &fakeUninstaller{gone: map[string]bool{}, keep: map[string]bool{}}
 	c, err := core.Open(context.Background(), core.Config{
-		Paths:   core.Paths{Catalog: filepath.Join(e.dir, "catalog.json"), State: filepath.Join(e.dir, "state.json"), Logs: filepath.Join(e.dir, "logs")},
-		Sources: func(*state.Store) []source.Source { return []source.Source{e.winget, newCoreSource(catalog.GitHub)} },
-		Post:    e.app.Post,
+		Paths:       core.Paths{Catalog: filepath.Join(e.dir, "catalog.json"), State: filepath.Join(e.dir, "state.json"), Logs: filepath.Join(e.dir, "logs")},
+		Sources:     func(*state.Store) []source.Source { return []source.Source{e.winget, newCoreSource(catalog.GitHub)} },
+		Post:        e.app.Post,
+		Uninstaller: e.uninst,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -330,7 +345,7 @@ func newEnv(t *testing.T) *env {
 		EnvToken:  "ghp_fromenv",
 	})
 	e.until(func() bool { return !e.shelf.Snapshot().Refreshing })
-	e.until(func() bool { return e.installed.List().Loaded })
+	e.until(func() bool { l := e.installed.List(); return l.Loaded && !l.Partial })
 	return e
 }
 
@@ -529,6 +544,13 @@ func TestTasks(t *testing.T) {
 	if err := e.tasks.OpenLog(item.ID); err != nil || len(e.opened) != 1 {
 		t.Errorf("open log: %v %v", err, e.opened)
 	}
+	lg, err := e.tasks.Log(item.ID, 0)
+	if err != nil || !lg.Done || lg.Start != 0 || lg.Next != len(lg.Lines) || len(lg.Lines) < 3 || !strings.HasPrefix(lg.Lines[0], "AppShelf 安装「New」") {
+		t.Errorf("log = %+v, %v", lg, err)
+	}
+	if more, err := e.tasks.Log(item.ID, lg.Next); err != nil || len(more.Lines) != 0 || more.Next != lg.Next {
+		t.Errorf("log from its end = %+v, %v", more, err)
+	}
 	if err := e.tasks.Retry(item.ID); err == nil {
 		t.Error("a task that succeeded retried")
 	}
@@ -655,6 +677,64 @@ func TestInstalledList(t *testing.T) {
 	}
 	if !found {
 		t.Error("no change for the installed list")
+	}
+}
+
+// TestInstalledShowsTheRegistryFirst lists the registry's programs before
+// winget answers, with the keys they keep once it does.
+func TestInstalledShowsTheRegistryFirst(t *testing.T) {
+	e := newEnv(t)
+	block := make(chan struct{})
+	e.wapi.mu.Lock()
+	e.wapi.listBlock = block
+	e.wapi.mu.Unlock()
+	e.app.inv = &inventoryState{app: e.app}
+
+	e.until(func() bool { return e.installed.List().Partial })
+	list := e.installed.List()
+	if !list.Loaded || !list.Loading || len(list.Entries) != 1 {
+		t.Fatalf("partial list = %+v", list)
+	}
+	tool := list.Entries[0]
+	if tool.Key != `arp:machine\x64\tool` || tool.Kind != InstalledLocal || tool.Publisher != "Tool Co" {
+		t.Fatalf("registry entry = %+v", tool)
+	}
+	close(block)
+	e.until(func() bool { l := e.installed.List(); return !l.Partial && !l.Loading })
+	keys := map[string]bool{}
+	for _, en := range e.installed.List().Entries {
+		keys[en.Key] = true
+	}
+	if !keys[tool.Key] || !keys["winget:obsidian.obsidian"] {
+		t.Fatalf("full list keys = %v", keys)
+	}
+}
+
+// TestInstalledReadsAgainAfterOutsideChanges reads the list once changes
+// outside AppShelf stop coming.
+func TestInstalledReadsAgainAfterOutsideChanges(t *testing.T) {
+	old := settleDelay
+	settleDelay = 50 * time.Millisecond
+	t.Cleanup(func() { settleDelay = old })
+	e := newEnv(t)
+	e.wapi.mu.Lock()
+	before := e.wapi.lists
+	e.wapi.mu.Unlock()
+	for range 5 {
+		e.app.inv.outside()
+		time.Sleep(10 * time.Millisecond)
+	}
+	e.until(func() bool {
+		e.wapi.mu.Lock()
+		defer e.wapi.mu.Unlock()
+		return e.wapi.lists > before
+	})
+	time.Sleep(150 * time.Millisecond)
+	e.wapi.mu.Lock()
+	n := e.wapi.lists - before
+	e.wapi.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("read %d times after a burst of changes, want once", n)
 	}
 }
 

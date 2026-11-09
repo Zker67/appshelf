@@ -55,10 +55,11 @@ func TestPlanForInstallers(t *testing.T) {
 		quiet       bool
 		canRetry    bool
 	}{
-		{"msi by key name", detect.Entry{Name: strings.ToLower(code), WindowsInstaller: true, UninstallString: "MsiExec.exe /I" + code}, false, MSI, "msiexec.exe", "/x " + code + " /passive /norestart", true, true},
-		{"msi by command", detect.Entry{Name: "App", UninstallString: "MsiExec.exe /X" + code}, false, MSI, "msiexec.exe", "/x " + code + " /passive /norestart", true, true},
+		{"msi by key name", detect.Entry{Name: strings.ToLower(code), WindowsInstaller: true, UninstallString: "MsiExec.exe /I" + code}, false, MSI, "msiexec.exe", "/x " + code + " /qn /norestart", true, true},
+		{"msi by command", detect.Entry{Name: "App", UninstallString: "MsiExec.exe /X" + code}, false, MSI, "msiexec.exe", "/x " + code + " /qn /norestart", true, true},
 		{"msi interactive", detect.Entry{Name: code, WindowsInstaller: true}, true, MSI, "msiexec.exe", "/x " + code, false, true},
 		{"inno", detect.Entry{UninstallString: `"` + inno + `"`}, false, Inno, "unins000.exe", "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", true, true},
+		{"inno before its quiet string", detect.Entry{UninstallString: `"` + inno + `"`, QuietUninstallString: `"` + inno + `" /SILENT`}, false, Inno, "unins000.exe", "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", true, true},
 		{"inno interactive", detect.Entry{UninstallString: `"` + inno + `"`}, true, Inno, "unins000.exe", "", false, false},
 		{"unins without its log is no inno", detect.Entry{UninstallString: `"` + innoNoDat + `"`}, false, Other, "unins000.exe", "", false, false},
 		{"nsis keeps its arguments", detect.Entry{UninstallString: `"` + nsis + `" _?=C:\x`}, false, NSIS, "uninstall.exe", `_?=C:\x /S`, true, true},
@@ -80,6 +81,27 @@ func TestPlanForInstallers(t *testing.T) {
 				t.Errorf("no note that a window opens: %q", p.Notes)
 			}
 		})
+	}
+}
+
+// TestPlanForMSIElevation: msiexec without its window cannot ask for
+// administrator rights, so a program for all users asks first.
+func TestPlanForMSIElevation(t *testing.T) {
+	code := "{12345678-1234-1234-1234-1234567890AB}"
+	cases := []struct {
+		scope       string
+		interactive bool
+		elevate     bool
+	}{
+		{"Machine", false, true},
+		{"User", false, false},
+		{"Machine", true, false},
+	}
+	for _, c := range cases {
+		p := PlanFor(regTarget(detect.Entry{DisplayName: "App", Name: code, Scope: c.scope, Arch: "X64", WindowsInstaller: true}), c.interactive, Options{})
+		if p.Kind != MSI || p.Elevate != c.elevate {
+			t.Errorf("%s, interactive %v: plan = %+v", c.scope, c.interactive, p)
+		}
 	}
 }
 
@@ -163,7 +185,7 @@ type fakeWindows struct {
 
 func (f *fakeWindows) runner() *Runner {
 	r := New(Options{}, nil, nil)
-	r.shellRun = func(file, params, dir string) (uint32, error) {
+	r.shellRun = func(file, params string, elevate bool) (uint32, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.ran = append(f.ran, filepath.Base(file)+" "+params)

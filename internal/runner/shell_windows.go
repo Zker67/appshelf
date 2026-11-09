@@ -48,13 +48,23 @@ const (
 // failing, then waits for it to exit and returns its exit code. params is
 // passed as written, as the installer's command line.
 func ShellRun(file, params, dir string) (uint32, error) {
+	return shellRun("open", file, params, dir)
+}
+
+// ShellRunElevated is ShellRun asking for administrator rights first, for
+// a program that cannot ask for them itself, as msiexec without its window.
+func ShellRunElevated(file, params, dir string) (uint32, error) {
+	return shellRun("runas", file, params, dir)
+}
+
+func shellRun(verbName, file, params, dir string) (uint32, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED|windows.COINIT_DISABLE_OLE1DDE); err == nil {
 		defer windows.CoUninitialize()
 	}
 
-	verb, _ := windows.UTF16PtrFromString("open")
+	verb, _ := windows.UTF16PtrFromString(verbName)
 	f, err := windows.UTF16PtrFromString(file)
 	if err != nil {
 		return 0, err

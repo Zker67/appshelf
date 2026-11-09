@@ -27,11 +27,11 @@
 | `ByStore` | `Remove-AppxPackage -Package <PackageFullName>` | 是 | 否 |
 | `ByRegistry` | 见下表 | 视类型 | 视类型 |
 
-注册表程序按类型选命令（注册表里有 `QuietUninstallString` 时优先用它）：
+注册表程序按类型选命令（Inno Setup 之外，注册表里有 `QuietUninstallString` 时优先用它；Inno Setup 的这一项常是 `/SILENT`，仍会显示进度窗口）：
 
 | 类型 | 识别依据 | 静默命令 |
 |---|---|---|
-| Windows Installer | 卸载命令含 `msiexec`，或 `WindowsInstaller=1` 且键名是 GUID；产品代码取键名或命令里的 GUID，取不到时不卸载 | `msiexec /x {GUID} /passive /norestart`；窗口重试为 `msiexec /x {GUID}` |
+| Windows Installer | 卸载命令含 `msiexec`，或 `WindowsInstaller=1` 且键名是 GUID；产品代码取键名或命令里的 GUID，取不到时不卸载 | `msiexec /x {GUID} /qn /norestart`，为所有用户安装的先以 `runas` 请求管理员权限（`/qn` 下 msiexec 自己不会请求）；窗口重试为 `msiexec /x {GUID}` |
 | WiX 安装包（Burn） | 卸载程序在 `Package Cache\{…}\` 下 | 追加 `/quiet /norestart` |
 | Inno Setup | `unins000.exe` 这类文件名，且旁边有同名 `.dat` | 追加 `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` |
 | NSIS | 卸载程序前 8 MiB 里有 `Nullsoft` 标记 | 追加 `/S` |

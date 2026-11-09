@@ -17,3 +17,8 @@ func hideConsole(*exec.Cmd) {}
 func ShellRun(file, params, dir string) (uint32, error) {
 	return 0, errors.ErrUnsupported
 }
+
+// ShellRunElevated starts Windows installers, which other systems do not run.
+func ShellRunElevated(file, params, dir string) (uint32, error) {
+	return 0, errors.ErrUnsupported
+}

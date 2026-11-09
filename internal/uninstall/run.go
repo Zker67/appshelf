@@ -35,7 +35,7 @@ type Runner struct {
 	scoop  ScoopAPI  // nil without scoop
 
 	// What it uses of Windows, replaced in tests.
-	shellRun   func(file, params, dir string) (uint32, error)
+	shellRun   func(file, params string, elevate bool) (uint32, error)
 	lookup     func(scope, arch, name string) (detect.Entry, bool, error)
 	processes  func() ([]string, error)
 	powershell func(ctx context.Context, script string, in, out any, log io.Writer) error
@@ -49,7 +49,12 @@ type Runner struct {
 func New(opt Options, w WingetAPI, s ScoopAPI) *Runner {
 	return &Runner{
 		opt: opt, winget: w, scoop: s,
-		shellRun:  runner.ShellRun,
+		shellRun: func(file, params string, elevate bool) (uint32, error) {
+			if elevate {
+				return runner.ShellRunElevated(file, params, "")
+			}
+			return runner.ShellRun(file, params, "")
+		},
 		lookup:    detect.Lookup,
 		processes: procs.Paths,
 		powershell: func(ctx context.Context, script string, in, out any, log io.Writer) error {
@@ -153,7 +158,7 @@ func (r *Runner) runRegistry(ctx context.Context, t Target, p Plan, log io.Write
 		fmt.Fprintf(log, "（%s，打开卸载程序窗口）\n\n", KindText(p.Kind))
 	}
 	source.ReportProgress(log, source.Progress{Stage: "正在卸载"})
-	code, err := r.shellRun(p.File, p.Params, "")
+	code, err := r.shellRun(p.File, p.Params, p.Elevate)
 	if err != nil {
 		return source.Result{}, err
 	}

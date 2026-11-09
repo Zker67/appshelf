@@ -77,6 +77,9 @@ type Plan struct {
 	// Interactive means it can run again with the uninstaller's window,
 	// when it ran quietly.
 	Interactive bool
+	// Elevate means administrator rights are asked for before it runs:
+	// msiexec without its window cannot ask for them itself.
+	Elevate bool
 	// Blocked is why it must not run, "" when it can.
 	Blocked string
 	// Notes are what to know before it runs.
@@ -192,9 +195,10 @@ func planRegistry(p *Plan, t Target, interactive bool) {
 			p.Blocked = "无法确定这个 Windows Installer 程序的产品代码"
 			return
 		}
-		p.File, p.Params, p.Interactive = msiexec, "/x "+code+" /passive /norestart", true
+		p.File, p.Params, p.Interactive = msiexec, "/x "+code+" /qn /norestart", true
+		p.Elevate = e.Scope == "Machine"
 		if interactive {
-			p.Params, p.Quiet = "/x "+code, false
+			p.Params, p.Quiet, p.Elevate = "/x "+code, false, false
 		}
 		p.Command = "msiexec " + p.Params
 		return
@@ -215,11 +219,13 @@ func planRegistry(p *Plan, t Target, interactive bool) {
 	quiet := ""
 	switch {
 	case interactive:
+	case p.Kind == Inno:
+		// Before the quiet string: Inno Setup's is often /SILENT, which
+		// still shows the uninstaller's progress window.
+		params, quiet = join(params, "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART"), "inno"
 	case e.QuietUninstallString != "":
 		file, params = SplitCommand(e.QuietUninstallString)
 		quiet = "registry"
-	case p.Kind == Inno:
-		params, quiet = join(params, "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART"), "inno"
 	case p.Kind == NSIS:
 		params, quiet = join(params, "/S"), "nsis"
 	case p.Kind == Burn:

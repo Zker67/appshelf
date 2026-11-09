@@ -8,6 +8,7 @@ import { events } from "@/mygo";
 import { DiscoverPage } from "@/pages/discover";
 import { InstalledPage } from "@/pages/installed";
 import { ShelfPage } from "@/pages/shelf";
+import { UninstallPage } from "@/pages/uninstall";
 import { UpdatesPage } from "@/pages/updates";
 import { ActionsProvider } from "@/state/actions";
 import { NavProvider, useNav, type Page } from "@/state/nav";
@@ -37,7 +38,7 @@ export default function App() {
 }
 
 /** The pages in the order of their tabs, which says the side a page enters from. */
-const order: Page[] = ["installed", "shelf", "discover", "updates"];
+const order: Page[] = ["installed", "shelf", "discover", "updates", "uninstall"];
 
 type Direction = "none" | "left" | "right";
 
@@ -63,6 +64,9 @@ function Pages() {
       </PageSlot>
       <PageSlot page="updates" dir={dir}>
         <UpdatesPage />
+      </PageSlot>
+      <PageSlot page="uninstall" dir={dir}>
+        <UninstallPage />
       </PageSlot>
     </main>
   );

@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-AppShelf：Windows 个人软件图书馆，桌面应用；自更新使用公开仓库 `Zker67/appshelf` 的 GitHub Release。软件清单支持分类和标签，可以导入导出；能检测本机已装软件，按分类或标签多选逐个批量安装，并检查更新（包括 AppShelf 自身）。“发现”页统一搜索 winget、scoop、GitHub 并一键加入清单，“本机已装”页列出本机已有的程序，可以卸载并清理卸载残留。任务面板显示每项的阶段、下载进度和实时日志。安装来源为 winget、scoop、GitHub Releases。技术栈：Go + MyGo（`github.com/egoist/mygo`）的 Web 页面窗口，界面是 `frontend/` 的 React 应用；版本以 `go.mod` 和 `frontend/package.json` 为准。
+AppShelf：Windows 个人软件图书馆，桌面应用；自更新使用公开仓库 `Zker67/appshelf` 的 GitHub Release。软件清单支持分类和标签，可以导入导出；能检测本机已装软件，按分类或标签多选逐个批量安装，并检查更新（包括 AppShelf 自身）。“发现”页统一搜索 winget、scoop、GitHub 并一键加入清单，“本机已装”页列出本机已有的程序，“卸载”页按占用空间和安装时间挑选程序卸载并清理残留。任务面板显示每项的阶段、下载进度和实时日志。安装来源为 winget、scoop、GitHub Releases。技术栈：Go + MyGo（`github.com/egoist/mygo`）的 Web 页面窗口，界面是 `frontend/` 的 React 应用；版本以 `go.mod` 和 `frontend/package.json` 为准。
 
 ## 项目不变量
 

@@ -8,7 +8,6 @@ import { AddTargetChip } from "@/components/add-target";
 import { AppIcon } from "@/components/app-icon";
 import { Chip, EmptyState, SearchBox, SelectionBar, WideLabel } from "@/components/common";
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
-import { UninstallButton } from "@/components/dialogs/uninstall-dialog";
 import { AddButton, InShelfButton } from "@/components/row-actions";
 import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
 import { SourceBadge, SourceIcon } from "@/components/source-badge";
@@ -482,7 +481,6 @@ export function InstalledPage() {
                     onFind={() => findSource(e)}
                     onShow={() => nav.showInShelf(e.inShelf)}
                     onUpdate={() => actions.previewInstalledUpdates([e.key])}
-                    onUninstall={() => actions.previewUninstall([e.key])}
                     update={e.source ? updateOf.get(sourceKey(e.source)) : undefined}
                   />
                 ))}
@@ -535,7 +533,6 @@ function EntryRow({
   onFind,
   onShow,
   onUpdate,
-  onUninstall,
   update,
 }: {
   entry: InstalledEntry;
@@ -550,7 +547,6 @@ function EntryRow({
   onFind: () => void;
   onShow: () => void;
   onUpdate: () => void;
-  onUninstall: () => void;
   /** update is what the updates know of its package. */
   update?: UpdateItem;
 }) {
@@ -654,10 +650,6 @@ function EntryRow({
           更新
         </Button>
       )}
-      <UninstallButton
-        onClick={onUninstall}
-        className="opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
-      />
       <div className="flex w-[104px] shrink-0 justify-end">
         {inShelf ? (
           <InShelfButton onClick={onShow} />

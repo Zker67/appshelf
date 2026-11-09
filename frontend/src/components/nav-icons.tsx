@@ -75,6 +75,30 @@ export function InstalledIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+/** UninstallIcon: a bin whose lid lifts for a box falling in. */
+export function UninstallIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...props} className={`nav-icon nav-icon-uninstall ${props.className ?? ""}`}>
+      <rect
+        className="drop"
+        x="10.2"
+        y="1.6"
+        width="3.6"
+        height="3.6"
+        rx="0.8"
+        fill="currentColor"
+        fillOpacity="0.25"
+      />
+      <g className="lid">
+        <path d="M3.8 7h16.4" />
+        <path d="M9.4 7V5.6a1.4 1.4 0 0 1 1.4-1.4h2.4a1.4 1.4 0 0 1 1.4 1.4V7" />
+      </g>
+      <path d="M5.8 7l.9 11.9a2 2 0 0 0 2 1.8h6.6a2 2 0 0 0 2-1.8L18.2 7" />
+      <path d="M10 11v5.6M14 11v5.6" opacity="0.55" />
+    </svg>
+  );
+}
+
 /** UpdatesIcon: an arrow rising out of a ring. */
 export function UpdatesIcon(props: SVGProps<SVGSVGElement>) {
   return (

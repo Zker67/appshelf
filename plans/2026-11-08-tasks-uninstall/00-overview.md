@@ -14,6 +14,7 @@
 | 2 | [02-modern-inventory.md](./02-modern-inventory.md) | 注册表读全字段、先显示注册表结果再补来源、监听注册表与 scoop 目录自动刷新、大小与安装日期 | — |
 | 3 | [03-uninstall.md](./03-uninstall.md) | 按来源卸载：winget / scoop / 应用商店 / 注册表卸载命令；预览、队列、执行后确认、交互式重试 | 1、2 |
 | 4 | [04-leftovers.md](./04-leftovers.md) | 卸载后查找残留：打分与理由、逐项确认、注册表先备份、文件进回收站 | 3 |
+| 5 | [05-uninstall-page.md](./05-uninstall-page.md) | 用户试用后追加：独立的“卸载”页签，按占用空间和安装时间筛选排序，常驻卸载按钮，最近卸载与残留入口 | 3、4 |
 
 ## 总体不变量
 

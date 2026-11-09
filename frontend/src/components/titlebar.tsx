@@ -1,5 +1,11 @@
 import logo from "@/assets/logo.png";
-import { DiscoverIcon, InstalledIcon, ShelfIcon, UpdatesIcon } from "@/components/nav-icons";
+import {
+  DiscoverIcon,
+  InstalledIcon,
+  ShelfIcon,
+  UninstallIcon,
+  UpdatesIcon,
+} from "@/components/nav-icons";
 import { SetupActivity } from "@/components/source-setup";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +31,7 @@ const pages: Array<{ page: Page; label: string; icon: ComponentType<SVGProps<SVG
   { page: "shelf", label: "我的清单", icon: ShelfIcon },
   { page: "discover", label: "发现", icon: DiscoverIcon },
   { page: "updates", label: "更新", icon: UpdatesIcon },
+  { page: "uninstall", label: "卸载", icon: UninstallIcon },
 ];
 
 /**

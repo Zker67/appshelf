@@ -707,6 +707,66 @@ body:has(
   animation: ring-turn 2.2s ease-in-out infinite;
 }
 
+/* Uninstall: a bin and a box. Hover tips the lid open; selected, the lid
+   opens again and again and the box drops in. */
+@keyframes lid-tip {
+  0% {
+    transform: rotate(0);
+  }
+  40% {
+    transform: rotate(-16deg) translateY(-0.6px);
+  }
+  100% {
+    transform: rotate(0);
+  }
+}
+@keyframes lid-open {
+  0%,
+  15%,
+  70%,
+  100% {
+    transform: rotate(0);
+  }
+  30%,
+  55% {
+    transform: rotate(-22deg) translateY(-0.8px);
+  }
+}
+@keyframes box-drop {
+  0%,
+  22% {
+    transform: translateY(-1px);
+    opacity: 0;
+  }
+  32% {
+    opacity: 1;
+  }
+  58% {
+    transform: translateY(9px);
+    opacity: 1;
+  }
+  66%,
+  100% {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+}
+.nav-icon-uninstall .lid {
+  transform-origin: 0% 100%;
+}
+.nav-icon-uninstall .drop {
+  opacity: 0;
+}
+.nav-tab:hover:not([data-active="true"]) .nav-icon-uninstall .lid {
+  animation: lid-tip 0.5s var(--ease-out-soft);
+}
+.nav-tab[data-active="true"] .nav-icon-uninstall .lid {
+  animation: lid-open 2.6s ease-in-out infinite;
+}
+.nav-tab[data-active="true"] .nav-icon-uninstall .drop {
+  animation: box-drop 2.6s ease-in-out infinite;
+}
+
 /* ---- Pages: the page chosen slides in from the side of its tab. ---- */
 @keyframes page-in {
   from {

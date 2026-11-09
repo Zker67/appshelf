@@ -1,6 +1,6 @@
 // The guide: what each page does, how installing stays safe, the keys.
 
-import { DiscoverIcon, InstalledIcon, ShelfIcon } from "@/components/nav-icons";
+import { DiscoverIcon, InstalledIcon, ShelfIcon, UninstallIcon } from "@/components/nav-icons";
 import { Pill } from "@/components/status-badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
@@ -15,6 +15,7 @@ import {
   CircleIcon,
   FileUpIcon,
   FolderTreeIcon,
+  HardDriveIcon,
   KeyboardIcon,
   LayoutDashboardIcon,
   ListChecksIcon,
@@ -24,6 +25,7 @@ import {
   RefreshCwIcon,
   RocketIcon,
   ScanSearchIcon,
+  SearchCheckIcon,
   SearchIcon,
   ShieldCheckIcon,
   Trash2Icon,
@@ -42,6 +44,7 @@ const tabs: Array<{
   { value: "installed", label: "本机已装", icon: InstalledIcon, body: InstalledHelp },
   { value: "shelf", label: "我的清单", icon: ShelfIcon, body: ShelfHelp },
   { value: "discover", label: "发现", icon: DiscoverIcon, body: DiscoverHelp },
+  { value: "uninstall", label: "卸载", icon: UninstallIcon, body: UninstallHelp },
   { value: "keys", label: "快捷键", icon: KeyboardIcon, body: Keys },
 ];
 
@@ -251,6 +254,40 @@ function InstalledHelp() {
           text: (
             <>
               不知道从哪装的程序，点<Ui>查找来源</Ui>到发现里找。
+            </>
+          ),
+        },
+      ]}
+    />
+  );
+}
+
+function UninstallHelp() {
+  return (
+    <Features
+      items={[
+        {
+          icon: HardDriveIcon,
+          title: "按大小和时间挑",
+          text: "左侧按占用空间、安装时间和来源组合筛选，默认最占地方的在前，也可以按最早安装排序。",
+        },
+        {
+          icon: ShieldCheckIcon,
+          title: "先看再卸",
+          text: (
+            <>
+              点<Ui>卸载</Ui>
+              先看卸载方式、命令和发布者签名，确认后才执行；卸完再查一次，还在就记为失败。
+            </>
+          ),
+        },
+        {
+          icon: SearchCheckIcon,
+          title: "清理残留",
+          text: (
+            <>
+              卸载成功后在<Ui>最近卸载</Ui>里点<Ui>查找残留</Ui>
+              ，逐项确认后清理：文件进回收站，注册表先备份。
             </>
           ),
         },

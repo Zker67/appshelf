@@ -12,6 +12,19 @@
 | 4 残留 | 新增 `internal/leftover`：查找目录、`HKCU\Software` 下的键、快捷方式、开机启动项和 scoop `persist`，并按理由打分；有保护规则；清理时文件进回收站（`SHFileOperationW` + `FOF_ALLOWUNDO`），注册表先 `reg export` 再删除。<br>`Tasks.FindLeftovers` / `CleanLeftovers` / `OpenBackup`：结果留在服务端，前端只能按 ID 选。<br>前端：残留弹窗，按等级分组，每项显示理由和分数，清理后逐项显示结果，可打开备份；任务卡片有“查找残留” |
 | 文档 | 新增 `internal/tasklog`、`internal/watch`、`internal/uninstall`、`internal/leftover` 的 README，以及 BCU 外部参考。<br>更新 `internal/README.md`、`internal/api/README.md`、`internal/source/README.md`、`internal/inventory/README.md`、`frontend/README.md`、`docs/api.md`（接口、防误删流程、备份位置）、`docs/operations.md`（数据位置、卸载测试变量）、`docs/architecture/project-structure.md`（分层）、`AGENTS.md`（“绝不误删”不变量）、`README.md`、`CHANGELOG.md`（未发布） |
 
+## 追加：独立的卸载页（阶段 5）
+
+用户试用后，卸载改为有自己的页签，见 [05-uninstall-page.md](./05-uninstall-page.md)：
+
+- 按占用空间、安装时间、来源组合筛选；
+- 默认按占用空间排序；
+- 每行有大小条、安装日期，以及常驻的“卸载”按钮；
+- 多选时显示合计大小；
+- “最近卸载”里可以查找残留和重试；
+- 「本机已装」去掉了悬停才出现的卸载图标。
+
+验证：`bun run --cwd frontend check` 通过，`bun run --cwd frontend test` 61 项通过（新增 7 项卸载页逻辑测试）。
+
 ## 验证结果（2026-11-09）
 
 | 检查 | 结果 |
@@ -38,6 +51,7 @@
 | 来源的 `Uninstall(ctx, app, interactive, log)`（03） | winget 为 `Uninstall(ctx, id, source, interactive, log)`，scoop 为 `Uninstall(ctx, name, global, log)` | 卸载对象来自本机列表，不是清单里的软件 |
 | 真实卸载测试用 `APPSHELF_UNINSTALL_KEY=<本机已装键>`（03） | `APPSHELF_UNINSTALL_REG=<Machine\|User>\<X64\|X86>\<键名>` | 测试直接在 `internal/uninstall` 里按注册表项运行，不需要整个应用读完本机列表 |
 | 清单右键“卸载” | 叫“从本机卸载…” | 避免误解为把软件从清单移除 |
+| 本机已装行菜单“卸载”（03） | 卸载有自己的页签（阶段 5）；本机已装只在多选栏保留“卸载” | 用户试用后要求：卸载看大小和安装时间，不看更新 |
 | 打分理由（04） | 另加“scoop 为它保留的数据 +4”“里面只剩它的快捷方式 +4”“只剩这个软件的设置 +2” | 让 scoop 的 `persist` 目录、开始菜单文件夹和发布者键能达到“很可能” |
 | 卸载程序的临时副本 `Au_.exe`、`Un_A.exe`、`_iu*.tmp` | 另加 `Un_B.exe` 和 `unins*.tmp` | 覆盖 NSIS 和 Inno Setup 的其他副本名 |
 

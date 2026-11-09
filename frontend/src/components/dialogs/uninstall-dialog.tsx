@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorText } from "@/lib/api";
 import { formatBytes } from "@/lib/text";
 import { cn } from "@/lib/utils";
@@ -274,34 +273,5 @@ function Fact({
         {value}
       </dd>
     </>
-  );
-}
-
-/** UninstallButton is the action a row of the installed list offers. */
-export function UninstallButton({
-  onClick,
-  className,
-}: {
-  onClick: () => void;
-  className?: string;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="卸载"
-          className={cn("text-muted-foreground hover:text-destructive", className)}
-          onClick={(ev) => {
-            ev.stopPropagation();
-            onClick();
-          }}
-        >
-          <PackageXIcon />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>卸载…</TooltipContent>
-    </Tooltip>
   );
 }

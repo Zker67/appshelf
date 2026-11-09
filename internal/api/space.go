@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,6 +45,7 @@ type SpaceInfo struct {
 	// settings and caches, the surer first; DataSize is their sizes.
 	Data     []SpaceItem `json:"data"`
 	DataSize int64       `json:"dataSize,omitzero"`
+	Partial  bool        `json:"partial,omitzero"`
 }
 
 // SpaceItem is a directory that may hold a program's data.
@@ -100,8 +102,7 @@ func isDir(p string) bool {
 }
 
 // Space measures the room a program takes: its directory, and the
-// directories named as it that may hold its data, looked for as leftovers
-// are but with the program still installed. Nothing is changed.
+// directories associated with its identity or names. Nothing is changed.
 func (s *Installed) Space(ctx context.Context, key string) (SpaceInfo, error) {
 	a := s.a
 	<-a.ready
@@ -129,8 +130,21 @@ func (s *Installed) Space(ctx context.Context, key string) (SpaceInfo, error) {
 		out.Openable, own = true, dir
 	}
 
-	cfg := leftover.DefaultConfig(a.cfg.Protect...)
-	prog := leftover.Program{Name: e.Name, Publisher: e.Publisher, Location: own, ScoopName: e.ScoopName}
+	cfg := leftover.DataConfig(a.cfg.Protect...)
+	if e.Kind == inventory.Scoop {
+		cfg.ScoopPersist = nil
+		if app := inventory.ScoopDir(e.ScoopName, e.Scope == "Machine"); app != "" {
+			cfg.ScoopPersist = []string{filepath.Join(filepath.Dir(filepath.Dir(app)), "persist")}
+		}
+	}
+	prog := leftover.DataProgram{Program: leftover.Program{Name: e.Name, Publisher: e.Publisher, Location: own, ScoopName: e.ScoopName}, Family: e.PackageFamily}
+	prog.Aliases = append(prog.Aliases, e.DisplayName)
+	if own != "" {
+		prog.Aliases = append(prog.Aliases, filepath.Base(own))
+	}
+	if icon := detect.CommandFile(e.Icon); icon != "" {
+		prog.Aliases = append(prog.Aliases, strings.TrimSuffix(filepath.Base(icon), filepath.Ext(icon)))
+	}
 	var others []leftover.Other
 	for _, o := range all {
 		if o.Key == e.Key || own != "" && strings.EqualFold(filepath.Clean(o.Location), own) {
@@ -138,7 +152,7 @@ func (s *Installed) Space(ctx context.Context, key string) (SpaceInfo, error) {
 		}
 		others = append(others, leftover.Other{Name: o.Name, Publisher: o.Publisher, Location: o.Location})
 	}
-	dirs := dataDirs(leftover.Find(ctx, cfg, prog, others), own, cfg.ShortcutDirs)
+	dirs := dataDirs(leftover.FindData(ctx, cfg, prog, others), own, cfg.ShortcutDirs)
 	if err := ctx.Err(); err != nil {
 		return SpaceInfo{}, err
 	}
@@ -157,12 +171,13 @@ func (s *Installed) Space(ctx context.Context, key string) (SpaceInfo, error) {
 		return SpaceInfo{}, err
 	}
 	if own != "" {
-		out.Program, out.Measured = sizes[0], true
+		out.Program, out.Measured = sizes[0].bytes, true
+		out.Partial = sizes[0].partial
 		sizes = sizes[1:]
 	}
 	known := make(map[string]string, len(dirs))
 	for i, it := range dirs {
-		item := SpaceItem{ID: it.ID, Path: it.Path, Size: sizes[i], Level: LeftoverLevel(it.Level), Reasons: []string{}}
+		item := SpaceItem{ID: it.ID, Path: it.Path, Size: sizes[i].bytes, Level: LeftoverLevel(it.Level), Reasons: []string{}}
 		for _, r := range it.Reasons {
 			if r.Delta > 0 {
 				item.Reasons = append(item.Reasons, r.Text)
@@ -170,6 +185,7 @@ func (s *Installed) Space(ctx context.Context, key string) (SpaceInfo, error) {
 		}
 		out.Data = append(out.Data, item)
 		out.DataSize += item.Size
+		out.Partial = out.Partial || sizes[i].partial
 		known[it.ID] = it.Path
 	}
 	a.mu.Lock()
@@ -203,7 +219,7 @@ func dataDirs(items []leftover.Item, own string, shortcutDirs []string) []leftov
 	slices.SortStableFunc(out, func(a, b leftover.Item) int { return len(a.Path) - len(b.Path) })
 	var kept []leftover.Item
 	for _, it := range out {
-		if !slices.ContainsFunc(kept, func(k leftover.Item) bool { return inside(it.Path, k.Path) }) {
+		if !slices.ContainsFunc(kept, func(k leftover.Item) bool { return strings.EqualFold(it.Path, k.Path) || inside(it.Path, k.Path) }) {
 			kept = append(kept, it)
 		}
 	}
@@ -218,15 +234,44 @@ func dataDirs(items []leftover.Item, own string, shortcutDirs []string) []leftov
 	return kept
 }
 
-// measure returns the sizes of the directories, measured side by side.
-func measure(ctx context.Context, dirs []string) []int64 {
-	sizes := make([]int64, len(dirs))
+type measuredSize struct {
+	bytes   int64
+	partial bool
+}
+
+// measure sums logical file lengths, not allocated disk clusters. Junctions
+// and unreadable files are skipped and reported as a partial measurement.
+func measure(ctx context.Context, dirs []string) []measuredSize {
+	sizes := make([]measuredSize, len(dirs))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for range min(spaceWorkers, len(dirs)) {
 		wg.Go(func() {
 			for i := range jobs {
-				sizes[i] = inventory.DirSize(dirs[i])
+				filepath.WalkDir(dirs[i], func(p string, d fs.DirEntry, err error) error {
+					if ctx.Err() != nil {
+						return fs.SkipAll
+					}
+					if err != nil {
+						sizes[i].partial = true
+						return nil
+					}
+					if d.IsDir() {
+						if d.Type() & ^fs.ModeDir != 0 {
+							sizes[i].partial = true
+							return fs.SkipDir
+						}
+					} else if d.Type().IsRegular() {
+						if info, err := d.Info(); err == nil {
+							sizes[i].bytes += info.Size()
+						} else {
+							sizes[i].partial = true
+						}
+					} else {
+						sizes[i].partial = true
+					}
+					return nil
+				})
 			}
 		})
 	}

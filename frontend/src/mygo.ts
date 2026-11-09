@@ -469,6 +469,7 @@ export interface SpaceInfo {
    */
   data: SpaceItem[];
   dataSize?: number;
+  partial?: boolean;
 }
 
 /** SpaceItem is a directory that may hold a program's data. */
@@ -1053,8 +1054,7 @@ export const Installed = {
   },
   /**
    * Space measures the room a program takes: its directory, and the
-   * directories named as it that may hold its data, looked for as leftovers
-   * are but with the program still installed. Nothing is changed.
+   * directories associated with its identity or names. Nothing is changed.
    */
   space(key: string): Promise<SpaceInfo> {
     return call("Installed.Space", key);

@@ -142,3 +142,7 @@ go tool mygo build              # 先构建前端，再输出到 build/windows-a
 | 某一项安装失败 | 任务面板里点“日志”查看安装命令和完整输出；安装程序需要管理员权限时会弹出 UAC，取消 UAC 会记为“已取消管理员授权” |
 | 启动时提示清单文件无法读取 | 原文件已改名为 `catalog.json.broken-<时间>`，修好后可以从“我的清单”左下角的“导入”导回 |
 | 图标显示成首字母 | 图标库里没有、本机程序也没有图标时就是这样；网络恢复后图标会补上，优先使用本机图标；临时下载失败 2 分钟后可重试，可在“本机已装”点刷新重新请求；没有开始菜单入口的软件包会读取自身的 Logo |
+
+### 空间统计只读核对
+
+`$env:APPSHELF_SPACE_TEST='1'; $env:CGO_ENABLED='0'; go test ./internal/api -run TestSpaceLocalReadOnly -v -count=1`：按本机注册表核对 Bitwarden、Docker Desktop，并检查存在的 Dia 应用包数据目录，输出路径、文件逻辑长度和是否部分统计；不安装、卸载或清理软件。未安装的软件不参与此核对。

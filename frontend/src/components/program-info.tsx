@@ -362,7 +362,7 @@ function spaceFacts(s: SpaceInfo): Fact[] {
     {
       label: "可能相关的数据",
       icon: DatabaseIcon,
-      value: s.data.length > 0 ? formatBytes(s.dataSize ?? 0) : "没有找到",
+      value: s.data.length > 0 ? formatBytes(s.dataSize ?? 0) : "未识别到",
     },
   ];
   if (s.registered) {
@@ -408,7 +408,7 @@ export function SpaceView({ entryKey }: { entryKey: string }) {
       <div className="anim-rise flex flex-col gap-2.5 rounded-xl border bg-card p-4 shadow-xs">
         <div className="flex items-baseline gap-2">
           <SigmaIcon className="size-4 self-center text-primary/70" />
-          <span className="text-[13px] text-muted-foreground">实际占用</span>
+          <span className="text-[13px] text-muted-foreground">已统计占用</span>
           <span className="ml-auto text-[20px] font-semibold tracking-tight tabular-nums">
             {total > 0 ? formatBytes(total) : "—"}
           </span>
@@ -441,6 +441,9 @@ export function SpaceView({ entryKey }: { entryKey: string }) {
         </div>
       </div>
       <FactGrid facts={spaceFacts(s)} />
+      {s.partial && (
+        <Notice tone="warning">部分文件无法读取或是链接，显示的是已读到的大小。</Notice>
+      )}
 
       <InfoCard>
         <InfoRow label="安装位置" icon={FolderIcon}>
@@ -478,11 +481,11 @@ export function SpaceView({ entryKey }: { entryKey: string }) {
           <span className="font-normal text-muted-foreground tabular-nums">{s.data.length}</span>
         </h4>
         <p className="px-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-          按名称推测的设置、缓存目录，仅供参考。卸载不会删除它们，卸载后可在「最近卸载」里查找残留再清理。
+          根据应用标识和目录名称识别，仅供参考；自定义位置可能未计入。
         </p>
         {s.data.length === 0 ? (
           <div className="rounded-xl border border-dashed px-3.5 py-3 text-[13px] text-muted-foreground">
-            没有找到以它命名的数据目录
+            暂未识别到相关数据目录，不代表没有数据占用
           </div>
         ) : (
           <div className="flex flex-col divide-y divide-border/70 rounded-xl border bg-card shadow-xs">

@@ -15,6 +15,12 @@
 | `Clean(ctx, cfg, items, others, own, backupDir)` | 清理传入的项，每项返回 `Outcome`（成功、错误、注册表备份文件）；清理前逐项重新检查 |
 | `Protected(cfg, path, others, own)`、`RegPathOK(cfg, item)` | 文件和注册表位置能否清理，`Find` 和 `Clean` 都用它们 |
 
+## 空间展示专用查找
+
+`DataConfig` / `FindData` 用于仍在本机的软件，仅按应用标识、安装元数据名称、发布者与子目录识别数据归属；不调用残留内容评分，不因 DLL 或大量文件而隐藏目录。只查数据根目录和明确的应用包 / scoop persist，排除安装目录重叠、其他软件安装目录和保护路径。结果只用于空间展示，不能交给 `Clean`；清理仍只接收 `FindLeftovers` 的服务端令牌。
+
+`data_test.go` 覆盖大目录、DLL、包标识、发布者层级、别名、保护路径与残留评分隔离。
+
 ## 找什么
 
 | 类型 | 位置 | 怎么算是它的 |

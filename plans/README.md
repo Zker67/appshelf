@@ -71,3 +71,4 @@ plans/
 | [scoop 下载进度、下载速度与 aria2](./2026-11-09-scoop-progress-aria2/00-overview.md) | `[in-progress]` | scoop 默认下载器按 `Downloading … (大小)` 和缓存里 `.download` 文件的实际大小算进度，aria2 解析读数行；`tasklog` 按字节变化算下载速度；准备 scoop 时一起安装 aria2，已有 scoop 缺 aria2 时也提示 |
 | [本机已装、更新、卸载的详情面板](./2026-11-09-detail-panels/00-overview.md) | `[in-progress]` | 三页点开一行显示右侧详情：更新日志（GitHub 逐版、winget 正文或链接）、实测空间占用与可能相关的数据目录、打开位置、卸载方式；本机已装汇总全部 |
 | [自身更新改成 Vibe Atlas 的方式](./2026-11-09-self-update-like-vibe-atlas/00-overview.md) | `[in-progress]` | 去掉 MyGo 更新窗口：启动 3 秒后后台检查，可设启动时 / 定时 / 不自动；右下角提示「去更新」，后台下载、显示进度、装好自动重新打开；设置说明收进悬停提示 |
+| [软件数据目录空间统计](./2026-11-09-space-data/00-overview.md) | `[in-progress]` | 已实现独立识别应用包、scoop 与常见数据目录，通过测试和打包；待真实窗口验收 |

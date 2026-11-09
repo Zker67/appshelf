@@ -26,7 +26,7 @@
 | `search.go` | 搜索缓存：按来源和查询（忽略大小写和首尾空格）保留来源的原始结果和 winget 版本 10 分钟，最多 64 次搜索；出错不缓存；“已在清单”“本机已装”在发送时重新标记 |
 | [installed.go](./installed.go)、[installed_updates.go](./installed_updates.go) | `Installed`：本机已装列表、与清单对照，以及按已识别 key 直接开始更新；不会自动加入清单。启动时先显示上次运行缓存的列表（`Config.InstalledCache`），同时重新读取；没有缓存时第一次读取先给出只含注册表的列表（`partial`），卸载要等这次读完才用列表，完整列表随后替换；`Config.Watch` 报告 AppShelf 之外的变化时，1.5 秒内的变化合并为一次重读（自己的任务运行时不重读）；卸载任务成功时，`App.dropRemoved` 在循环这一轮结束就把程序从列表里去掉（`inventoryState.drop`），卸载前已开始的读取也不会把它带回，等卸载之后开始的那次读取结束再以它为准；更新任务成功时同样由 `App.markUpgraded` 把同一来源 key 的条目改成更新后的版本、清掉可用更新（`inventoryState.markUpdated`），更新前已开始的读取不会把旧版本带回 |
 | [uninstall.go](./uninstall.go) | `Installed.PreviewUninstall` / `StartUninstall`：只接受本机已装列表里的 key，由 Go 自己读到的条目决定卸载方式（winget、scoop、应用商店或注册表卸载命令），页面传不了命令和路径；开始前再预览一次，只把能卸载的排进队列，一个都不能时返回原因 |
-| [space.go](./space.go) | `Installed.Space` / `OpenLocation`：实测程序目录的大小（注册表登记或推断的安装目录、scoop 应用目录、应用包目录；多个程序共用的目录不统计），用 `leftover.Find` 只读查找以它命名、可能存它数据的目录并实测；打开位置只接受 key 和这次找到的目录 ID，路径由 Go 解析 |
+| [space.go](./space.go) | `Installed.Space` / `OpenLocation`：实测程序目录的大小（注册表登记或推断的安装目录、scoop 应用目录、应用包目录；多个程序共用的目录不统计），用独立的 `leftover.FindData` 按应用包标识、scoop persist、名称与发布者目录查找数据；不按残留可清理评分过滤，读取不全标记 partial；打开位置只接受 key 和这次找到的目录 ID，路径由 Go 解析 |
 | [updates.go](./updates.go)、[dto_updates.go](./dto_updates.go) | `Updates`：清单软件和本机 winget / scoop 软件按来源 key 合并的更新列表、AppShelf 自身新版本、更新方式（`SetMode`、`Skip`、`Snooze`、`Restore`）、预览和开始、历史、更新设置；能否自动更新（`autoBlock`）和安装目录（`installDir`）的判断；`navigate` 事件 |
 | [autoupdate.go](./autoupdate.go) | `checker`：检查的开始与完成、定时、自动更新排队、通知、更新历史 |
 | `about.go` | `About`：版本、打开目录和链接（只允许 http/https）、外观 |

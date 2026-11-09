@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"appshelf/internal/detect"
+	"appshelf/internal/inventory"
 	"appshelf/internal/leftover"
 	"appshelf/internal/source/winget"
 )
@@ -134,6 +135,7 @@ func TestDataDirs(t *testing.T) {
 	items := []leftover.Item{
 		{ID: "1", Kind: leftover.Dir, Path: own, Level: leftover.High},
 		{ID: "2", Kind: leftover.Dir, Path: `C:\Users\u\AppData\Local\Foo`, Level: leftover.Medium},
+		{ID: "duplicate", Kind: leftover.Dir, Path: `C:\Users\u\AppData\Local\Foo`, Level: leftover.Medium},
 		{ID: "3", Kind: leftover.Dir, Path: `C:\Users\u\AppData\Local\Foo\Cache`, Level: leftover.High},
 		{ID: "4", Kind: leftover.Dir, Path: `C:\Users\u\AppData\Roaming\Foo`, Level: leftover.High},
 		{ID: "5", Kind: leftover.Dir, Path: `C:\Apps`, Level: leftover.Medium},
@@ -148,5 +150,71 @@ func TestDataDirs(t *testing.T) {
 	}
 	if strings.Join(ids, ",") != "4,2" {
 		t.Errorf("data dirs = %v", ids)
+	}
+}
+
+func TestSpaceMeasureMissingAndCanceled(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file"), make([]byte, 123), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := measure(context.Background(), []string{root, filepath.Join(root, "missing")})
+	if got[0].bytes != 123 || got[0].partial || !got[1].partial {
+		t.Fatalf("sizes: %+v", got)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := measure(ctx, []string{root}); got[0].bytes != 0 {
+		t.Fatal(got)
+	}
+}
+
+// Opt-in, read-only smoke check of installed program metadata and data paths.
+func TestSpaceLocalReadOnly(t *testing.T) {
+	if os.Getenv("APPSHELF_SPACE_TEST") != "1" {
+		t.Skip("set APPSHELF_SPACE_TEST=1 for local read-only scan")
+	}
+	reg, err := detect.Scan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := inventory.Build(nil, false, nil, reg)
+	var others []leftover.Other
+	for _, e := range entries {
+		others = append(others, leftover.Other{Name: e.Name, Location: e.Location})
+	}
+	cfg := leftover.DataConfig()
+	for _, e := range entries {
+		if !strings.Contains(strings.ToLower(e.Name), "docker desktop") && !strings.EqualFold(e.Name, "Bitwarden") {
+			continue
+		}
+		p := leftover.DataProgram{Program: leftover.Program{Name: e.Name, Publisher: e.Publisher, Location: e.Location}, Aliases: []string{filepath.Base(e.Location)}}
+		// Exclude this program, as Installed.Space does.
+		var rest []leftover.Other
+		for _, o := range others {
+			if !strings.EqualFold(o.Location, e.Location) {
+				rest = append(rest, o)
+			}
+		}
+		dirs := dataDirs(leftover.FindData(context.Background(), cfg, p, rest), e.Location, nil)
+		for _, d := range dirs {
+			size := measure(context.Background(), []string{d.Path})[0]
+			t.Logf("%s: %s bytes=%d partial=%v", e.Name, d.Path, size.bytes, size.partial)
+		}
+		if len(dirs) == 0 {
+			t.Errorf("no data found for %s", e.Name)
+		}
+	}
+	families, _ := filepath.Glob(filepath.Join(os.Getenv("LOCALAPPDATA"), "Packages", "TheBrowserCompany.Dia_*"))
+	for _, family := range families {
+		p := leftover.DataProgram{Program: leftover.Program{Name: "Dia"}, Family: filepath.Base(family)}
+		dirs := leftover.FindData(context.Background(), cfg, p, nil)
+		if len(dirs) == 0 {
+			t.Fatal("Dia data missing")
+		}
+		for _, d := range dirs {
+			size := measure(context.Background(), []string{d.Path})[0]
+			t.Logf("Dia: %s bytes=%d partial=%v", d.Path, size.bytes, size.partial)
+		}
 	}
 }

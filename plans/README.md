@@ -59,4 +59,6 @@ plans/
 | [发现页搜索提速](./2026-11-07-faster-discover-search/00-overview.md) | `[in-progress]` | winget 搜索不再逐个下载版本信息，改为常驻 PowerShell 取 ID 和名称、`winget search` 补版本、结果缓存与页面预热；宽泛关键词从 30–55 秒降到约 0.2 秒出结果、0.4 秒补齐版本；等待用户在真实窗口验收 |
 | [现代化的软件更新](./2026-11-07-modern-updates/00-overview.md) | `[in-progress]` | 本机已装按来源、更新、清单三组组合筛选；按软件设“自动更新 / 提醒我 / 忽略”，跳过某个版本或暂缓 7 天；统一的“更新”页和角标；定期检查、系统通知、托盘与开机后台启动；只对 scoop 和用户范围的 winget 软件自动更新，且程序未在运行 |
 | [冰川蓝 · 轻玻璃](./2026-11-08-glacier-glass/00-overview.md) | `[in-progress]` | 视觉方向重做：冰川蓝配色、渐变细边与三层光影的轻玻璃材质、缓慢流动的冰雾背景、浮动玻璃面板布局；借鉴 glass-ui 的 CSS 材质思路，不装它的组件 |
+| [来源首次准备](./2026-11-08-source-setup/00-overview.md) | `[in-progress]` | 第一次检测到 winget 缺模块或没有 scoop 时弹出「准备安装来源」直接安装；scoop 用官方安装器装到当前用户；设置页两个来源都有安装按钮；等待用户在真实窗口验收 |
+| [设置里填写 GitHub token](./2026-11-08-github-token/00-overview.md) | `[in-progress]` | 设置页直接填写、更换、清除 GitHub token：先向 GitHub 验证，DPAPI 加密保存在本机，立即生效，优先于环境变量；token 不回到前端；等待用户在真实窗口验收 |
 | [软件备注](./2026-11-07-app-notes/00-overview.md) | `[in-progress]` | 每个软件的 Markdown 备注存进清单 `apps[].note`：详情「备注」页签（任务可勾选）、编辑 / 分栏 / 预览的编辑弹窗（工具栏、快捷键、自动保存）、行内备注图标、搜索备注、导入合并补备注；等待用户在真实窗口验收 |

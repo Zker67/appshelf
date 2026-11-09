@@ -236,7 +236,8 @@ type SourceInfo struct {
 	Checked bool               `json:"checked"`
 	OK      bool               `json:"ok"`
 	Reason  string             `json:"reason,omitempty"`
-	// Fixable means AppShelf can fix it: install winget's module.
+	// Fixable means the source is unavailable and AppShelf can fix it:
+	// install winget's module, or scoop.
 	Fixable bool `json:"fixable,omitempty"`
 }
 
@@ -254,11 +255,15 @@ func rateOf(r github.Rate) RateInfo {
 
 // SourcesOverview is the sources' state.
 type SourcesOverview struct {
-	Sources          []SourceInfo `json:"sources"`
-	CanInstallModule bool         `json:"canInstallModule"`
-	GitHubToken      bool         `json:"githubToken"`
-	GitHubRate       RateInfo     `json:"githubRate"`
-	GitHubSearchRate RateInfo     `json:"githubSearchRate"`
+	Sources []SourceInfo `json:"sources"`
+	// SetupSeen means the first prompt to set up the sources was answered.
+	SetupSeen   bool `json:"setupSeen"`
+	GitHubToken bool `json:"githubToken"`
+	// GitHubTokenFrom is where the token comes from; the token itself
+	// never leaves Go.
+	GitHubTokenFrom  TokenSource `json:"githubTokenFrom"`
+	GitHubRate       RateInfo    `json:"githubRate"`
+	GitHubSearchRate RateInfo    `json:"githubSearchRate"`
 }
 
 // SearchHit is a package a search found, with what this machine and the
@@ -342,6 +347,15 @@ type InstalledList struct {
 	At      time.Time        `json:"at,omitzero"`
 	Notes   []string         `json:"notes"`
 }
+
+// TokenSource is where the GitHub token comes from.
+type TokenSource string
+
+const (
+	TokenNone  TokenSource = ""      // no token
+	TokenSaved TokenSource = "saved" // entered in the settings, kept encrypted
+	TokenEnv   TokenSource = "env"   // GH_TOKEN or GITHUB_TOKEN
+)
 
 // ThemeSource is the appearance chosen.
 type ThemeSource string

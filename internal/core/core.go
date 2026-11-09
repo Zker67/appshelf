@@ -602,35 +602,37 @@ func (c *Core) Search(t catalog.SourceType, query string, done func([]source.Sea
 	}()
 }
 
-type moduleInstaller interface {
-	InstallModule(ctx context.Context, log io.Writer) error
+// fixer is a source that can make itself usable: winget installs its
+// PowerShell module, scoop installs scoop.
+type fixer interface {
+	Fix(ctx context.Context, log io.Writer) error
 }
 
-// CanInstallModule reports whether the winget source can install its
-// PowerShell module.
-func (c *Core) CanInstallModule() bool {
-	_, ok := c.sources[catalog.Winget].(moduleInstaller)
+// CanFix reports whether a source can make itself usable.
+func (c *Core) CanFix(t catalog.SourceType) bool {
+	_, ok := c.sources[t].(fixer)
 	return ok
 }
 
-// InstallModule installs the winget source's PowerShell module in the
-// background, checks the source again and reads the states again.
-func (c *Core) InstallModule(done func(error)) {
-	src := c.sources[catalog.Winget]
-	m, ok := src.(moduleInstaller)
+// Fix makes a source usable in the background, as by installing winget's
+// PowerShell module or scoop, then checks the source again and reads the
+// states again.
+func (c *Core) Fix(t catalog.SourceType, done func(error)) {
+	src := c.sources[t]
+	f, ok := src.(fixer)
 	if !ok {
-		done(errors.New("winget 来源不可用"))
+		done(errors.New("这个来源无法由 AppShelf 安装"))
 		return
 	}
 	go func() {
-		log, _, lerr := c.openLog("install-module")
+		log, _, lerr := c.openLog("setup-" + string(t))
 		var w io.Writer = io.Discard
 		if lerr == nil {
 			w = log
 			defer log.Close()
 		}
-		err := m.InstallModule(c.ctx, w)
-		c.setAvailability(catalog.Winget, src.Check(c.ctx))
+		err := f.Fix(c.ctx, w)
+		c.setAvailability(t, src.Check(c.ctx))
 		c.post(func() {
 			done(err)
 			if err == nil {

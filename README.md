@@ -82,7 +82,7 @@ bun run --cwd frontend check    # 前端格式、lint、类型检查
 go tool mygo build              # 打包到 build/windows-amd64/：exe 和安装包
 ```
 
-GitHub 软件较多时，建议设置环境变量 `GH_TOKEN`（或 `GITHUB_TOKEN`），否则每小时只有 60 次 GitHub 请求。完整说明见 [运行与部署说明](./docs/operations.md)。
+GitHub 软件较多时，建议在“设置 → 安装来源”填写 GitHub token（或设置环境变量 `GH_TOKEN` / `GITHUB_TOKEN`），否则每小时只有 60 次 GitHub 请求。完整说明见 [运行与部署说明](./docs/operations.md)。
 
 ## 配置说明
 
@@ -97,7 +97,7 @@ GitHub 软件较多时，建议设置环境变量 `GH_TOKEN`（或 `GITHUB_TOKEN
 
 - `mygo.json`：应用名、标识符、版本号、输出目录，以及自更新的公钥和 GitHub 仓库。
 - `CHANGELOG.md`：每个版本的更新说明，显示在自更新窗口里。
-- 环境变量 `GH_TOKEN` / `GITHUB_TOKEN`：可选的 GitHub token，只从环境变量读取。
+- GitHub token（可选）：在设置里填写，验证后加密保存在本机；也可以用环境变量 `GH_TOKEN` / `GITHUB_TOKEN`，两者都有时用设置里的。
 
 ### 项目文档
 

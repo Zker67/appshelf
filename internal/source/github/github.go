@@ -102,18 +102,19 @@ type Options struct {
 
 // Source is the GitHub releases source.
 type Source struct {
-	api, token, agent string
-	store             *state.Store
-	tempDir           string
-	machine           string
-	apiClient         *http.Client
-	dlClient          *http.Client
+	api, agent string
+	store      *state.Store
+	tempDir    string
+	machine    string
+	apiClient  *http.Client
+	dlClient   *http.Client
 	// scan and shellRun are the registry and the installer launch, which
 	// tests replace.
 	scan     func() ([]detect.Entry, error)
 	shellRun func(file, params, dir string) (uint32, error)
 
 	mu         sync.Mutex
+	token      string
 	rate       Rate // of the core API
 	searchRate Rate // of the search API, counted apart, 10 a minute without a token
 }
@@ -142,14 +143,77 @@ func (s *Source) Type() catalog.SourceType { return catalog.GitHub }
 
 // Check is always available: network problems show on each app.
 func (s *Source) Check(context.Context) source.Availability {
-	if s.token != "" {
+	if s.HasToken() {
 		return source.Availability{OK: true, Reason: "已设置 GitHub token"}
 	}
 	return source.Availability{OK: true, Reason: "未设置 GitHub token，每小时最多 60 次请求"}
 }
 
 // HasToken reports whether requests carry a token.
-func (s *Source) HasToken() bool { return s.token != "" }
+func (s *Source) HasToken() bool { return s.currentToken() != "" }
+
+func (s *Source) currentToken() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.token
+}
+
+// SetToken changes the token later requests carry, without asking GitHub;
+// "" sends none. The quotas were the old token's: they are forgotten.
+func (s *Source) SetToken(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.token, s.rate, s.searchRate = token, Rate{}, Rate{}
+}
+
+// ErrBadToken is a token GitHub does not accept.
+var ErrBadToken = errors.New("GitHub 不接受这个 token，请确认复制完整、没有过期或被撤销")
+
+// UseToken asks GitHub for the quotas of token, which costs no request,
+// and when GitHub accepts it, carries it on later requests with its
+// quotas. A token GitHub refuses is ErrBadToken and changes nothing.
+func (s *Source) UseToken(ctx context.Context, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.api+"/rate_limit", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", s.agent)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := s.apiClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("无法连接 GitHub 验证 token：%w", err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized:
+		return ErrBadToken
+	default:
+		return fmt.Errorf("验证 token 时 GitHub 返回 %d", resp.StatusCode)
+	}
+	type quota struct {
+		Limit, Remaining int
+		Reset            int64
+	}
+	var body struct {
+		Resources struct{ Core, Search quota }
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
+		return fmt.Errorf("GitHub 的回复无法解析：%w", err)
+	}
+	rate := func(q quota) Rate {
+		if q.Limit == 0 {
+			return Rate{}
+		}
+		return Rate{Known: true, Limit: q.Limit, Remaining: q.Remaining, Reset: time.Unix(q.Reset, 0)}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.token, s.rate, s.searchRate = token, rate(body.Resources.Core), rate(body.Resources.Search)
+	return nil
+}
 
 // Rate returns the quota GitHub reported last.
 func (s *Source) Rate() Rate {
@@ -177,8 +241,8 @@ func (s *Source) get(ctx context.Context, path string, out any) error {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", s.agent)
-	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+	if token := s.currentToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := s.apiClient.Do(req)
 	if err != nil {

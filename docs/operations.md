@@ -21,8 +21,8 @@ AppShelf 只允许运行一个实例；再次启动时，已经打开的窗口�
 | 依赖 | 用途 | 没有时 |
 |---|---|---|
 | winget（App Installer） | winget 来源的安装和更新 | winget 软件显示“不可用”，不能安装 |
-| PowerShell 模块 `Microsoft.WinGet.Client` | 读取 winget 软件的安装状态、可用更新和搜索 | “设置 → 安装来源”提示“安装模块”，确认后执行 `Install-Module Microsoft.WinGet.Client -Scope CurrentUser` |
-| scoop | scoop 来源，可选 | scoop 软件显示“不可用：未安装 scoop”，不影响其他来源 |
+| PowerShell 模块 `Microsoft.WinGet.Client` | 读取 winget 软件的安装状态、可用更新和搜索 | 第一次检测到缺少时弹出「准备安装来源」，可直接安装；之后在“设置 → 安装来源”点“安装模块”。执行 `Install-Module Microsoft.WinGet.Client -Scope CurrentUser` |
+| scoop | scoop 来源，可选 | scoop 软件显示“不可用：未安装 scoop”，不影响其他来源；第一次检测到时在「准备安装来源」里可直接安装，之后在“设置 → 安装来源”点“安装 scoop”。执行官方安装器 `irm get.scoop.sh \| iex`（当前用户，不需要管理员；以管理员运行 AppShelf 时不能安装） |
 | 网络访问 `api.github.com` | GitHub 来源的最新 release 和下载 | 是否已装照常显示（检测只看本机注册表），但读不到最新 release：不能检查更新，安装会失败并说明原因 |
 
 AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`），不需要 `pwsh`。每个子进程会补齐该宿主的用户、系统和内置模块搜索目录，并保留自定义路径，避免从 PowerShell 7 启动时读不到已安装的模块；不修改父进程或系统环境。
@@ -31,7 +31,11 @@ AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\Syst
 
 - `mygo.json`：`name`、`identifier`、`version`、`out`（构建输出目录）、`updates`（自更新的公钥和 GitHub 仓库）。
 - `CHANGELOG.md`：每个版本一节，标题写成 `## 版本号`；构建时成为自更新窗口里的更新说明。
-- 环境变量 `GH_TOKEN` 或 `GITHUB_TOKEN`（可选）：GitHub API 的 token。不设置时每个 IP 每小时只有 60 次请求，检查几次 GitHub 软件就会用完；用完后 GitHub 软件附注“GitHub 请求额度已用完”，不能检查更新和安装，直到额度恢复。token 只从环境变量读取，不存盘、不写日志；只读公开仓库，不需要任何权限范围。“设置 → 安装来源”显示当前是否使用了 token 以及剩余额度。
+- GitHub token（可选）：不设置时每个 IP 每小时只有 60 次请求，检查几次 GitHub 软件就会用完；用完后 GitHub 软件附注“GitHub 请求额度已用完”，不能检查更新和安装，直到额度恢复。只读公开仓库，不需要任何权限范围。两种设置方式：
+  - 在“设置 → 安装来源 → GitHub 请求额度”点“填写 token”粘贴：先向 GitHub 的 `/rate_limit` 验证（不占额度），GitHub 不接受的不保存；保存后立即生效，不用重启。token 用 Windows DPAPI 以当前用户加密后存到 `github-token.bin`，界面读不回，“清除”删除该文件。
+  - 环境变量 `GH_TOKEN` 或 `GITHUB_TOKEN`，启动时读取。两者都有时用设置里保存的。
+
+  token 只放在请求头里，不写日志、不随清单导出。设置页显示 token 来自哪里以及剩余额度。
 
 ### 数据位置
 
@@ -39,7 +43,8 @@ AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\Syst
 |---|---|
 | `%AppData%\AppShelf\catalog.json` | 软件清单，格式见 [API 与接口说明](./api.md) |
 | `%AppData%\AppShelf\state.json` | 本机状态（GitHub 安装记录、每个软件的更新方式、最近更新记录） |
-| `%AppData%\AppShelf\settings.json` | 外观（跟随系统、浅色、深色）；更新设置 `updates`：`checkEvery`（`off`、`1h`、`3h`、`6h`、`12h`、`24h`，默认 `6h`）、`quiet`（不发通知）、`background`（关闭窗口后留在托盘） |
+| `%AppData%\AppShelf\settings.json` | 外观（跟随系统、浅色、深色）；更新设置 `updates`：`checkEvery`（`off`、`1h`、`3h`、`6h`、`12h`、`24h`，默认 `6h`）、`quiet`（不发通知）、`background`（关闭窗口后留在托盘）；`sourceSetupSeen`（已回答首次「准备安装来源」提示，不再自动弹出） |
+| `%AppData%\AppShelf\github-token.bin` | 设置里填写的 GitHub token，以当前 Windows 用户的 DPAPI 加密；复制到别的电脑或用户下无法解密。不入库、不随清单导出 |
 | 当前用户的 `HKCU\...\Run` 启动项 | 打开“开机时启动”后由 MyGo 写入，可在设置里关闭，或在任务管理器的“启动应用”里禁用 |
 | `%AppData%\AppShelf\logs\` | 每次安装或更新一份日志，`YYYYMMDD-HHMMSS-<install|upgrade>-<软件 ID>.log`；任务面板的“日志”按钮直接打开 |
 | `%AppData%\AppShelf\updater.json` | MyGo 更新器的设置 |
@@ -117,7 +122,8 @@ go tool mygo build              # 先构建前端，再输出到 build/windows-a
 | 现象 | 处理 |
 |---|---|
 | 只剩“本机”类型且无法显示可更新，或 winget 提示缺少模块 | 先使用 0.3.0 或更新版本重新启动，修复继承 PowerShell 7 模块路径的问题；若确实没有安装模块，再在“设置 → 安装来源”点“安装模块”，或手动执行 `Install-Module Microsoft.WinGet.Client -Scope CurrentUser` |
-| GitHub 软件附注“GitHub 请求额度已用完” | 设置 `GH_TOKEN` 后重新启动 AppShelf，或等待提示里的恢复时间 |
+| 安装 scoop 失败 | 在“设置 → 关于 → 安装日志”打开 `*-setup-scoop.log` 查看官方安装器的输出；以管理员身份运行的 AppShelf 不能安装 scoop，请以普通用户打开 |
+| GitHub 软件附注“GitHub 请求额度已用完” | 在“设置 → 安装来源”填写 GitHub token（立即生效），或设置 `GH_TOKEN` 后重新启动 AppShelf，或等待提示里的恢复时间 |
 | 某一项安装失败 | 任务面板里点“日志”查看安装命令和完整输出；安装程序需要管理员权限时会弹出 UAC，取消 UAC 会记为“已取消管理员授权” |
 | 启动时提示清单文件无法读取 | 原文件已改名为 `catalog.json.broken-<时间>`，修好后可以从“我的清单”左下角的“导入”导回 |
 | 图标显示成首字母 | 图标库里没有、本机程序也没有图标时就是这样；网络恢复后图标会补上，优先使用本机图标；临时下载失败 2 分钟后可重试，可在“本机已装”点刷新重新请求；没有开始菜单入口的软件包会读取自身的 Logo |

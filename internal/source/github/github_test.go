@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -330,5 +331,80 @@ func TestInstallRealOptIn(t *testing.T) {
 	st, _ := s.Recheck(context.Background(), app)
 	if !st.IsInstalled() {
 		t.Errorf("after installing: %+v", st)
+	}
+}
+
+// TestUseToken checks a token against /rate_limit, whose quotas it keeps,
+// and carries only an accepted token.
+func TestUseToken(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.URL.Path+" "+r.Header.Get("Authorization"))
+		mu.Unlock()
+		if r.URL.Path == "/rate_limit" && r.Header.Get("Authorization") != "Bearer good" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/rate_limit" {
+			fmt.Fprint(w, `{"resources":{"core":{"limit":5000,"remaining":4990,"reset":1800000000},"search":{"limit":30,"remaining":30,"reset":1800000060}}}`)
+			return
+		}
+		fmt.Fprint(w, `{"full_name":"o/r"}`)
+	}))
+	t.Cleanup(srv.Close)
+	s := New(Options{TempDir: t.TempDir(), API: srv.URL, Token: "env"})
+	if !s.HasToken() {
+		t.Fatal("the token of the options is not used")
+	}
+
+	if err := s.UseToken(context.Background(), "bad"); !errors.Is(err, ErrBadToken) {
+		t.Fatalf("bad token = %v", err)
+	}
+	if _, err := s.Repository(context.Background(), "o/r"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UseToken(context.Background(), "good"); err != nil {
+		t.Fatal(err)
+	}
+	if r := s.Rate(); !r.Known || r.Limit != 5000 || r.Remaining != 4990 {
+		t.Errorf("core quota = %+v", r)
+	}
+	if r := s.SearchRate(); !r.Known || r.Limit != 30 {
+		t.Errorf("search quota = %+v", r)
+	}
+	if _, err := s.Repository(context.Background(), "o/r"); err != nil {
+		t.Fatal(err)
+	}
+	s.SetToken("")
+	if s.HasToken() || s.Rate().Known {
+		t.Error("clearing kept the token or its quota")
+	}
+	if _, err := s.Repository(context.Background(), "o/r"); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"/rate_limit Bearer bad", "/repos/o/r Bearer env", "/rate_limit Bearer good", "/repos/o/r Bearer good", "/repos/o/r "}
+	if !slices.Equal(seen, want) {
+		t.Errorf("requests = %q, want %q", seen, want)
+	}
+}
+
+// TestUseTokenReal asks the real GitHub about a token that is not one: it
+// is refused, and the source keeps sending none.
+func TestUseTokenReal(t *testing.T) {
+	s := New(Options{TempDir: t.TempDir()})
+	err := s.UseToken(context.Background(), "ghp_AppShelfTestNotAToken0000000000000000")
+	if err != nil && strings.Contains(err.Error(), "无法连接") {
+		t.Skipf("GitHub unreachable: %v", err)
+	}
+	if !errors.Is(err, ErrBadToken) {
+		t.Fatalf("UseToken = %v, want ErrBadToken", err)
+	}
+	if s.HasToken() {
+		t.Error("a refused token is carried")
 	}
 }

@@ -306,7 +306,10 @@ export interface SourceInfo {
   checked: boolean;
   ok: boolean;
   reason?: string;
-  /** Fixable means AppShelf can fix it: install winget's module. */
+  /**
+   * Fixable means the source is unavailable and AppShelf can fix it:
+   * install winget's module, or scoop.
+   */
   fixable?: boolean;
 }
 
@@ -315,8 +318,14 @@ export type SourceType = string;
 /** SourcesOverview is the sources' state. */
 export interface SourcesOverview {
   sources: SourceInfo[];
-  canInstallModule: boolean;
+  /** SetupSeen means the first prompt to set up the sources was answered. */
+  setupSeen: boolean;
   githubToken: boolean;
+  /**
+   * GitHubTokenFrom is where the token comes from; the token itself
+   * never leaves Go.
+   */
+  githubTokenFrom: TokenSource;
   githubRate: RateInfo;
   githubSearchRate: RateInfo;
 }
@@ -364,6 +373,9 @@ export type TaskState = "waiting" | "running" | "succeeded" | "skipped" | "faile
 
 /** ThemeSource is the appearance chosen. */
 export type ThemeSource = "system" | "light" | "dark";
+
+/** TokenSource is where the GitHub token comes from. */
+export type TokenSource = "" | "saved" | "env";
 
 /** UpdateHold is why an available update is not offered. */
 export type UpdateHold = "" | "ignore" | "skip" | "snooze";
@@ -649,7 +661,7 @@ export const Tasks = {
 
 /**
  * Sources are winget, scoop and GitHub: whether they can be used here,
- * fixing winget, and finding a package's exact identity.
+ * setting up winget and scoop, and finding a package's exact identity.
  */
 export const Sources = {
   /**
@@ -660,11 +672,26 @@ export const Sources = {
     return call("Sources.CheckGitHub", repo, assetPattern);
   },
   /**
-   * InstallModule installs winget's PowerShell module for the user, then
-   * checks the sources and reads the states again. It takes minutes.
+   * ClearGitHubToken forgets the token saved in the settings; GH_TOKEN or
+   * GITHUB_TOKEN is used again, when set.
    */
-  installModule(): Promise<void> {
-    return call("Sources.InstallModule");
+  clearGitHubToken(): Promise<void> {
+    return call("Sources.ClearGitHubToken");
+  },
+  /**
+   * DismissSetup keeps that the first prompt to set up the sources was
+   * answered, so that it is not shown again.
+   */
+  dismissSetup(): Promise<void> {
+    return call("Sources.DismissSetup");
+  },
+  /**
+   * Fix makes a source usable for the user: for winget it installs the
+   * PowerShell module, for scoop scoop itself. It then checks the sources and
+   * reads the states again. It takes minutes.
+   */
+  fix(sourceType: SourceType): Promise<void> {
+    return call("Sources.Fix", sourceType);
   },
   /** Overview returns the sources' state and GitHub's quotas. */
   overview(): Promise<SourcesOverview> {
@@ -673,6 +700,15 @@ export const Sources = {
   /** Search finds packages of winget or scoop, for an app's source. */
   search(sourceType: SourceType, query: string): Promise<SearchHit[]> {
     return call("Sources.Search", sourceType, query);
+  },
+  /**
+   * SetGitHubToken checks a GitHub token with GitHub, which costs no
+   * request, then keeps it encrypted for this Windows user and uses it at
+   * once, before GH_TOKEN and GITHUB_TOKEN. A token GitHub refuses is not
+   * kept. The token never comes back to the page.
+   */
+  setGitHubToken(token: string): Promise<void> {
+    return call("Sources.SetGitHubToken", token);
   },
 } as const;
 

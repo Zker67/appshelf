@@ -88,9 +88,9 @@ Install-Module -Name Microsoft.WinGet.Client -Scope CurrentUser -Force -AllowClo
 Write-Result @{ Ok = $true }
 `
 
-// InstallModule installs the PowerShell module for the current user, from
-// the PowerShell Gallery.
-func (s *Source) InstallModule(ctx context.Context, log io.Writer) error {
+// Fix installs the PowerShell module for the current user, from the
+// PowerShell Gallery.
+func (s *Source) Fix(ctx context.Context, log io.Writer) error {
 	_, err := runner.PowerShell(ctx, installModuleScript, nil, nil, runner.Options{Log: log, Timeout: 10 * time.Minute})
 	if err != nil {
 		return fmt.Errorf("安装 %s 失败：%w", ModuleName, err)

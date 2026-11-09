@@ -35,9 +35,19 @@ func New() *Source { return &Source{} }
 
 func (s *Source) Type() catalog.SourceType { return catalog.Scoop }
 
+// findScoop adds the user's and the machine's PATH from the registry when
+// scoop is not on the inherited one: scoop installed after AppShelf started
+// is only on those.
+const findScoop = `
+if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+  $env:PATH = @($env:PATH, [Environment]::GetEnvironmentVariable('Path', 'User'), [Environment]::GetEnvironmentVariable('Path', 'Machine')) -join ';'
+}
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+`
+
 // scoopPrelude lets scoop's own scripts run as they expect: they rely on
 // errors that do not stop them.
-const scoopPrelude = `
+const scoopPrelude = findScoop + `
 if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
   Write-Failure 'scoop-missing'
   exit 20
@@ -45,19 +55,88 @@ if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
 $ErrorActionPreference = 'Continue'
 `
 
-const codeMissing = 20
+const (
+	codeMissing = 20
+	codeAdmin   = 21
+)
 
-// Check finds scoop.
+const checkScript = findScoop + `
+Write-Result @{ Found = [bool](Get-Command scoop -ErrorAction SilentlyContinue); Admin = [bool]$isAdmin }
+`
+
+// Check finds scoop. Without it, AppShelf can install scoop, unless it runs
+// as administrator, which scoop's installer refuses.
 func (s *Source) Check(ctx context.Context) source.Availability {
-	_, err := runner.PowerShell(ctx, scoopPrelude+`Write-Result @{ Ok = $true }`, nil, nil, runner.Options{Timeout: time.Minute})
-	var se *runner.ScriptError
-	if errors.As(err, &se) && se.ExitCode == codeMissing {
-		return source.Availability{Reason: "未安装 scoop"}
-	}
-	if err != nil {
+	var out struct{ Found, Admin bool }
+	if _, err := runner.PowerShell(ctx, checkScript, nil, &out, runner.Options{Timeout: time.Minute}); err != nil {
 		return source.Availability{Reason: "无法检查 scoop：" + err.Error()}
 	}
+	if !out.Found {
+		if out.Admin {
+			return source.Availability{Reason: "未安装 scoop（AppShelf 以管理员身份运行，scoop 安装器不允许，请以普通用户打开后安装）"}
+		}
+		return source.Availability{Reason: "未安装 scoop", Fixable: true}
+	}
 	return source.Availability{OK: true, Reason: "已找到 scoop"}
+}
+
+// installScoopScript installs scoop for the current user with its official
+// installer. As scoop's guide says, it first lets the user's PowerShell run
+// local scripts, as scoop's shims are, when nothing allows them yet and no
+// group policy decides. The installer can stop without an error, by break
+// when run by Invoke-Expression, which the loop keeps from ending the
+// script: finding scoop afterwards is what tells it worked.
+const installScoopScript = findScoop + `
+if ($isAdmin) {
+  Write-Failure 'admin'
+  exit 21
+}
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+$scopes = @{}
+Get-ExecutionPolicy -List | ForEach-Object { $scopes[[string]$_.Scope] = [string]$_.ExecutionPolicy }
+$effective = 'Restricted'
+foreach ($scope in 'MachinePolicy', 'UserPolicy', 'CurrentUser', 'LocalMachine') {
+  if ($scopes[$scope] -and $scopes[$scope] -ne 'Undefined') { $effective = $scopes[$scope]; break }
+}
+$byPolicy = ($scopes['MachinePolicy'] -ne 'Undefined') -or ($scopes['UserPolicy'] -ne 'Undefined')
+if (-not $byPolicy -and $effective -in @('Restricted', 'AllSigned')) {
+  Write-Output '> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser'
+  Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+}
+Write-Output '> Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression'
+$ErrorActionPreference = 'Continue'
+do {
+  Invoke-RestMethod -Uri 'https://get.scoop.sh' | Invoke-Expression
+} while ($false)
+$ErrorActionPreference = 'Stop'
+$env:PATH = @($env:PATH, [Environment]::GetEnvironmentVariable('Path', 'User')) -join ';'
+if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+  Write-Failure 'scoop-missing'
+  exit 20
+}
+Write-Result @{ Ok = $true }
+`
+
+// Fix installs scoop for the current user, with scoop's official
+// installer, from get.scoop.sh.
+func (s *Source) Fix(ctx context.Context, log io.Writer) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out struct{ Ok bool }
+	_, err := runner.PowerShell(ctx, installScoopScript, nil, &out, runner.Options{Log: log, Timeout: 10 * time.Minute})
+	var se *runner.ScriptError
+	if errors.As(err, &se) {
+		switch se.ExitCode {
+		case codeAdmin:
+			return errors.New("AppShelf 以管理员身份运行，scoop 安装器不允许安装，请以普通用户打开 AppShelf 后重试")
+		case codeMissing:
+			return errors.New("scoop 安装器已结束，但仍找不到 scoop，详见安装日志")
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("安装 scoop 失败：%w", err)
+	}
+	return nil
 }
 
 const exportScript = scoopPrelude + `

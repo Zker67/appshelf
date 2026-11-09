@@ -1,6 +1,7 @@
 // The window: the title bar with the pages, and the page shown. A page
 // stays mounted once shown, keeping its search, filters and scroll.
 
+import { SourceSetupPrompt } from "@/components/source-setup";
 import { Titlebar } from "@/components/titlebar";
 import { listenForChanges, useShelf } from "@/lib/api";
 import { events } from "@/mygo";
@@ -28,6 +29,7 @@ export default function App() {
           <Pages />
         </div>
         <OpeningNotes />
+        <SourceSetupPrompt />
         <Navigation />
       </ActionsProvider>
     </NavProvider>

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"appshelf/internal/catalog"
+	"appshelf/internal/runner"
 	"appshelf/internal/source"
 )
 
@@ -86,6 +87,38 @@ func available(t *testing.T) *Source {
 		t.Skipf("scoop not available: %s", av.Reason)
 	}
 	return s
+}
+
+// TestCheckReal checks scoop on this machine, which only reads: it finds
+// scoop, or says it is missing and whether AppShelf can install it.
+func TestCheckReal(t *testing.T) {
+	av := New().Check(context.Background())
+	switch {
+	case av.OK:
+		if av.Fixable {
+			t.Errorf("available scoop is fixable: %+v", av)
+		}
+	case strings.HasPrefix(av.Reason, "未安装 scoop"):
+	default:
+		t.Errorf("check failed: %+v", av)
+	}
+}
+
+// TestInstallScriptParses parses the script that installs scoop, without
+// running it.
+func TestInstallScriptParses(t *testing.T) {
+	const parse = `
+$errors = $null
+[void][System.Management.Automation.Language.Parser]::ParseInput([string]$P.Script, [ref]$null, [ref]$errors)
+Write-Result @{ Errors = @($errors | ForEach-Object { $_.Message }) }
+`
+	var out struct{ Errors []string }
+	if _, err := runner.PowerShell(context.Background(), parse, map[string]any{"Script": installScoopScript}, &out, runner.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Errors) > 0 {
+		t.Fatalf("install script: %v", out.Errors)
+	}
 }
 
 func TestStatusesReal(t *testing.T) {

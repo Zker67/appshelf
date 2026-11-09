@@ -18,6 +18,7 @@ AppShelf 的全部业务代码。分层和依赖方向见 [项目结构总览](.
 | [procs](./procs) | `procs.go`、`procs_windows.go` | 某个目录下的程序是否正在运行，见 [procs/README.md](./procs/README.md) | 真实进程（测试程序自己） |
 | [version](./version) | `version.go` | 版本号规范化（去掉 `v`、`refs/tags/`、`+build`）、比较和大版本升级判断 | 单元测试 |
 | [jsonfile](./jsonfile) | `jsonfile.go` | JSON 读取和原子写入（同目录临时文件、落盘、改名） | 由 `catalog`、`state` 的测试覆盖 |
+| [secret](./secret) | `secret.go`、`secret_windows.go` | 用 Windows DPAPI 以当前用户加密保存机密（设置里的 GitHub token），见 [secret/README.md](./secret/README.md) | 真实 DPAPI 加解密、明文不落盘 |
 
 ## 约定
 

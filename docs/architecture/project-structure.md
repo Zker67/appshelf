@@ -72,7 +72,7 @@ Go 模块 `appshelf`，最初由 `mygo init -template native` 生成，0.2.0 起
 | 4 | `internal/source/winget`、`internal/source/scoop`、`internal/source/github` | 三个安装来源 |
 | 5 | `internal/source`、`internal/runner`、`internal/detect` | 来源接口和状态类型；外部命令、PowerShell 脚本、提权启动安装程序；注册表扫描、检测规则和规则建议 |
 | 6 | `internal/catalog`、`internal/state`、`internal/version` | 清单的格式、校验、编辑、导入合并；本机状态；版本号规范化和比较 |
-| 7 | `internal/jsonfile` | JSON 原子写入 |
+| 7 | `internal/jsonfile`、`internal/secret` | JSON 原子写入；以当前用户 DPAPI 加密保存机密 |
 
 前端只调用 `internal/api` 绑定的服务（客户端由 `go tool mygo generate` 生成到 `frontend/src/mygo.ts`），图标走 Go 注册的 `icon` 协议；安装判断、检测和队列都在 Go 端。
 

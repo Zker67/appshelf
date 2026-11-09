@@ -21,7 +21,7 @@
 
 | 方法 | 实现 |
 |---|---|
-| `Check` | 找得到 `winget`，并且已安装 PowerShell 模块 `Microsoft.WinGet.Client`；缺模块时 `InstallModule` 可以为当前用户安装 |
+| `Check` | 找得到 `winget`，并且已安装 PowerShell 模块 `Microsoft.WinGet.Client`；缺模块时 `Fix` 为当前用户安装（`Install-Module -Scope CurrentUser`） |
 | `Statuses` | 一次 `Get-WinGetPackage` 全量查询（本机实测 318 项约 2.3 秒，含 PowerShell 启动），按 ID 不区分大小写地挑出清单里的软件；`IsUpdateAvailable` 和 `AvailableVersions` 给出可用更新 |
 | `Recheck` | `Get-WinGetPackage -Id <id> -MatchOption EqualsCaseInsensitive` |
 | `Search` | `Find-WinGetPackage -Query <q> -Source winget -Count 50`，只读 ID 和名称，在常驻的 PowerShell（`runner.Worker`）里执行；不读版本，版本由 `SearchVersions` 补 |
@@ -47,7 +47,8 @@
 
 | 方法 | 实现 |
 |---|---|
-| `Check` | PowerShell 中找得到 `scoop` 命令 |
+| `Check` | PowerShell 中找得到 `scoop` 命令（找不到时先补上注册表里的用户和系统 PATH，认出 AppShelf 启动后才装的 scoop）；没有时，非管理员运行可由 `Fix` 安装 |
+| `Fix` | 官方安装器 `irm get.scoop.sh \| iex` 装到当前用户；PowerShell 不允许本地脚本且没有组策略决定时，先按官方说明 `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`；装完找不到 `scoop` 即失败。以管理员运行时官方安装器拒绝，直接报错 |
 | `Statuses` | `scoop export`（JSON）读已装软件；先 `scoop update` 更新 scoop 和 bucket，再 `scoop status -l` 读可用更新 |
 | `Recheck` | `scoop export` 加 `scoop status -l`，不联网更新 |
 | `Search` | `scoop search <q>`，`q` 先转义（scoop 把它当正则表达式），取前 30 项 |
@@ -77,7 +78,7 @@
 - 更新判断：AppShelf 记录的 tag 等于最新 tag 时为最新；否则比较注册表里的版本和最新 tag；版本无法比较但有记录时视为可更新；都没有时注明“无法比较版本”。
 - 启动安装程序用 `ShellExecuteExW`，需要管理员权限的安装程序会弹出 UAC。`.msi` 用 `msiexec /i "<文件>" /norestart` 加安装参数，没有填写参数时用 `/passive`；`.exe` 直接以安装参数为命令行，不填写时就是交互式安装。
 - 退出码：`0` 成功；`3010`、`1641` 成功但需要重启；`1602` 已取消；`1618` 另一个安装正在进行；其他记为失败。
-- token 从环境变量 `GH_TOKEN` 或 `GITHUB_TOKEN` 读取，只放在请求头里。
+- token 来自设置里保存的（`api` 用 `internal/secret` 加密保存）或环境变量 `GH_TOKEN` / `GITHUB_TOKEN`，只放在请求头里。`UseToken` 先向 `/rate_limit` 验证（不占额度）再换用并记下新额度，401 返回 `ErrBadToken`、不换；`SetToken` 不经验证直接换用（启动时、清除时）。
 
 只用于展示：
 

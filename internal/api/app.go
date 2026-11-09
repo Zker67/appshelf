@@ -63,6 +63,10 @@ type GitHubAPI interface {
 	Repository(ctx context.Context, repo string) (github.Repo, error)
 	Describe(ctx context.Context, app catalog.App) (github.Release, github.Asset, error)
 	SearchRate() github.Rate
+	// UseToken checks a token with GitHub and, accepted, carries it;
+	// SetToken carries one without asking.
+	UseToken(ctx context.Context, token string) error
+	SetToken(token string)
 }
 
 // SourceAPIs are the sources the core uses, for what the services do beside
@@ -125,6 +129,10 @@ type Config struct {
 	DataDir  string
 	Settings string // the settings file
 	IconBase string
+	// TokenFile keeps the GitHub token entered in the settings, encrypted;
+	// EnvToken is the one of GH_TOKEN or GITHUB_TOKEN, used without it.
+	TokenFile string
+	EnvToken  string
 }
 
 // App connects the services to the core.
@@ -152,6 +160,9 @@ type App struct {
 	search   context.CancelFunc
 	found    searchCache
 	settings settings
+	// tokenFrom is where the GitHub token in use comes from; token is it.
+	tokenFrom TokenSource
+	token     string
 }
 
 type deletion struct {
@@ -205,6 +216,7 @@ func (a *App) Start(ctx context.Context, cfg Config) {
 	a.start.Do(func() {
 		a.cfg, a.core = cfg, cfg.Core
 		a.settings = loadSettings(cfg.Settings)
+		a.loadToken()
 		a.upd.ctx = ctx
 		go a.loop.run(ctx, a.afterLoop)
 		close(a.ready)

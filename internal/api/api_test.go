@@ -33,14 +33,32 @@ type coreSource struct {
 	after         map[string]source.Status
 	actions       []string
 	upgradeErrors int
+	// fixErr is what Fix returns; Fix without an error makes the source
+	// available.
+	fixErr error
+	fixes  int
 }
 
 func newCoreSource(t catalog.SourceType) *coreSource {
 	return &coreSource{typ: t, avail: source.Availability{OK: true}, state: map[string]source.Status{}, after: map[string]source.Status{}}
 }
 
-func (f *coreSource) Type() catalog.SourceType                  { return f.typ }
-func (f *coreSource) Check(context.Context) source.Availability { return f.avail }
+func (f *coreSource) Type() catalog.SourceType { return f.typ }
+func (f *coreSource) Check(context.Context) source.Availability {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.avail
+}
+func (f *coreSource) Fix(context.Context, io.Writer) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fixes++
+	if f.fixErr != nil {
+		return f.fixErr
+	}
+	f.avail = source.Availability{OK: true}
+	return nil
+}
 func (f *coreSource) get(a catalog.App) source.Status {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -161,21 +179,44 @@ func (fakeScoop) Search(context.Context, string) ([]source.SearchResult, error) 
 func (fakeScoop) Installed(context.Context) ([]scoop.App, error)                { return nil, nil }
 func (fakeScoop) Info(context.Context, string, string) (scoop.Info, error)      { return scoop.Info{}, nil }
 
-type fakeGitHub struct{ repos []github.Repo }
+type fakeGitHub struct {
+	repos []github.Repo
+	mu    sync.Mutex
+	token string // the token carried
+}
 
-func (g fakeGitHub) SearchRepos(context.Context, string, int) ([]github.Repo, error) {
+// UseToken accepts tokens starting with ghp_good.
+func (g *fakeGitHub) UseToken(_ context.Context, token string) error {
+	if !strings.HasPrefix(token, "ghp_good") {
+		return github.ErrBadToken
+	}
+	g.SetToken(token)
+	return nil
+}
+func (g *fakeGitHub) SetToken(token string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.token = token
+}
+func (g *fakeGitHub) carried() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.token
+}
+
+func (g *fakeGitHub) SearchRepos(context.Context, string, int) ([]github.Repo, error) {
 	return g.repos, nil
 }
-func (g fakeGitHub) Repository(context.Context, string) (github.Repo, error) {
+func (g *fakeGitHub) Repository(context.Context, string) (github.Repo, error) {
 	return github.Repo{}, nil
 }
-func (g fakeGitHub) Describe(_ context.Context, app catalog.App) (github.Release, github.Asset, error) {
+func (g *fakeGitHub) Describe(_ context.Context, app catalog.App) (github.Release, github.Asset, error) {
 	if app.Source.Repo == "o/none" {
 		return github.Release{}, github.Asset{}, errors.New("没有正式版 release")
 	}
 	return github.Release{Tag: "v2"}, github.Asset{Name: "setup.exe"}, nil
 }
-func (g fakeGitHub) SearchRate() github.Rate {
+func (g *fakeGitHub) SearchRate() github.Rate {
 	return github.Rate{Known: true, Limit: 10, Remaining: 9}
 }
 
@@ -186,6 +227,7 @@ type env struct {
 	core    *core.Core
 	winget  *coreSource
 	wapi    *fakeWinget
+	gh      *fakeGitHub
 	dir     string
 	mu      sync.Mutex
 	changes []Change
@@ -262,6 +304,7 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	e.core = c
+	e.gh = &fakeGitHub{repos: []github.Repo{{FullName: "localsend/localsend", Description: "Share files", Stars: 50000}}}
 	e.wapi = &fakeWinget{
 		results: []source.SearchResult{{ID: "Obsidian.Clipper", Name: "Obsidian Clipper", Version: "1"}, {ID: "Obsidian.Obsidian", Name: "Obsidian", Version: "1.9"}},
 		pkgs:    []winget.Package{{ID: "Obsidian.Obsidian", Name: "Obsidian", Version: "1.8", Source: "winget", Update: "1.9"}, {ID: `ARP\Machine\X64\Tool`, Name: "Tool 2.1 (x64)", Version: "2.1"}},
@@ -270,7 +313,7 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(cancel)
 	e.app.Start(ctx, Config{
 		Core:    c,
-		Sources: SourceAPIs{Winget: e.wapi, Scoop: fakeScoop{}, GitHub: fakeGitHub{repos: []github.Repo{{FullName: "localsend/localsend", Description: "Share files", Stars: 50000}}}},
+		Sources: SourceAPIs{Winget: e.wapi, Scoop: fakeScoop{}, GitHub: e.gh},
 		Details: discover.NewDetails(discover.Fetchers{}, "", ""),
 		Scan: func() ([]detect.Entry, error) {
 			entries := []detect.Entry{{DisplayName: "Tool 2.1 (x64)", DisplayVersion: "2.1", Publisher: "Tool Co", Name: "Tool", Scope: "Machine", Arch: "X64", Key: `HKLM\Tool`}}
@@ -282,6 +325,9 @@ func newEnv(t *testing.T) *env {
 		DataDir:  e.dir,
 		Settings: filepath.Join(e.dir, "settings.json"),
 		IconBase: "http://icon.localhost",
+
+		TokenFile: filepath.Join(e.dir, "github-token.bin"),
+		EnvToken:  "ghp_fromenv",
 	})
 	e.until(func() bool { return !e.shelf.Snapshot().Refreshing })
 	e.until(func() bool { return e.installed.List().Loaded })

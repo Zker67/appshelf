@@ -3,7 +3,9 @@
 
 import logo from "@/assets/logo.png";
 import { CopyButton } from "@/components/common";
+import { TokenRow } from "@/components/github-token";
 import { SourceIcon } from "@/components/source-badge";
+import { runSetup, SetupButton, setups } from "@/components/source-setup";
 import { Pill } from "@/components/status-badge";
 import {
   AlertDialog,
@@ -33,7 +35,6 @@ import { formatDateTime } from "@/lib/text";
 import {
   About,
   Shelf,
-  Sources,
   Updates,
   type CheckInterval,
   type RateInfo,
@@ -46,10 +47,10 @@ import {
   CheckCircle2Icon,
   CircleDashedIcon,
   DownloadCloudIcon,
+  DownloadIcon,
   FolderOpenIcon,
   GaugeIcon,
   InfoIcon,
-  KeyRoundIcon,
   LoaderCircleIcon,
   MonitorDownIcon,
   PanelBottomIcon,
@@ -60,7 +61,6 @@ import {
   SettingsIcon,
   TimerIcon,
   TriangleAlertIcon,
-  WrenchIcon,
   ZapIcon,
 } from "lucide-react";
 import {
@@ -176,38 +176,13 @@ function SourcesTab() {
       >
         <div className="flex flex-col divide-y rounded-xl border bg-card">
           {(data?.sources ?? []).map((s) => (
-            <SourceRow
-              key={s.type}
-              info={s}
-              refreshing={refreshing}
-              canFix={data?.canInstallModule ?? false}
-            />
+            <SourceRow key={s.type} info={s} refreshing={refreshing} />
           ))}
         </div>
       </Section>
       <Section title="GitHub 请求额度" icon={GaugeIcon}>
         <div className="flex flex-col divide-y rounded-xl border bg-card">
-          <div className="flex items-center gap-3 px-4 py-3">
-            <KeyRoundIcon className="size-4 text-muted-foreground" />
-            <span className="w-24 shrink-0 text-sm">token</span>
-            {data?.githubToken ? (
-              <Pill tone="success">
-                <CheckCircle2Icon />
-                已使用
-              </Pill>
-            ) : (
-              <>
-                <Pill tone="muted">
-                  <CircleDashedIcon />
-                  未设置
-                </Pill>
-                <span className="min-w-0 text-xs text-muted-foreground">
-                  设置环境变量 <code className="font-mono">GH_TOKEN</code> 或{" "}
-                  <code className="font-mono">GITHUB_TOKEN</code> 后重新打开 AppShelf
-                </span>
-              </>
-            )}
-          </div>
+          <TokenRow from={data?.githubTokenFrom ?? ""} />
           <RateRow icon={PlugIcon} label="检查与安装" rate={data?.githubRate} />
           <RateRow icon={SearchIcon} label="搜索" rate={data?.githubSearchRate} />
         </div>
@@ -216,29 +191,9 @@ function SourcesTab() {
   );
 }
 
-function SourceRow({
-  info,
-  refreshing,
-  canFix,
-}: {
-  info: SourceInfo;
-  refreshing: boolean;
-  canFix: boolean;
-}) {
+function SourceRow({ info, refreshing }: { info: SourceInfo; refreshing: boolean }) {
   const [confirm, setConfirm] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const install = async () => {
-    setInstalling(true);
-    const id = toast.loading("正在安装 Microsoft.WinGet.Client，需要几分钟");
-    try {
-      await Sources.installModule();
-      toast.success("已安装 winget 模块", { id });
-    } catch (err) {
-      toast.error("安装模块失败", { id, description: errorText(err) });
-    } finally {
-      setInstalling(false);
-    }
-  };
+  const setup = setups[info.type];
   return (
     <div className="flex items-center gap-3 px-4 py-3">
       <SourceIcon type={info.type} className="size-4 text-muted-foreground" />
@@ -262,24 +217,26 @@ function SourceRow({
       <span className="min-w-0 flex-1 text-xs break-words text-muted-foreground select-text">
         {info.reason}
       </span>
-      {info.type === "winget" && info.checked && !info.ok && info.fixable && canFix && (
+      {setup && info.checked && !info.ok && info.fixable && (
         <>
-          <Button size="sm" disabled={installing} onClick={() => setConfirm(true)}>
-            {installing ? <LoaderCircleIcon className="animate-spin" /> : <WrenchIcon />}
-            安装模块
-          </Button>
+          <SetupButton type={info.type} onStart={() => setConfirm(true)} />
           <AlertDialog open={confirm} onOpenChange={setConfirm}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>安装 Microsoft.WinGet.Client？</AlertDialogTitle>
+                <AlertDialogTitle>安装 {setup.name}？</AlertDialogTitle>
                 <AlertDialogDescription>
-                  AppShelf 用这个 PowerShell 模块读取 winget 的已装软件和更新。将以当前用户身份从
-                  PowerShell Gallery 安装，不需要管理员权限。
+                  用于{setup.use}。{setup.how}。
                 </AlertDialogDescription>
               </AlertDialogHeader>
+              <code className="rounded-lg border bg-muted/50 px-2.5 py-1.5 font-mono text-xs break-all select-text">
+                {setup.command}
+              </code>
               <AlertDialogFooter>
                 <AlertDialogCancel>取消</AlertDialogCancel>
-                <AlertDialogAction onClick={() => void install()}>安装</AlertDialogAction>
+                <AlertDialogAction onClick={() => void runSetup(info.type)}>
+                  <DownloadIcon />
+                  安装
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

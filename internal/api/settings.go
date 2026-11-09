@@ -7,6 +7,9 @@ import "appshelf/internal/jsonfile"
 type settings struct {
 	Theme   ThemeSource    `json:"theme,omitempty"`
 	Updates updatesChoices `json:"updates,omitzero"`
+	// SourceSetupSeen means the first prompt to install winget's module
+	// or scoop was answered.
+	SourceSetupSeen bool `json:"sourceSetupSeen,omitempty"`
 }
 
 // updatesChoices are the update settings kept in settings.json, written so

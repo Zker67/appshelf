@@ -172,6 +172,9 @@ func main() {
 			DataDir:  dataDir,
 			Settings: settings,
 			IconBase: iconBase,
+
+			TokenFile: filepath.Join(dataDir, "github-token.bin"),
+			EnvToken:  token,
 		})
 
 		// Staying in the notification area, AppShelf started at login starts

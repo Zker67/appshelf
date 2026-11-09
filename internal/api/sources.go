@@ -3,13 +3,14 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"appshelf/internal/catalog"
 )
 
 // Sources are winget, scoop and GitHub: whether they can be used here,
-// fixing winget, and finding a package's exact identity.
+// setting up winget and scoop, and finding a package's exact identity.
 type Sources struct{ a *App }
 
 // Overview returns the sources' state and GitHub's quotas.
@@ -21,27 +22,37 @@ func (s *Sources) Overview() SourcesOverview {
 		for _, t := range c.SourceTypes() {
 			info := SourceInfo{Type: t}
 			if av, ok := c.Availability(t); ok {
-				info.Checked, info.OK, info.Reason, info.Fixable = true, av.OK, av.Reason, av.Fixable
+				info.Checked, info.OK, info.Reason = true, av.OK, av.Reason
+				info.Fixable = !av.OK && av.Fixable && c.CanFix(t)
 			}
 			out.Sources = append(out.Sources, info)
 		}
-		out.CanInstallModule = c.CanInstallModule()
 		rate, token := c.GitHubRate()
 		out.GitHubRate, out.GitHubToken = rateOf(rate), token
 	})
+	a.mu.Lock()
+	out.SetupSeen = a.settings.SourceSetupSeen
+	out.GitHubTokenFrom = a.tokenFrom
+	a.mu.Unlock()
 	if g := a.cfg.Sources.GitHub; g != nil {
 		out.GitHubSearchRate = rateOf(g.SearchRate())
 	}
 	return out
 }
 
-// InstallModule installs winget's PowerShell module for the user, then
-// checks the sources and reads the states again. It takes minutes.
-func (s *Sources) InstallModule() error {
+// Fix makes a source usable for the user: for winget it installs the
+// PowerShell module, for scoop scoop itself. It then checks the sources and
+// reads the states again. It takes minutes.
+func (s *Sources) Fix(sourceType catalog.SourceType) error {
 	a := s.a
+	<-a.ready
 	done := make(chan error, 1)
 	a.write([]ChangeKind{ChangedSources}, func() {
-		a.core.InstallModule(func(err error) { done <- err })
+		if !a.core.CanFix(sourceType) {
+			done <- errors.New("这个来源无法由 AppShelf 安装")
+			return
+		}
+		a.core.Fix(sourceType, func(err error) { done <- err })
 	})
 	err := <-done
 	a.note.mark(ChangedSources, ChangedShelf)
@@ -49,6 +60,22 @@ func (s *Sources) InstallModule() error {
 		a.inv.refresh(0)
 	}
 	return err
+}
+
+// DismissSetup keeps that the first prompt to set up the sources was
+// answered, so that it is not shown again.
+func (s *Sources) DismissSetup() error {
+	a := s.a
+	<-a.ready
+	a.mu.Lock()
+	a.settings.SourceSetupSeen = true
+	st := a.settings
+	a.mu.Unlock()
+	if err := saveSettings(a.cfg.Settings, st); err != nil {
+		return fmt.Errorf("保存设置失败：%w", err)
+	}
+	a.note.mark(ChangedSources)
+	return nil
 }
 
 // Search finds packages of winget or scoop, for an app's source.

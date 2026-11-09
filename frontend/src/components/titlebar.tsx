@@ -26,7 +26,7 @@ const pages: Array<{ page: Page; label: string; icon: ComponentType<SVGProps<SVG
 ];
 
 /**
- * Titlebar is the window's only title bar: the app's name, the pages, and
+ * Titlebar is the window's only title bar: the app's icon, the pages, and
  * the tools every page shares. It is clear, over the fog, the panels below
  * it. Windows draws its buttons at the right.
  */
@@ -39,9 +39,13 @@ export function Titlebar() {
         paddingRight: "calc(var(--mygo-titlebar-inset-right, 0px) + 8px)",
       }}
     >
-      <div className="brand flex shrink-0 items-center gap-2.5 pr-2">
-        <img src={logo} alt="" className="brand-logo size-6 drop-shadow-sm" draggable={false} />
-        <span className="text-[15px] leading-none font-semibold tracking-[0.03em]">软件图书馆</span>
+      <div className="brand flex shrink-0 items-center pr-1">
+        <img
+          src={logo}
+          alt="软件图书馆"
+          className="brand-logo size-6 drop-shadow-sm"
+          draggable={false}
+        />
       </div>
       <NavTabs />
       <div className="flex-1" />

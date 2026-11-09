@@ -52,7 +52,7 @@ function Pages() {
     setShown(nav.page);
   }
   return (
-    <main className="relative min-h-0 flex-1">
+    <main className="relative min-h-0 flex-1 overflow-x-clip">
       <PageSlot page="shelf" dir={dir}>
         <ShelfPage />
       </PageSlot>

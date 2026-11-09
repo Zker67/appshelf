@@ -234,7 +234,7 @@
   body,
   #root {
     height: 100%;
-    overflow: hidden;
+    overflow: clip;
   }
   body {
     @apply bg-background text-foreground antialiased;

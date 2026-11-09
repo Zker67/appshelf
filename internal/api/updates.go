@@ -355,9 +355,10 @@ func (a *App) updateList() UpdateList {
 	}
 	slices.SortStableFunc(out.Rules, func(x, y UpdateRule) int { return foldLess(x.Name, y.Name) })
 	out.Checking, out.CheckedAt, out.NextCheck = a.upd.times()
-	out.Self = SelfUpdate{CanUpdate: a.canUpdate(), Version: a.cfg.Version}
-	if out.Self.CanUpdate && a.hooks.SelfAvailable != nil {
-		out.Self.Available = a.hooks.SelfAvailable()
+	self := a.selfState()
+	out.Self = SelfUpdate{CanUpdate: self.Enabled, Version: self.Version}
+	if self.Phase.offers() {
+		out.Self.Available = self.Available
 	}
 	return out
 }
@@ -603,10 +604,8 @@ func (s *Updates) Settings() UpdateSettings {
 		out.Background = !c.ExitOnClose
 		out.OpenAtLogin = h.OpenAtLogin()
 	}
-	if a.canUpdate() && h.SelfChecks != nil && h.SetSelfChecks != nil {
-		out.CanSelfUpdate = true
-		out.SelfChecks, out.SelfDownloads = h.SelfChecks()
-	}
+	out.CanSelfUpdate = a.canUpdate()
+	out.SelfCheck, out.SelfEvery = c.selfCheck(), c.selfEvery()
 	return out
 }
 
@@ -618,6 +617,17 @@ func (s *Updates) SetSettings(choices UpdateSettings) error {
 		return errors.New("未知的检查间隔")
 	}
 	cur := s.Settings()
+	// Left out, AppShelf's own checks stay as they are.
+	choices.SelfCheck = cmp.Or(choices.SelfCheck, cur.SelfCheck)
+	choices.SelfEvery = cmp.Or(choices.SelfEvery, cur.SelfEvery)
+	switch choices.SelfCheck {
+	case SelfCheckOff, SelfCheckLaunch, SelfCheckInterval:
+	default:
+		return errors.New("未知的检查方式：" + string(choices.SelfCheck))
+	}
+	if !slices.Contains(selfIntervals, choices.SelfEvery) {
+		return errors.New("检查间隔只能是 1、6 或 24 小时")
+	}
 	if !cur.CanBackground && (choices.Background || choices.OpenAtLogin) {
 		return errors.New("这个版本不支持后台运行和开机启动")
 	}
@@ -628,7 +638,10 @@ func (s *Updates) SetSettings(choices UpdateSettings) error {
 	if cur.CanBackground {
 		exit = !choices.Background
 	}
-	a.settings.Updates = updatesChoices{CheckEvery: choices.CheckEvery, Quiet: !choices.Notify, ExitOnClose: exit}
+	a.settings.Updates = updatesChoices{
+		CheckEvery: choices.CheckEvery, Quiet: !choices.Notify, ExitOnClose: exit,
+		SelfCheck: choices.SelfCheck, SelfEvery: choices.SelfEvery,
+	}
 	st := a.settings
 	a.mu.Unlock()
 	if err := saveSettings(a.cfg.Settings, st); err != nil {
@@ -644,8 +657,8 @@ func (s *Updates) SetSettings(choices UpdateSettings) error {
 			errs = append(errs, fmt.Errorf("无法设置开机启动：%w", err))
 		}
 	}
-	if cur.CanSelfUpdate && (choices.SelfChecks != cur.SelfChecks || choices.SelfDownloads != cur.SelfDownloads) {
-		h.SetSelfChecks(choices.SelfChecks, choices.SelfDownloads)
+	if choices.SelfCheck != cur.SelfCheck || choices.SelfEvery != cur.SelfEvery {
+		a.rescheduleSelf()
 	}
 	a.upd.reschedule()
 	a.note.mark(ChangedUpdates)
@@ -661,7 +674,3 @@ func (a *App) CheckUpdates() {
 
 // ShowPage asks the page to show one of its pages, as "updates".
 func (a *App) ShowPage(page string) { Navigate.Broadcast(page) }
-
-// SelfChanged tells the page that AppShelf's own update changed, as the
-// updater found a version.
-func (a *App) SelfChanged() { a.note.mark(ChangedUpdates) }

@@ -29,7 +29,8 @@
 | [space.go](./space.go) | `Installed.Space` / `OpenLocation`：实测程序目录的大小（注册表登记或推断的安装目录、scoop 应用目录、应用包目录；多个程序共用的目录不统计），用 `leftover.Find` 只读查找以它命名、可能存它数据的目录并实测；打开位置只接受 key 和这次找到的目录 ID，路径由 Go 解析 |
 | [updates.go](./updates.go)、[dto_updates.go](./dto_updates.go) | `Updates`：清单软件和本机 winget / scoop 软件按来源 key 合并的更新列表、AppShelf 自身新版本、更新方式（`SetMode`、`Skip`、`Snooze`、`Restore`）、预览和开始、历史、更新设置；能否自动更新（`autoBlock`）和安装目录（`installDir`）的判断；`navigate` 事件 |
 | [autoupdate.go](./autoupdate.go) | `checker`：检查的开始与完成、定时、自动更新排队、通知、更新历史 |
-| `about.go` | `About`：版本、自更新、打开目录和链接（只允许 http/https）、外观 |
+| `about.go` | `About`：版本、打开目录和链接（只允许 http/https）、外观 |
+| [selfupdate.go](./selfupdate.go) | AppShelf 自身的更新，与 Vibe Atlas 相同：`watchSelf` 启动 3 秒后检查，之后按设置（启动时 / 每 1、6、24 小时 / 不自动）；`About.SelfUpdate` / `CheckForUpdates` / `InstallUpdate`，状态经 `selfUpdate` 事件（或 `Hooks.EmitSelf`）发给页面；装好后经 `Hooks.Relaunch` 重新打开；失败原因按 HTTP 状态和网络错误写成中文 |
 | `settings.go` | `settings.json` 的读写（外观、更新设置） |
 | [tray.go](./tray.go) | 不绑定给页面，供 `main.go` 的托盘使用：`TrayStatus`（可更新数、任务数和正在执行的任务）、`UpdateAll`（与更新页「全部更新」相同） |
 

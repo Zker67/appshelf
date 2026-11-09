@@ -219,7 +219,7 @@ export function ShelfPage() {
               onChange={(query) => setFilter((f) => ({ ...f, query }))}
               placeholder="搜索清单"
               inputRef={searchRef}
-              className="mx-auto w-full max-w-sm min-w-40"
+              className="mx-auto w-full max-w-sm min-w-24"
             />
             <div className="flex shrink-0 items-center gap-1.5">
               <DropdownMenu>

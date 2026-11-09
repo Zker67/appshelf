@@ -31,7 +31,7 @@ AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\Syst
 ## 配置
 
 - `mygo.json`：`name`、`identifier`、`version`、`out`（构建输出目录）、`updates`（自更新的公钥和 GitHub 仓库）、`windows.installerInclude`（安装包附加脚本 `installer.nsh`，给 NSIS 安装和卸载程序加上简体中文：中文系统上显示中文，其他系统显示英文）。
-- `CHANGELOG.md`：每个版本一节，标题写成 `## 版本号`；构建时成为自更新窗口里的更新说明。
+- `CHANGELOG.md`：每个版本一节，标题写成 `## 版本号`；构建时成为 GitHub Release 的更新说明。
 - GitHub token（可选）：不设置时每个 IP 每小时只有 60 次请求，检查几次 GitHub 软件就会用完；用完后 GitHub 软件附注“GitHub 请求额度已用完”，不能检查更新和安装，直到额度恢复。只读公开仓库，不需要任何权限范围。两种设置方式：
   - 在“设置 → 安装来源 → GitHub 请求额度”点“填写 token”粘贴：先向 GitHub 的 `/rate_limit` 验证（不占额度），GitHub 不接受的不保存；保存后立即生效，不用重启。token 用 Windows DPAPI 以当前用户加密后存到 `github-token.bin`，界面读不回，“清除”删除该文件。
   - 环境变量 `GH_TOKEN` 或 `GITHUB_TOKEN`，启动时读取。两者都有时用设置里保存的。
@@ -98,7 +98,9 @@ go tool mygo build              # 先构建前端，再输出到 build/windows-a
 
 ## 部署
 
-自更新使用 MyGo 的更新机制：`mygo.json` 的 `updates.github` 指向公开仓库 `Zker67/appshelf`，安装版的 AppShelf 读取该仓库最新正式 release 中的 `update-windows-amd64.json`，下载更新包并用内置公钥验证签名后替换自己。取文件的方式见 [selfupdate.go](../selfupdate.go)：清单地址带随机参数 `?t=` 避开中间缓存；github.com 6 秒内不开始响应或出错时，改走 GitHub API（`api.github.com/repos/Zker67/appshelf/releases/...`，不登录每小时 60 次，只在 github.com 失败时才用）取同一个文件；网络问题、超时、429 或 5xx 时自动重试，共 5 次。下载到一半断开不会接着下，更新窗口报错后再检查一次即可。开发版（`go tool mygo dev`）不能自更新，“设置 → 关于”会说明。
+自更新使用 MyGo 的更新机制：`mygo.json` 的 `updates.github` 指向公开仓库 `Zker67/appshelf`，安装版的 AppShelf 读取该仓库最新正式 release 中的 `update-windows-amd64.json`，下载更新包并用内置公钥验证签名后替换自己。取文件的方式见 [selfupdate.go](../selfupdate.go)：清单地址带随机参数 `?t=` 避开中间缓存；github.com 6 秒内不开始响应或出错时，改走 GitHub API（`api.github.com/repos/Zker67/appshelf/releases/...`，不登录每小时 60 次，只在 github.com 失败时才用）取同一个文件；网络问题、超时、429 或 5xx 时自动重试，共 5 次。下载到一半断开不会接着下，右下角提示失败后点「重试」即可。开发版（`go tool mygo dev`）不能自更新，“设置 → 关于”会说明。
+
+检查和安装的流程与 Vibe Atlas 相同（[internal/api/selfupdate.go](../internal/api/selfupdate.go)），不用 MyGo 的 updater 插件和更新窗口：启动 3 秒后在后台检查一次，之后按“设置 → 关于 → 自动检查新版本”（启动时检查 / 每小时 / 每 6 小时 / 每天 / 不自动检查）；发现新版本时窗口右下角提示「去更新」「稍后」，点「去更新」才下载，提示里显示进度，装好后自动重新打开；「稍后」在本次运行内不再提示。“设置 → 关于”可以手动检查，也能看到所有版本。
 
 ### 签名密钥
 

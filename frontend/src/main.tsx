@@ -1,3 +1,4 @@
+import { SELF_TOASTER } from "@/components/self-update-toast";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { queryClient } from "@/lib/api";
@@ -19,6 +20,8 @@ if (root) {
           <App />
           {/* Below the title bar, clear of the window's buttons. */}
           <Toaster position="top-center" offset={{ top: 56 }} />
+          {/* AppShelf's own update, at the bottom right as in Vibe Atlas. */}
+          <Toaster id={SELF_TOASTER} position="bottom-right" />
         </TooltipProvider>
       </QueryClientProvider>
     </StrictMode>,

@@ -334,7 +334,33 @@ export interface SearchHit {
   installed?: boolean;
 }
 
-/** SelfUpdate is AppShelf's own update, as its update window found it. */
+/** SelfCheckMode is when AppShelf checks for a newer version of itself. */
+export type SelfCheckMode = "off" | "launch" | "interval";
+
+/** SelfPhase is where updating AppShelf itself is. */
+export type SelfPhase = "idle" | "checking" | "available" | "downloading" | "restarting" | "failed";
+
+/** SelfState is what the pages show of updating AppShelf itself. */
+export interface SelfState {
+  /** Version is the version running. */
+  version: string;
+  /**
+   * Enabled means this copy can update itself: a build with updates, in
+   * a folder it can write. Development builds cannot.
+   */
+  enabled: boolean;
+  phase: SelfPhase;
+  /** Available is the newer version found, or "". */
+  available?: string;
+  /** Progress is how much of it downloaded, 0 to 1. */
+  progress: number;
+  /** Error says why installing it failed, in the phase failed. */
+  error?: string;
+  /** CheckedAt is when a check last ended without an error. */
+  checkedAt?: string;
+}
+
+/** SelfUpdate is AppShelf's own update, as a check found it. */
 export interface SelfUpdate {
   /** CanUpdate means this copy can update itself. */
   canUpdate: boolean;
@@ -699,11 +725,12 @@ export interface UpdateSettings {
    */
   canBackground: boolean;
   /**
-   * SelfChecks checks for a newer AppShelf every day; SelfDownloads
-   * installs it the next time AppShelf starts, without asking.
+   * SelfCheck is when AppShelf checks for a newer version of itself;
+   * SelfEvery the hours between checks with SelfCheckInterval: 1, 6 or 24.
+   * A version found is downloaded only when the user says so.
    */
-  selfChecks: boolean;
-  selfDownloads: boolean;
+  selfCheck: SelfCheckMode;
+  selfEvery: number;
   canSelfUpdate: boolean;
 }
 
@@ -1130,15 +1157,22 @@ export const Updates = {
  */
 export const About = {
   /**
-   * CheckForUpdates checks for a newer AppShelf: the update window says what
-   * it found.
+   * CheckForUpdates checks for a newer AppShelf now, as the user asked. A
+   * version found shows at the bottom right of the window.
    */
-  checkForUpdates(): Promise<void> {
+  checkForUpdates(): Promise<SelfState> {
     return call("About.CheckForUpdates");
   },
   /** Info returns AppShelf's version and where its files are. */
   info(): Promise<AboutInfo> {
     return call("About.Info");
+  },
+  /**
+   * InstallUpdate downloads the newer AppShelf found and starts AppShelf
+   * again in it. It returns at once; the selfUpdate event tells how it goes.
+   */
+  installUpdate(): Promise<void> {
+    return call("About.InstallUpdate");
   },
   /** OpenDataDir opens the directory of the catalog and AppShelf's files. */
   openDataDir(): Promise<void> {
@@ -1151,6 +1185,10 @@ export const About = {
   /** OpenURL opens a web page in the default browser: http and https only. */
   openURL(link: string): Promise<void> {
     return call("About.OpenURL", link);
+  },
+  /** SelfUpdate returns what there is to show of updating AppShelf itself. */
+  selfUpdate(): Promise<SelfState> {
+    return call("About.SelfUpdate");
   },
   /**
    * SetTheme follows the system's appearance, or forces light or dark, and
@@ -1167,6 +1205,11 @@ export const About = {
 export const events = {
   /** Changed tells the pages what changed, for them to read it again. */
   changed: event<Change>("changed"),
+  /**
+   * SelfUpdateChanged is broadcast to the pages as a check for a newer
+   * AppShelf and its installation go on.
+   */
+  selfUpdate: event<SelfState>("selfUpdate"),
   /**
    * Navigate asks the page to show one of its pages, as "updates" after a
    * click on a notification.

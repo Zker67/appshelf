@@ -91,7 +91,7 @@ type UpdateRule struct {
 	AutoNote  string `json:"autoNote,omitempty"`
 }
 
-// SelfUpdate is AppShelf's own update, as its update window found it.
+// SelfUpdate is AppShelf's own update, as a check found it.
 type SelfUpdate struct {
 	// CanUpdate means this copy can update itself.
 	CanUpdate bool   `json:"canUpdate"`
@@ -164,9 +164,10 @@ type UpdateSettings struct {
 	// CanBackground means this build has the notification area icon and
 	// starting at login.
 	CanBackground bool `json:"canBackground"`
-	// SelfChecks checks for a newer AppShelf every day; SelfDownloads
-	// installs it the next time AppShelf starts, without asking.
-	SelfChecks    bool `json:"selfChecks"`
-	SelfDownloads bool `json:"selfDownloads"`
-	CanSelfUpdate bool `json:"canSelfUpdate"`
+	// SelfCheck is when AppShelf checks for a newer version of itself;
+	// SelfEvery the hours between checks with SelfCheckInterval: 1, 6 or 24.
+	// A version found is downloaded only when the user says so.
+	SelfCheck     SelfCheckMode `json:"selfCheck"`
+	SelfEvery     int           `json:"selfEvery"`
+	CanSelfUpdate bool          `json:"canSelfUpdate"`
 }

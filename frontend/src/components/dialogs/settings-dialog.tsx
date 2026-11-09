@@ -2,7 +2,7 @@
 // AppShelf itself.
 
 import logo from "@/assets/logo.png";
-import { CopyButton } from "@/components/common";
+import { CopyButton, Hint } from "@/components/common";
 import { TokenRow } from "@/components/github-token";
 import { SourceIcon } from "@/components/source-badge";
 import { needsSetup, runSetup, SetupButton, setupFor } from "@/components/source-setup";
@@ -31,6 +31,7 @@ import {
   useUpdateSettings,
 } from "@/lib/api";
 import { sourceLabel } from "@/lib/shelf";
+import { checkSelf, installSelf, openReleases, useSelfUpdate } from "@/lib/self-update";
 import { formatDateTime } from "@/lib/text";
 import {
   About,
@@ -38,6 +39,7 @@ import {
   Updates,
   type CheckInterval,
   type RateInfo,
+  type SelfCheckMode,
   type SourceInfo,
   type UpdateSettings,
 } from "@/mygo";
@@ -48,6 +50,7 @@ import {
   CircleDashedIcon,
   DownloadCloudIcon,
   DownloadIcon,
+  ExternalLinkIcon,
   FolderOpenIcon,
   GaugeIcon,
   InfoIcon,
@@ -61,7 +64,6 @@ import {
   SettingsIcon,
   TimerIcon,
   TriangleAlertIcon,
-  ZapIcon,
 } from "lucide-react";
 import {
   Select,
@@ -129,11 +131,14 @@ export function SettingsDialog({
 function Section({
   title,
   icon: Icon,
+  hint,
   children,
   actions,
 }: {
   title: string;
   icon: typeof InfoIcon;
+  /** What to know of the whole section, on hover. */
+  hint?: ReactNode;
   children: ReactNode;
   actions?: ReactNode;
 }) {
@@ -142,6 +147,7 @@ function Section({
       <div className="flex items-center gap-2">
         <Icon className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">{title}</h3>
+        {hint && <Hint>{hint}</Hint>}
         <div className="ml-auto flex items-center gap-1.5">{actions}</div>
       </div>
       {children}
@@ -214,8 +220,9 @@ function SourceRow({ info, refreshing }: { info: SourceInfo; refreshing: boolean
           不可用
         </Pill>
       )}
+      {info.checked && info.ok && info.reason && <Hint>{info.reason}</Hint>}
       <span className="min-w-0 flex-1 text-xs break-words text-muted-foreground select-text">
-        {info.reason}
+        {info.checked && !info.ok && info.reason}
       </span>
       {setup && needsSetup(info) && (
         <>
@@ -298,11 +305,12 @@ const intervals: Array<{ value: CheckInterval; label: string }> = [
   { value: "off", label: "只在启动时" },
 ];
 
-function UpdatesTab() {
+/** useSaveUpdateSettings saves a change of the update settings, shown at once. */
+function useSaveUpdateSettings() {
   const { data } = useUpdateSettings();
-  const key = [...keys.updates, "settings"];
   const save = async (patch: Partial<UpdateSettings>) => {
     if (!data) return;
+    const key = [...keys.updates, "settings"];
     const next = { ...data, ...patch };
     queryClient.setQueryData(key, next);
     try {
@@ -313,10 +321,19 @@ function UpdatesTab() {
       await queryClient.invalidateQueries({ queryKey: key });
     }
   };
+  return { data, save };
+}
+
+function UpdatesTab() {
+  const { data, save } = useSaveUpdateSettings();
   if (!data) return null;
   return (
     <div className="flex flex-col gap-6">
-      <Section title="检查更新" icon={RefreshCwIcon}>
+      <Section
+        title="检查更新"
+        icon={RefreshCwIcon}
+        hint="自动更新在每个软件的更新方式里开启。只有 scoop 和为当前用户安装的 winget 软件能自动更新，正在运行的会等它关闭；其余的只提醒。"
+      >
         <div className="flex flex-col divide-y rounded-xl border bg-card">
           <SettingRow icon={TimerIcon} label="自动检查" hint="软件图书馆运行时按这个间隔检查一次">
             <Select
@@ -343,11 +360,6 @@ function UpdatesTab() {
             <Switch checked={data.notify} onCheckedChange={(on) => void save({ notify: on })} />
           </SettingRow>
         </div>
-        <p className="flex items-start gap-1.5 px-1 text-xs leading-relaxed text-muted-foreground">
-          <ZapIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
-          自动更新在每个软件的更新方式里开启。只有 scoop 和为当前用户安装的 winget
-          软件能自动更新，正在运行的会等它关闭；其余的只提醒。
-        </p>
       </Section>
       <Section title="后台运行" icon={PanelBottomIcon}>
         <div className="flex flex-col divide-y rounded-xl border bg-card">
@@ -355,11 +367,9 @@ function UpdatesTab() {
             icon={PanelBottomIcon}
             label="关闭窗口后留在托盘"
             hint={
-              !data.canBackground
-                ? "这个版本不支持托盘"
-                : data.background
-                  ? "继续定期检查、执行任务；单击托盘图标打开窗口，右键查看更新和任务"
-                  : "关闭窗口即退出软件图书馆"
+              data.canBackground
+                ? "继续定期检查、执行任务；单击托盘图标打开窗口，右键查看更新和任务。关掉后，关闭窗口即退出"
+                : "这个版本不支持托盘"
             }
           >
             <Switch
@@ -381,33 +391,6 @@ function UpdatesTab() {
           </SettingRow>
         </div>
       </Section>
-      <Section title="软件图书馆自身" icon={MonitorDownIcon}>
-        {data.canSelfUpdate ? (
-          <div className="flex flex-col divide-y rounded-xl border bg-card">
-            <SettingRow icon={RefreshCwIcon} label="每天检查新版本">
-              <Switch
-                checked={data.selfChecks}
-                onCheckedChange={(on) => void save({ selfChecks: on })}
-              />
-            </SettingRow>
-            <SettingRow
-              icon={DownloadCloudIcon}
-              label="自动下载新版本"
-              hint="下次启动时安装，不再询问"
-            >
-              <Switch
-                checked={data.selfDownloads}
-                disabled={!data.selfChecks}
-                onCheckedChange={(on) => void save({ selfDownloads: on })}
-              />
-            </SettingRow>
-          </div>
-        ) : (
-          <div className="rounded-xl border bg-card px-4 py-3 text-xs text-muted-foreground">
-            自更新只在用安装包安装的版本里可用
-          </div>
-        )}
-      </Section>
     </div>
   );
 }
@@ -426,28 +409,56 @@ function SettingRow({
   return (
     <div className="flex items-center gap-3 px-4 py-3">
       <Icon className="size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <div className="text-sm">{label}</div>
-        {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className="text-sm">{label}</span>
+        {hint && <Hint>{hint}</Hint>}
       </div>
       {children}
     </div>
   );
 }
 
+/** When AppShelf checks for a newer version of itself, as one choice. */
+const selfChecks: Array<{ value: string; label: string; check: SelfCheckMode; every?: number }> = [
+  { value: "launch", label: "启动时检查", check: "launch" },
+  { value: "1", label: "每小时检查", check: "interval", every: 1 },
+  { value: "6", label: "每 6 小时检查", check: "interval", every: 6 },
+  { value: "24", label: "每天检查", check: "interval", every: 24 },
+  { value: "off", label: "不自动检查", check: "off" },
+];
+
 function AboutTab() {
   const { data } = useAbout();
-  const [checking, setChecking] = useState(false);
+  const { data: self } = useSelfUpdate();
+  const { data: settings, save } = useSaveUpdateSettings();
+  const [checkError, setCheckError] = useState("");
+  const [checked, setChecked] = useState(false);
+  const phase = self?.phase;
+  const enabled = self?.enabled ?? false;
+  const found = phase === "available" || phase === "failed";
+  const working = phase === "checking" || phase === "downloading" || phase === "restarting";
   const check = async () => {
-    setChecking(true);
-    try {
-      await About.checkForUpdates();
-    } catch (err) {
-      toast.error("检查更新失败", { description: errorText(err) });
-    } finally {
-      setChecking(false);
-    }
+    setCheckError("");
+    setChecked(false);
+    const err = await checkSelf();
+    setCheckError(err);
+    setChecked(err === "");
   };
+  let status = "";
+  if (self && !enabled) status = "开发版本，不能自动更新";
+  else if (phase === "checking") status = "正在检查…";
+  else if (phase === "downloading")
+    status = `正在更新到 ${self?.available}，已下载 ${Math.floor((self?.progress ?? 0) * 100)}%`;
+  else if (phase === "restarting") status = "已更新，马上重新打开";
+  else if (phase === "failed") status = self?.error ?? "更新失败";
+  else if (found) status = `发现新版本 ${self?.available}`;
+  else if (checkError) status = checkError;
+  else if (checked) status = "已经是最新版本";
+  const bad = phase === "failed" || (!!checkError && !found);
+  const schedule =
+    settings?.selfCheck === "interval"
+      ? String(settings.selfEvery)
+      : (settings?.selfCheck ?? "launch");
   const open = (what: string, fn: () => Promise<void>) =>
     fn().catch((err: unknown) => toast.error(`无法打开${what}`, { description: errorText(err) }));
   return (
@@ -455,24 +466,89 @@ function AboutTab() {
       <div className="flex items-center gap-4 rounded-xl border bg-gradient-to-br from-primary/10 via-card to-card p-4">
         <img src={logo} alt="" className="size-14 drop-shadow-md" draggable={false} />
         <div className="min-w-0 flex-1">
-          <div className="text-base font-semibold">AppShelf 软件图书馆</div>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-base font-semibold">
+            AppShelf 软件图书馆
+            <Hint>
+              更新包从 GitHub 下载，校验签名后替换，完成后自动重新打开，清单和设置不受影响。
+            </Hint>
+          </div>
+          <div className="mt-1 flex min-w-0 items-center gap-2">
             <Pill tone="primary">
               {data?.version ? `v${data.version.replace(/^v/, "")}` : "开发版本"}
             </Pill>
+            {status && (
+              <span
+                className={
+                  bad
+                    ? "min-w-0 truncate text-xs text-destructive"
+                    : "min-w-0 truncate text-xs text-muted-foreground tabular-nums"
+                }
+                title={status}
+              >
+                {status}
+              </span>
+            )}
           </div>
         </div>
-        {data?.canUpdate ? (
-          <Button onClick={check} disabled={checking}>
-            {checking ? <LoaderCircleIcon className="animate-spin" /> : <DownloadCloudIcon />}
-            检查更新
+        <div className="flex shrink-0 items-center gap-1.5">
+          {found ? (
+            <Button onClick={installSelf}>
+              <DownloadIcon />
+              {phase === "failed" ? "重试" : "去更新"}
+            </Button>
+          ) : (
+            <Button variant="outline" disabled={working || !enabled} onClick={() => void check()}>
+              {phase === "checking" ? (
+                <LoaderCircleIcon className="animate-spin" />
+              ) : (
+                <RefreshCwIcon />
+              )}
+              检查更新
+            </Button>
+          )}
+          <Button variant="ghost" onClick={() => openReleases()}>
+            <ExternalLinkIcon />
+            所有版本
           </Button>
-        ) : (
-          <span className="max-w-48 text-right text-xs text-muted-foreground">
-            自更新只在用安装包安装的版本里可用
-          </span>
-        )}
+        </div>
       </div>
+      {settings && (
+        <Section
+          title="新版本"
+          icon={MonitorDownIcon}
+          hint="启动时检查：每次打开几秒后检查一次。定时检查：启动时检查一次，之后按间隔检查。发现新版本时右下角提示，点「去更新」才下载，装好后自动重新打开。"
+        >
+          <div className="flex flex-col divide-y rounded-xl border bg-card">
+            <SettingRow
+              icon={DownloadCloudIcon}
+              label="自动检查新版本"
+              hint={settings.canSelfUpdate ? undefined : "开发版本不能自动更新"}
+            >
+              <Select
+                value={schedule}
+                disabled={!settings.canSelfUpdate}
+                onValueChange={(v) => {
+                  const c = selfChecks.find((x) => x.value === v);
+                  if (c) {
+                    void save({ selfCheck: c.check, selfEvery: c.every ?? settings.selfEvery });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {selfChecks.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingRow>
+          </div>
+        </Section>
+      )}
       <Section title="文件位置" icon={FolderOpenIcon}>
         <div className="flex flex-col divide-y rounded-xl border bg-card">
           <PathRow

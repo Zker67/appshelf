@@ -2,6 +2,7 @@
 // replacing or clearing it. Go checks it with GitHub and keeps it
 // encrypted; the page never reads it back.
 
+import { Hint } from "@/components/common";
 import { Pill } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -120,13 +121,14 @@ export function TokenRow({ from }: { from: TokenSource }) {
         <KeyRoundIcon className="size-4 shrink-0 text-muted-foreground" />
         <span className="w-24 shrink-0 text-sm">token</span>
         <FromPill from={from} />
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+        <Hint>
           {from === "saved"
-            ? "优先于环境变量"
+            ? "用 Windows 加密保存在本机，优先于环境变量"
             : from === "env"
-              ? "GH_TOKEN 或 GITHUB_TOKEN"
-              : "每小时最多 60 次请求"}
-        </span>
+              ? "来自环境变量 GH_TOKEN 或 GITHUB_TOKEN"
+              : "不填时每小时最多 60 次请求；填写后每小时 5000 次"}
+        </Hint>
+        <span className="flex-1" />
         {!editing && (
           <div className="flex shrink-0 items-center gap-1.5">
             {from === "saved" && (
@@ -187,9 +189,9 @@ export function TokenRow({ from }: { from: TokenSource }) {
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <ShieldCheckIcon className="size-3.5 shrink-0 text-success" />
-            <span className="min-w-0 flex-1">
-              只读公开仓库，不用勾选任何权限；用 Windows 加密保存在本机，优先于环境变量
-            </span>
+            <span>不用勾选任何权限</span>
+            <Hint>只读公开仓库；用 Windows 加密保存在本机，优先于环境变量</Hint>
+            <span className="flex-1" />
             <Button
               type="button"
               variant="link"

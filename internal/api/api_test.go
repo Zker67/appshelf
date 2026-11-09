@@ -796,7 +796,7 @@ func TestAbout(t *testing.T) {
 	if info.Version != "0.2.0" || info.CanUpdate || info.Theme != ThemeSystem || info.IconBase != "http://icon.localhost" || info.LogsDir == "" {
 		t.Errorf("info = %+v", info)
 	}
-	if err := e.about.CheckForUpdates(); err == nil {
+	if _, err := e.about.CheckForUpdates(context.Background()); err == nil {
 		t.Error("a copy that cannot update itself checked")
 	}
 	for _, bad := range []string{"file:///C:/Windows", "javascript:alert(1)", "ms-settings:", "https://"} {

@@ -1,6 +1,10 @@
 package api
 
-import "appshelf/internal/jsonfile"
+import (
+	"slices"
+
+	"appshelf/internal/jsonfile"
+)
 
 // settings are the user's preferences of the app itself, in settings.json
 // of the data directory.
@@ -15,13 +19,33 @@ type settings struct {
 // updatesChoices are the update settings kept in settings.json, written so
 // that a file without them means the defaults: checking every 6 hours,
 // notifications on, closing the window leaving AppShelf in the
-// notification area. Starting at login and AppShelf's own checks are kept
-// by the system and MyGo's updater.
+// notification area, AppShelf checking for a newer version of itself as it
+// starts. Starting at login is kept by the system.
 type updatesChoices struct {
 	CheckEvery CheckInterval `json:"checkEvery,omitempty"`
 	Quiet      bool          `json:"quiet,omitempty"`
 	// ExitOnClose quits AppShelf when its window closes.
 	ExitOnClose bool `json:"exitOnClose,omitempty"`
+	// SelfCheck is when AppShelf checks for a newer version of itself, ""
+	// meaning at launch; SelfEvery the hours between checks of
+	// SelfCheckInterval, 0 meaning a day.
+	SelfCheck SelfCheckMode `json:"selfCheck,omitempty"`
+	SelfEvery int           `json:"selfEvery,omitempty"`
+}
+
+func (c updatesChoices) selfCheck() SelfCheckMode {
+	switch c.SelfCheck {
+	case SelfCheckOff, SelfCheckInterval:
+		return c.SelfCheck
+	}
+	return SelfCheckLaunch
+}
+
+func (c updatesChoices) selfEvery() int {
+	if slices.Contains(selfIntervals, c.SelfEvery) {
+		return c.SelfEvery
+	}
+	return defaultSelfEvery
 }
 
 func loadSettings(path string) settings {

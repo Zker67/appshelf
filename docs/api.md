@@ -146,12 +146,15 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `Updates` | `List`、`Check` | 清单软件和本机 winget / scoop 软件按来源 key 合并的更新（含被搁置的，`count` 只数提供的）、更新方式不是默认的软件（`rules`）、检查时间和 AppShelf 自身的新版本；`Check` 立即检查 |
 | | `Start` | 按来源 key 开始更新：清单里已读到状态的走 `Tasks` 的路径，其余走 `Installed` 的路径；前端只传 key，Go 重新解析来源 |
 | | `SetMode`、`Skip`、`Snooze`、`Restore` | 设为提醒 / 自动更新 / 忽略（不能自动更新时返回原因；开启时有更新立即排队）；跳过当前最新版本；暂缓 1–90 天；恢复提醒 |
-| | `History`、`ClearHistory`、`Settings`、`SetSettings` | 更新记录；检查间隔、通知、关闭窗口后留在托盘（默认开）、开机启动、AppShelf 自身的检查和自动下载 |
-| `About` | `Info`、`CheckForUpdates`、`OpenLogs`、`OpenDataDir`、`OpenURL`、`SetTheme` | 版本、自更新、目录、用默认浏览器打开链接（只允许 http/https）、外观 |
+| | `History`、`ClearHistory`、`Settings`、`SetSettings` | 更新记录；检查间隔、通知、关闭窗口后留在托盘（默认开）、开机启动；AppShelf 自身何时检查新版本 `selfCheck`（`off` 不自动检查、`launch` 启动时检查（默认）、`interval` 启动时检查后每隔 `selfEvery` 小时：1、6 或 24，默认 24），省略时保持原样 |
+| `About` | `Info`、`OpenLogs`、`OpenDataDir`、`OpenURL`、`SetTheme` | 版本、目录、用默认浏览器打开链接（只允许 http/https）、外观 |
+| | `SelfUpdate`、`CheckForUpdates`、`InstallUpdate` | AppShelf 自身的更新，没有单独的更新窗口：状态 `SelfState`（运行的版本 `version`、能否自更新 `enabled`、阶段 `phase`：`idle` / `checking` / `available` / `downloading` / `restarting` / `failed`、找到的版本 `available`、下载进度 `progress`（0–1）、失败原因 `error`、上次检查成功的时间 `checkedAt`）；`CheckForUpdates` 立即检查并返回状态，失败时返回说明原因的错误；`InstallUpdate` 立即返回，在后台下载、校验签名并替换，完成后自动重新打开，过程由 `selfUpdate` 事件告知 |
 
 ### 事件
 
 `changed`：`{ kinds: ("shelf" | "tasks" | "sources" | "installed" | "updates")[], revision }`。80 毫秒内的多次变化合并成一次。前端收到后按 `kinds` 重新读取对应数据；`shelf`、`tasks`、`installed` 也会让更新列表重新读取。
+
+`selfUpdate`：`SelfState`，AppShelf 自身的检查和更新每有变化就发出（下载进度最多每 100 毫秒一次）；前端据此在窗口右下角显示提示。
 
 `navigate`：页面名（目前只有 `"updates"`），点击系统通知后由 Go 发出，前端切到该页。
 

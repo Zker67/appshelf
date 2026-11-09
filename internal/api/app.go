@@ -92,8 +92,15 @@ type Hooks struct {
 	// development build, and installed where it can be replaced. Nil means
 	// it cannot.
 	CanUpdate func() bool
-	// CheckUpdates checks for a newer AppShelf, showing the update window.
-	CheckUpdates func()
+	// SelfCheck asks for a newer AppShelf: nil when this one is the
+	// latest. Nil means it cannot update itself.
+	SelfCheck func(ctx context.Context) (*SelfRelease, error)
+	// Relaunch quits AppShelf and starts it again, in the version just
+	// installed.
+	Relaunch func()
+	// EmitSelf sends the state of AppShelf's own update to the pages; nil
+	// means SelfUpdateChanged.Broadcast.
+	EmitSelf func(SelfState)
 	// SetTheme applies an appearance.
 	SetTheme func(ThemeSource)
 	// Emit sends a change to the pages; nil means Changed.Broadcast.
@@ -111,12 +118,6 @@ type Hooks struct {
 	SetBackground  func(on bool)
 	OpenAtLogin    func() bool
 	SetOpenAtLogin func(on bool) error
-	// SelfAvailable is the newer AppShelf the update window found, or "".
-	SelfAvailable func() string
-	// SelfChecks and SetSelfChecks read and change whether the update
-	// window checks every day, and installs what it finds without asking.
-	SelfChecks    func() (checks, downloads bool)
-	SetSelfChecks func(checks, downloads bool)
 }
 
 // Config is what Start needs.
@@ -162,6 +163,7 @@ type App struct {
 	core *core.Core
 	inv  *inventoryState
 	upd  *checker
+	self *selfUpdater
 
 	// Owned by the loop: the core's work before the last function, to
 	// see it end.
@@ -215,6 +217,7 @@ func New(hooks Hooks) *App {
 	})
 	a.inv = &inventoryState{app: a}
 	a.upd = newChecker(a)
+	a.self = newSelfUpdater()
 	return a
 }
 
@@ -254,6 +257,7 @@ func (a *App) Start(ctx context.Context, cfg Config) {
 		// Reading everything as AppShelf starts is a check for updates.
 		a.upd.begin()
 		go a.upd.run(ctx)
+		go a.watchSelf(ctx)
 		a.write([]ChangeKind{ChangedShelf}, func() { a.core.Refresh() })
 		a.inv.restore()
 		a.inv.refresh(0)

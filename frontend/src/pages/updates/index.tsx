@@ -33,7 +33,6 @@ import { holdText } from "@/lib/updates";
 import { revealRow, useList, usePageKeys } from "@/lib/use-list";
 import { cn } from "@/lib/utils";
 import {
-  About,
   Updates,
   type CheckInterval,
   type UpdateItem,
@@ -71,6 +70,7 @@ import {
 } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
+import { installSelf, useSelfUpdate } from "@/lib/self-update";
 import { UpdateDetail } from "./detail";
 
 type View = "updates" | "auto" | "held" | "history";
@@ -222,17 +222,35 @@ export function UpdatesPage() {
       <ResizablePanel id="list" minSize={520}>
         <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span>
-                    <Chip icon={list?.checking ? LoaderCircleIcon : Clock3Icon}>
-                      {list?.checking ? "正在检查" : checkedAt ? `${checkedAt} 检查` : "尚未检查"}
+                    <Chip
+                      icon={list?.checking ? LoaderCircleIcon : Clock3Icon}
+                      className={list?.checking ? "[&>svg]:animate-spin" : undefined}
+                    >
+                      {list?.checking ? (
+                        <WideLabel from="xl">正在检查</WideLabel>
+                      ) : checkedAt ? (
+                        <span className="tabular-nums">
+                          {checkedAt}
+                          <WideLabel from="xl"> 检查</WideLabel>
+                        </span>
+                      ) : (
+                        <WideLabel from="xl">尚未检查</WideLabel>
+                      )}
                     </Chip>
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {nextAt ? `下次检查：${nextAt}` : "自动检查已关闭，只在启动时和手动检查"}
+                  {list?.checking
+                    ? "正在检查"
+                    : checkedAt
+                      ? `${checkedAt} 检查过 · `
+                      : "尚未检查 · "}
+                  {!list?.checking &&
+                    (nextAt ? `下次检查：${nextAt}` : "自动检查已关闭，只在启动时和手动检查")}
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -241,7 +259,7 @@ export function UpdatesPage() {
               onChange={setQuery}
               placeholder="搜索软件名称"
               inputRef={searchRef}
-              className="mx-auto w-full max-w-sm min-w-40"
+              className="mx-auto w-full max-w-sm min-w-24"
             />
             <Tooltip>
               <TooltipTrigger asChild>
@@ -460,19 +478,22 @@ function Schedule() {
   );
 }
 
-/** SelfCard is AppShelf's own update, which its update window installs. */
+/**
+ * SelfCard is AppShelf's own update: 去更新 downloads it in place, its
+ * progress here and in the toast, and AppShelf starts again in it.
+ */
 function SelfCard({ version, available }: { version: string; available: string }) {
-  const [busy, setBusy] = useState(false);
-  const open = async () => {
-    setBusy(true);
-    try {
-      await About.checkForUpdates();
-    } catch (err) {
-      toast.error("无法打开更新窗口", { description: errorText(err) });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { data: s } = useSelfUpdate();
+  const phase = s?.phase;
+  const working = phase === "downloading" || phase === "restarting";
+  const note =
+    phase === "downloading"
+      ? `正在下载 ${Math.floor((s?.progress ?? 0) * 100)}%`
+      : phase === "restarting"
+        ? "马上重新打开"
+        : phase === "failed"
+          ? "上次没有更新成功，原来的版本没有改动"
+          : `当前 v${version.replace(/^v/, "")}，更新后自动重新打开`;
   return (
     <div className="mx-3 mt-3 mb-1 flex items-center gap-3 rounded-xl border border-primary/20 bg-linear-to-r from-primary/10 via-card to-card px-3.5 py-3">
       <img src={logo} alt="" className="size-10 drop-shadow-sm" draggable={false} />
@@ -483,13 +504,19 @@ function SelfCard({ version, available }: { version: string; available: string }
             <SparklesIcon />v{available.replace(/^v/, "")}
           </Pill>
         </div>
-        <div className="mt-0.5 text-xs text-muted-foreground">
-          当前 v{version.replace(/^v/, "")}，更新说明和安装在更新窗口里
+        <div
+          className={cn(
+            "mt-0.5 text-xs tabular-nums",
+            phase === "failed" ? "text-destructive" : "text-muted-foreground",
+          )}
+          title={phase === "failed" ? s?.error : undefined}
+        >
+          {note}
         </div>
       </div>
-      <Button size="sm" onClick={() => void open()} disabled={busy}>
-        {busy ? <LoaderCircleIcon className="animate-spin" /> : <DownloadCloudIcon />}
-        查看并更新
+      <Button size="sm" onClick={installSelf} disabled={working || phase === "checking"}>
+        {working ? <LoaderCircleIcon className="animate-spin" /> : <DownloadCloudIcon />}
+        {phase === "failed" ? "重试" : working ? "更新中" : "去更新"}
       </Button>
     </div>
   );

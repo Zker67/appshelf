@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/updater"
 
 	"appshelf/internal/api"
 	"appshelf/internal/core"
@@ -40,9 +39,9 @@ func main() {
 	if !app.RequestSingleInstanceLock() {
 		return // the running AppShelf comes to the front
 	}
-	mygo.Use(updater.Plugin)
-	// The update window reads AppShelf's releases through a feed that
-	// copes with a proxy failing on github.com (selfupdate.go).
+	// AppShelf's own updates are read through a feed that copes with a
+	// proxy failing on github.com (selfupdate.go), checked and installed by
+	// the api package, without a window of their own.
 	useUpdateFeed()
 
 	// Development builds, and copies not installed where they can be
@@ -98,11 +97,18 @@ func main() {
 			}
 			return paths[0], nil
 		},
-		OpenPath:     mygo.Shell.OpenPath,
-		OpenURL:      mygo.Shell.OpenExternal,
-		CanUpdate:    canUpdate.Load,
-		CheckUpdates: updater.CheckForUpdates,
-		SetTheme:     func(t api.ThemeSource) { mygo.Theme.SetSource(mygo.ThemeSource(t)) },
+		OpenPath:  mygo.Shell.OpenPath,
+		OpenURL:   mygo.Shell.OpenExternal,
+		CanUpdate: canUpdate.Load,
+		SelfCheck: func(ctx context.Context) (*api.SelfRelease, error) {
+			up, err := mygo.Updater.Check(ctx)
+			if err != nil || up == nil {
+				return nil, err
+			}
+			return &api.SelfRelease{Version: up.Version, Install: up.Install}, nil
+		},
+		Relaunch: app.Relaunch,
+		SetTheme: func(t api.ThemeSource) { mygo.Theme.SetSource(mygo.ThemeSource(t)) },
 		Notify: func(title, body string) {
 			// One notification of updates at a time: a newer one replaces it.
 			n := mygo.NewNotification(mygo.NotificationOptions{ID: "appshelf-updates", Title: title, Body: body})
@@ -115,12 +121,6 @@ func main() {
 		SetBackground:  bg.setStay,
 		OpenAtLogin:    app.OpenAtLogin,
 		SetOpenAtLogin: app.SetOpenAtLogin,
-		SelfAvailable:  updater.AvailableVersion,
-		SelfChecks:     func() (bool, bool) { return updater.AutomaticChecks(), updater.AutomaticDownloads() },
-		SetSelfChecks: func(checks, downloads bool) {
-			updater.SetAutomaticChecks(checks)
-			updater.SetAutomaticDownloads(downloads)
-		},
 	})
 	mygo.Bind(shelf.Services()...)
 
@@ -249,7 +249,6 @@ func main() {
 				window.Hide()
 			}
 		})
-		updater.OnChange(shelf.SelfChanged)
 		// The page's lists have menus of their own; elsewhere only text has
 		// one, to copy and paste: a store window has no Back or Reload.
 		window.Page().OnContextMenu(func(e *mygo.ContextMenuEvent) {

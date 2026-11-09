@@ -27,17 +27,6 @@ func (s *About) Info() AboutInfo {
 	return out
 }
 
-// CheckForUpdates checks for a newer AppShelf: the update window says what
-// it found.
-func (s *About) CheckForUpdates() error {
-	<-s.a.ready
-	if !s.a.canUpdate() {
-		return errors.New("自更新只在用安装包安装的版本里可用")
-	}
-	s.a.hooks.CheckUpdates()
-	return nil
-}
-
 // OpenLogs opens the directory of the install logs.
 func (s *About) OpenLogs() error {
 	a := s.a
@@ -94,5 +83,5 @@ func (s *About) SetTheme(theme ThemeSource) error {
 }
 
 func (a *App) canUpdate() bool {
-	return a.hooks.CanUpdate != nil && a.hooks.CheckUpdates != nil && a.hooks.CanUpdate()
+	return a.hooks.CanUpdate != nil && a.hooks.SelfCheck != nil && a.hooks.CanUpdate()
 }

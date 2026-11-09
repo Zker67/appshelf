@@ -333,18 +333,22 @@ export function UninstallPage() {
       <ResizablePanel id="list" minSize={520}>
         <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {view === "list" ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span>
                       <Chip icon={HardDriveIcon}>
-                        {shown.length} 个 · {formatBytes(shownSize)}
+                        <span className="tabular-nums">
+                          {shown.length} 个
+                          <WideLabel from="xl"> · {formatBytes(shownSize)}</WideLabel>
+                        </span>
                       </Chip>
                     </span>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-72">
-                    注册表里登记的占用空间合计，没有登记大小的程序不计入
+                    {shown.length} 个 · {formatBytes(shownSize)}
+                    ：注册表里登记的占用空间合计，没有登记大小的程序不计入
                   </TooltipContent>
                 </Tooltip>
               ) : (
@@ -365,7 +369,7 @@ export function UninstallPage() {
               }}
               placeholder="搜索名称或发布者"
               inputRef={searchRef}
-              className="mx-auto w-full max-w-sm min-w-40"
+              className="mx-auto w-full max-w-sm min-w-24"
             />
             {view === "list" && (
               <DropdownMenu>

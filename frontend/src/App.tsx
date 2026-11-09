@@ -1,9 +1,11 @@
 // The window: the title bar with the pages, and the page shown. A page
 // stays mounted once shown, keeping its search, filters and scroll.
 
+import { SelfUpdateToast } from "@/components/self-update-toast";
 import { SourceSetupPrompt } from "@/components/source-setup";
 import { Titlebar } from "@/components/titlebar";
 import { listenForChanges, useShelf } from "@/lib/api";
+import { listenForSelfUpdate } from "@/lib/self-update";
 import { events } from "@/mygo";
 import { DiscoverPage } from "@/pages/discover";
 import { InstalledPage } from "@/pages/installed";
@@ -17,6 +19,7 @@ import { toast } from "sonner";
 
 export default function App() {
   useEffect(() => listenForChanges(), []);
+  useEffect(() => listenForSelfUpdate(), []);
   return (
     <NavProvider>
       <ActionsProvider>
@@ -31,6 +34,7 @@ export default function App() {
         </div>
         <OpeningNotes />
         <SourceSetupPrompt />
+        <SelfUpdateToast />
         <Navigation />
       </ActionsProvider>
     </NavProvider>

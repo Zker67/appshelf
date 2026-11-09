@@ -336,7 +336,7 @@ export function InstalledPage() {
       <ResizablePanel id="list" minSize={520}>
         <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <Chip icon={LayersIcon}>{overview ? entries.length : shown.length} 个</Chip>
               {data?.partial && (
                 <Tooltip>
@@ -361,7 +361,8 @@ export function InstalledPage() {
                         icon={TriangleAlertIcon}
                         className="border-warning/30 bg-warning/10 text-warning"
                       >
-                        {data?.notes.length} 条提示
+                        {data?.notes.length}
+                        <WideLabel> 条提示</WideLabel>
                       </Chip>
                     </span>
                   </TooltipTrigger>
@@ -380,7 +381,7 @@ export function InstalledPage() {
               onChange={search}
               placeholder="搜索名称或发布者"
               inputRef={searchRef}
-              className="mx-auto w-full max-w-sm min-w-40"
+              className="mx-auto w-full max-w-sm min-w-24"
             />
             {!overview && (
               <DropdownMenu>

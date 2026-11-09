@@ -11,9 +11,37 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { CheckIcon, CopyIcon, SearchIcon, XIcon, type LucideIcon } from "lucide-react";
+import {
+  CheckIcon,
+  CircleHelpIcon,
+  CopyIcon,
+  SearchIcon,
+  XIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { toast } from "sonner";
+
+/** Hint is a small mark whose explanation shows on hover, in place of a line of text. */
+export function Hint({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="说明"
+          className={cn(
+            "inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+            className,
+          )}
+        >
+          <CircleHelpIcon className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72 leading-relaxed">{children}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 /** EmptyState fills its area, centered, with what to do next. */
 export function EmptyState({
@@ -144,7 +172,7 @@ export function SearchBox({
   return (
     <InputGroup
       className={cn(
-        "bg-field shadow-[inset_0_1px_0_var(--highlight)] transition-shadow focus-within:shadow-sm",
+        "@container/search bg-field shadow-[inset_0_1px_0_var(--highlight)] transition-shadow focus-within:shadow-sm",
         size === "lg" ? "h-10" : "h-8",
         className,
       )}
@@ -173,7 +201,8 @@ export function SearchBox({
             <XIcon />
           </InputGroupButton>
         ) : (
-          <Kbd className="hidden sm:inline-flex">Ctrl F</Kbd>
+          // Squeezed, the field keeps its room for the words typed.
+          <Kbd className="hidden @[15rem]/search:inline-flex">Ctrl F</Kbd>
         )}
       </InputGroupAddon>
     </InputGroup>

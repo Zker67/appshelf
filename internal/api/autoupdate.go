@@ -45,10 +45,16 @@ func newChecker(a *App) *checker {
 }
 
 // checkNow starts a check; one under way goes on, reading again.
+//
+// The check begins with both readings on the loop, where settle runs: a
+// settle in between would see neither reading and end the check with the
+// lists of before.
 func (a *App) checkNow() {
-	a.upd.begin()
-	a.write([]ChangeKind{ChangedShelf}, func() { a.core.Refresh() })
-	a.inv.refresh(0)
+	a.write([]ChangeKind{ChangedShelf}, func() {
+		a.upd.begin()
+		a.inv.refresh(0)
+		a.core.Refresh()
+	})
 }
 
 func (u *checker) begin() {

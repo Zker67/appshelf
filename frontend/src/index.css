@@ -653,6 +653,12 @@ body:has(
 .nav-tab[data-active="true"] .nav-icon-installed .check {
   animation: check-loop 2.6s ease-in-out infinite;
 }
+/* The title bar's task ring: as the tasks end, its check or cross draws
+   itself once the ring has closed. */
+.task-mark {
+  stroke-dasharray: 12;
+  animation: check-draw 0.45s var(--ease-out-soft) 0.25s both;
+}
 .nav-tab[data-active="true"] .nav-icon-installed .glow {
   animation: screen-glow 2.6s ease-in-out infinite;
 }

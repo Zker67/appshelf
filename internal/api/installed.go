@@ -35,6 +35,10 @@ type inventoryState struct {
 	// settle is when a change seen outside AppShelf is read, once changes
 	// stop coming.
 	settle *time.Timer
+
+	// gone are the programs AppShelf removed, by key, with when: they stay
+	// off the list until a reading begun after their removal.
+	gone map[string]time.Time
 }
 
 // settleDelay is how long the changes of an install or removal outside
@@ -84,7 +88,11 @@ func (s *inventoryState) refresh(maxAge time.Duration) {
 func (s *inventoryState) run(maxAge time.Duration) {
 	s.quick()
 	for {
+		begun := time.Now()
 		list := inventory.Load(context.Background(), s.app.inventorySources(maxAge))
+		s.mu.Lock()
+		list.Entries = s.withoutGoneLocked(list.Entries, begun)
+		s.mu.Unlock()
 		if s.app.cfg.Icons != nil {
 			s.app.cfg.Icons.SetInventory(list.Entries)
 		}
@@ -201,6 +209,46 @@ func (s *inventoryState) quick() {
 		s.app.cfg.Icons.SetInventory(list.Entries)
 	}
 	s.app.note.mark(ChangedInstalled)
+}
+
+// drop takes programs AppShelf removed off the list at once, without
+// waiting for the list to be read again.
+func (s *inventoryState) drop(keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+	now := time.Now()
+	s.mu.Lock()
+	if s.gone == nil {
+		s.gone = map[string]time.Time{}
+	}
+	for _, k := range keys {
+		s.gone[k] = now
+	}
+	s.list.Entries = s.withoutGoneLocked(s.list.Entries, time.Time{})
+	s.mu.Unlock()
+	s.app.note.mark(ChangedInstalled)
+}
+
+// withoutGoneLocked returns entries without the programs removed, first
+// forgetting those removed before begun: a reading begun since lists what
+// is left. entries is not changed.
+func (s *inventoryState) withoutGoneLocked(entries []inventory.Entry, begun time.Time) []inventory.Entry {
+	for k, at := range s.gone {
+		if at.Before(begun) {
+			delete(s.gone, k)
+		}
+	}
+	if len(s.gone) == 0 {
+		return entries
+	}
+	out := make([]inventory.Entry, 0, len(entries))
+	for _, e := range entries {
+		if _, ok := s.gone[e.Key]; !ok {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // busy reports whether the list is being read.

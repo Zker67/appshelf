@@ -484,10 +484,10 @@ export function UninstallPage() {
               onClick={() => uninstall(selected)}
             >
               <PackageXIcon />
-              卸载{selected.length > 0 && ` ${selected.length} 个`}
+              卸载
               {chosenSize > 0 && (
-                <span className="font-normal tabular-nums opacity-80">
-                  · {formatBytes(chosenSize)}
+                <span className="rounded-md bg-destructive/15 px-1.5 text-[11px] leading-[18px] font-semibold tabular-nums">
+                  {formatBytes(chosenSize)}
                 </span>
               )}
             </Button>
@@ -653,9 +653,11 @@ function HistoryRow({ task: t }: { task: TaskEntry }) {
   const st = states[t.state];
   const Icon = st.icon;
   const failed = t.state === "failed";
+  // A removal tried again shows in the task panel, as one started.
   const run = async (what: string, fn: () => Promise<unknown>) => {
     try {
       await fn();
+      actions.openTasks();
     } catch (err) {
       toast.error(`${what}失败`, { description: errorText(err) });
     }

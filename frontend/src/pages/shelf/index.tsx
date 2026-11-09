@@ -203,7 +203,7 @@ export function ShelfPage() {
       <ResizablePanel id="list" minSize={460}>
         <div className="glass-panel glass-strong @container flex h-full min-h-0 flex-col">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b px-3">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {hasGroupFilter(filter) && filter.status !== "all" && (
                 <Chip icon={ListFilterIcon}>{statusTitles[filter.status]}</Chip>
               )}

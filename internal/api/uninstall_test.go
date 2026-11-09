@@ -11,6 +11,7 @@ import (
 
 	"appshelf/internal/catalog"
 	"appshelf/internal/source"
+	"appshelf/internal/source/winget"
 	"appshelf/internal/uninstall"
 )
 
@@ -113,6 +114,69 @@ func TestUninstallFromTheInstalledList(t *testing.T) {
 	// Only what can run is queued; nothing that can run is an error.
 	if _, err := e.installed.StartUninstall(context.Background(), []string{`arp:machine\x64\tool`}); err == nil || !strings.Contains(err.Error(), "注册表里没有卸载命令") {
 		t.Errorf("start of a blocked program: %v", err)
+	}
+}
+
+// listed reports whether the installed list has key.
+func (e *env) listed(key string) bool {
+	return slices.ContainsFunc(e.installed.List().Entries, func(en InstalledEntry) bool { return en.Key == key })
+}
+
+func TestUninstallTakesTheProgramOffTheListAtOnce(t *testing.T) {
+	e := newEnv(t)
+	key := "winget:obsidian.obsidian"
+	if !e.listed(key) {
+		t.Fatal("the program is not listed to begin with")
+	}
+
+	// A reading begun before the removal is under way, and held.
+	stale := make(chan struct{})
+	e.wapi.mu.Lock()
+	e.wapi.listBlock = stale
+	before := e.wapi.lists
+	e.wapi.mu.Unlock()
+	e.installed.Refresh()
+	e.until(func() bool { e.wapi.mu.Lock(); defer e.wapi.mu.Unlock(); return e.wapi.lists == before+1 })
+
+	if _, err := e.installed.StartUninstall(context.Background(), []string{key}); err != nil {
+		t.Fatal(err)
+	}
+	e.until(func() bool {
+		l := e.tasks.List()
+		return len(l.Items) == 1 && l.Items[0].State == TaskSucceeded
+	})
+	// Gone as the task ends, while the list is still being read.
+	e.until(func() bool { return !e.listed(key) })
+	if !e.installed.List().Loading {
+		t.Fatal("the reading held has ended")
+	}
+
+	// The stale reading still lists it: it stays off. The reading asked
+	// again once the queue ended begins after the removal, and is held.
+	fresh := make(chan struct{})
+	e.wapi.mu.Lock()
+	e.wapi.listBlock = fresh
+	e.wapi.mu.Unlock()
+	close(stale)
+	e.until(func() bool { e.wapi.mu.Lock(); defer e.wapi.mu.Unlock(); return e.wapi.lists == before+2 })
+	if e.listed(key) {
+		t.Fatal("a reading begun before the removal brought the program back")
+	}
+
+	// The fresh reading lists what is left, and the removal is forgotten.
+	e.wapi.mu.Lock()
+	e.wapi.pkgs = slices.DeleteFunc(slices.Clone(e.wapi.pkgs), func(p winget.Package) bool { return p.ID == "Obsidian.Obsidian" })
+	e.wapi.mu.Unlock()
+	close(fresh)
+	e.until(func() bool { return !e.installed.List().Loading })
+	if e.listed(key) || !e.listed(`arp:machine\x64\tool`) {
+		t.Errorf("list after reading again = %+v", e.installed.List().Entries)
+	}
+	e.app.inv.mu.Lock()
+	gone := len(e.app.inv.gone)
+	e.app.inv.mu.Unlock()
+	if gone != 0 {
+		t.Errorf("%d removals still kept after a reading begun since", gone)
 	}
 }
 

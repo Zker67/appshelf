@@ -28,6 +28,7 @@ import (
 	"appshelf/internal/detect"
 	"appshelf/internal/discover"
 	"appshelf/internal/icons"
+	"appshelf/internal/queue"
 	"appshelf/internal/source"
 	"appshelf/internal/source/github"
 	"appshelf/internal/source/scoop"
@@ -164,6 +165,9 @@ type App struct {
 	// Owned by the loop: the core's work before the last function, to
 	// see it end.
 	wasRefreshing, wasRunning bool
+	// Owned by the loop: the removals that succeeded, by task, whose
+	// programs are off the installed list.
+	dropped map[int]bool
 
 	mu       sync.Mutex
 	imports  map[string]*core.Import
@@ -290,7 +294,28 @@ func (a *App) afterLoop() {
 		a.inv.refresh(0)
 	}
 	a.wasRefreshing, a.wasRunning = refreshing, running
+	a.dropRemoved()
 	a.upd.afterLoop()
+}
+
+// dropRemoved takes each program a task just removed off the installed
+// list as the task ends, not once the queue ends and the list is read
+// again: the pages stop showing it at once.
+func (a *App) dropRemoved() {
+	items := a.core.Queue.Items()
+	done := make(map[int]bool, len(items))
+	var keys []string
+	for _, it := range items {
+		if it.Action != queue.Uninstall || it.State != queue.Succeeded || it.Target == nil {
+			continue
+		}
+		done[it.ID] = true
+		if !a.dropped[it.ID] {
+			keys = append(keys, it.Target.Key)
+		}
+	}
+	a.dropped = done
+	a.inv.drop(keys)
 }
 
 // remember keeps an import or a deletion under a new token, forgetting the

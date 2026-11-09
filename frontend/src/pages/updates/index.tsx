@@ -5,7 +5,7 @@
 
 import logo from "@/assets/logo.png";
 import { AppIcon } from "@/components/app-icon";
-import { Chip, EmptyState, SearchBox, WideLabel } from "@/components/common";
+import { Chip, EmptyState, SearchBox, SelectionBar, WideLabel } from "@/components/common";
 import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
 import { SourceBadge } from "@/components/source-badge";
 import { Pill } from "@/components/status-badge";
@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,6 +30,8 @@ import { errorText, useUpdateHistory, useUpdateSettings, useUpdates } from "@/li
 import { sourceID } from "@/lib/shelf";
 import { formatClock, formatDateTime, matches } from "@/lib/text";
 import { holdText } from "@/lib/updates";
+import { revealRow, useList, usePageKeys } from "@/lib/use-list";
+import { cn } from "@/lib/utils";
 import {
   About,
   Updates,
@@ -57,7 +60,15 @@ import {
   ZapIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
 
@@ -113,11 +124,49 @@ export function UpdatesPage() {
     history: records.length,
   };
   const hit = (name: string, id: string) => matches(query, [name, id]);
-  const shownUpdates = offered.filter((i) => hit(i.name, sourceID(i.source)));
+  const shownUpdates = useMemo(
+    () => offered.filter((i) => matches(query, [i.name, sourceID(i.source)])),
+    [offered, query],
+  );
   const shownAuto = auto.filter((r) => hit(r.name, sourceID(r.source)));
   const shownHeld = held.filter((h) => hit(h.name, h.key));
   const shownHistory = records.filter((r) => hit(r.name, r.key));
   const runnable = offered.filter((i) => !i.pending);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const order = useMemo(() => shownUpdates.map((i) => i.key), [shownUpdates]);
+  const rows = useList(order, false);
+  const selected = [...rows.selected]
+    .map((k) => byKey.get(k))
+    .filter((i): i is UpdateItem => !!i && !i.pending);
+  useEffect(() => revealRow(listRef, rows.focus), [rows.focus]);
+
+  usePageKeys({
+    focusSearch: () => searchRef.current?.focus(),
+    selectAll: () => {
+      if (view === "updates") rows.selectAll(true);
+    },
+    escape: () => {
+      if (rows.selected.size > 0) {
+        rows.selectAll(false);
+        return true;
+      }
+      return false;
+    },
+    move: (d) => {
+      if (view === "updates") rows.move(d);
+    },
+    space: () => {
+      if (view === "updates" && rows.focus)
+        rows.check(rows.focus, !rows.selected.has(rows.focus), false);
+    },
+    enter: () => {
+      const i = view === "updates" && rows.focus ? byKey.get(rows.focus) : undefined;
+      if (!i || i.pending) return false;
+      actions.update([i.key]);
+      return true;
+    },
+  });
   const loading = isPending || (!list?.loaded && items.length === 0);
 
   const check = () =>
@@ -189,6 +238,7 @@ export function UpdatesPage() {
               value={query}
               onChange={setQuery}
               placeholder="搜索软件名称"
+              inputRef={searchRef}
               className="mx-auto w-full max-w-sm min-w-40"
             />
             <Tooltip>
@@ -246,12 +296,21 @@ export function UpdatesPage() {
                 </EmptyState>
               )
             ) : (
-              <Rows>
+              <Rows viewportRef={listRef}>
                 {list?.self.available && !query.trim() && (
                   <SelfCard version={list.self.version} available={list.self.available} />
                 )}
                 {shownUpdates.map((i) => (
-                  <UpdateRow key={i.key} item={i} onUpdate={() => actions.update([i.key])} />
+                  <UpdateRow
+                    key={i.key}
+                    item={i}
+                    checked={rows.selected.has(i.key)}
+                    focused={rows.focus === i.key}
+                    selecting={rows.selected.size > 0}
+                    onClick={(ev) => rows.clickRow(i.key, ev)}
+                    onCheck={(on, shift) => rows.check(i.key, on, shift)}
+                    onUpdate={() => actions.update([i.key])}
+                  />
                 ))}
               </Rows>
             )
@@ -313,15 +372,34 @@ export function UpdatesPage() {
               ))}
             </Rows>
           )}
+          <SelectionBar
+            count={view === "updates" ? rows.selected.size : 0}
+            onClear={() => rows.selectAll(false)}
+          >
+            <Button
+              size="sm"
+              disabled={selected.length === 0}
+              onClick={() => actions.update(selected.map((i) => i.key))}
+            >
+              <ArrowUpCircleIcon />
+              更新
+            </Button>
+          </SelectionBar>
         </div>
       </ResizablePanel>
     </ResizablePanelGroup>
   );
 }
 
-function Rows({ children }: { children: ReactNode }) {
+function Rows({
+  children,
+  viewportRef,
+}: {
+  children: ReactNode;
+  viewportRef?: Ref<HTMLDivElement>;
+}) {
   return (
-    <ScrollArea className="min-h-0 flex-1">
+    <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
       <div className="list-stagger anim-fade pb-20">{children}</div>
     </ScrollArea>
   );
@@ -406,19 +484,59 @@ function Versions({ from, to }: { from?: string; to?: string }) {
   );
 }
 
+/** RowPick makes a row one of a list's selection, checked on its own or by a click. */
+interface RowPick {
+  id: string;
+  checked: boolean;
+  disabled?: boolean;
+  focused: boolean;
+  selecting: boolean;
+  onClick: (ev: MouseEvent) => void;
+  onCheck: (on: boolean, shift: boolean) => void;
+}
+
 function RowShell({
   icon,
   name,
   children,
   sub,
+  pick,
 }: {
   icon: string;
   name: string;
   sub: ReactNode;
   children: ReactNode;
+  pick?: RowPick;
 }) {
   return (
-    <div className="row-lazy list-row group/row relative flex h-[60px] items-center gap-3 px-3">
+    <div
+      data-row={pick?.id}
+      data-checked={pick?.checked}
+      onClick={pick?.onClick}
+      className={cn(
+        "row-lazy list-row group/row relative flex h-[60px] items-center gap-3 px-3",
+        pick && "select-none",
+        pick?.focused && "row-focus",
+      )}
+    >
+      {pick && (
+        <Checkbox
+          checked={pick.checked}
+          disabled={pick.disabled}
+          aria-label={`选择 ${name}`}
+          onClick={(ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            pick.onCheck(!pick.checked, ev.shiftKey);
+          }}
+          className={cn(
+            "transition-opacity",
+            pick.checked || pick.selecting
+              ? "opacity-100"
+              : "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100",
+          )}
+        />
+      )}
       <AppIcon path={icon} name={name} size={36} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium select-text">{name}</div>
@@ -431,11 +549,16 @@ function RowShell({
   );
 }
 
-function UpdateRow({ item: i, onUpdate }: { item: UpdateItem; onUpdate: () => void }) {
+function UpdateRow({
+  item: i,
+  onUpdate,
+  ...pick
+}: Omit<RowPick, "id" | "disabled"> & { item: UpdateItem; onUpdate: () => void }) {
   return (
     <RowShell
       icon={i.icon}
       name={i.name}
+      pick={{ ...pick, id: i.key, disabled: i.pending }}
       sub={
         <>
           <SourceBadge type={i.source.type} />
@@ -498,7 +621,10 @@ function UpdateRow({ item: i, onUpdate }: { item: UpdateItem; onUpdate: () => vo
         variant="outline"
         disabled={i.pending}
         className="transition-colors hover:border-primary/40 hover:text-primary"
-        onClick={onUpdate}
+        onClick={(ev) => {
+          ev.stopPropagation();
+          onUpdate();
+        }}
       >
         <ArrowUpCircleIcon />
         更新

@@ -127,34 +127,91 @@ const themes: Array<{ value: ThemeSource; label: string; icon: typeof SunIcon }>
   { value: "dark", label: "深色", icon: MoonIcon },
 ];
 
-/** ProgressRing shows how far the tasks have come, turning while one runs. */
-function ProgressRing({ value, spinning }: { value: number; spinning: boolean }) {
-  const r = 6;
+/** RingTone is how the tasks stand: running, stopped with some waiting, or ended. */
+type RingTone = "running" | "stopped" | "done" | "failed";
+
+const ringTones: Record<RingTone, { arc: string; track: string; badge: string }> = {
+  running: {
+    arc: "stroke-primary",
+    track: "stroke-primary/20",
+    badge: "bg-primary/15 text-primary",
+  },
+  stopped: {
+    arc: "stroke-warning",
+    track: "stroke-warning/25",
+    badge: "bg-warning/15 text-warning",
+  },
+  done: { arc: "stroke-success", track: "stroke-success/20", badge: "bg-success/15 text-success" },
+  failed: {
+    arc: "stroke-destructive",
+    track: "stroke-destructive/20",
+    badge: "bg-destructive/12 text-destructive",
+  },
+};
+
+/**
+ * TaskRing shows how far the tasks have come, turning while one runs; once
+ * they end it closes on a check, or on a cross when one failed.
+ */
+function TaskRing({ value, tone }: { value: number; tone: RingTone }) {
+  const r = 6.5;
   const c = 2 * Math.PI * r;
+  const t = ringTones[tone];
+  const spinning = tone === "running";
   return (
-    <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden>
-      <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2" className="stroke-primary/20" />
-      <circle
-        cx="8"
-        cy="8"
-        r={r}
-        fill="none"
-        strokeWidth="2"
-        strokeLinecap="round"
-        className="stroke-primary transition-[stroke-dashoffset] duration-500 ease-out"
-        strokeDasharray={c}
-        strokeDashoffset={c * (1 - Math.max(value, spinning ? 0.06 : 0))}
-      />
-      {spinning && (
+    <svg viewBox="0 0 16 16" className="size-4" aria-hidden>
+      <g className="origin-center -rotate-90">
         <circle
           cx="8"
           cy="8"
           r={r}
           fill="none"
-          strokeWidth="2"
+          strokeWidth="1.75"
+          className={cn("transition-[stroke] duration-300", t.track)}
+        />
+        <circle
+          cx="8"
+          cy="8"
+          r={r}
+          fill="none"
+          strokeWidth="1.75"
           strokeLinecap="round"
-          className="origin-center animate-spin stroke-primary/60 [animation-duration:1.4s]"
-          strokeDasharray={`${c * 0.18} ${c}`}
+          className={cn("transition-[stroke,stroke-dashoffset] duration-500 ease-out", t.arc)}
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - Math.max(value, spinning ? 0.06 : 0))}
+        />
+        {spinning && (
+          <circle
+            cx="8"
+            cy="8"
+            r={r}
+            fill="none"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            className="origin-center animate-spin stroke-primary/60 [animation-duration:1.4s]"
+            strokeDasharray={`${c * 0.18} ${c}`}
+          />
+        )}
+      </g>
+      {tone === "done" && (
+        <path
+          d="M5.4 8.2l1.8 1.8 3.5-3.7"
+          pathLength={12}
+          fill="none"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="task-mark stroke-success"
+        />
+      )}
+      {tone === "failed" && (
+        <path
+          d="M6 6l4 4M10 6l-4 4"
+          pathLength={12}
+          fill="none"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          className="task-mark stroke-destructive"
         />
       )}
     </svg>
@@ -166,6 +223,17 @@ function Tools() {
   const { data: tasks } = useTasks();
   const { data: about } = useAbout();
   const progress = queueProgress(tasks?.items ?? []);
+  // The ring stays after the tasks end, until those done are cleared.
+  const tone: RingTone | null =
+    progress.total === 0
+      ? null
+      : progress.active
+        ? tasks?.running
+          ? "running"
+          : "stopped"
+        : progress.failed > 0
+          ? "failed"
+          : "done";
   const theme = themes.find((t) => t.value === about?.theme) ?? themes[0]!;
   const ThemeIcon = theme.icon;
   const setTheme = async (value: string) => {
@@ -186,18 +254,21 @@ function Tools() {
         data-tasks-trigger=""
         onClick={actions.toggleTasks}
       >
-        {progress.active ? (
-          <ProgressRing
-            value={progress.total ? progress.done / progress.total : 0}
-            spinning={!!tasks?.running}
-          />
+        {tone ? (
+          <TaskRing value={progress.total ? progress.done / progress.total : 0} tone={tone} />
         ) : (
           <ListChecksIcon />
         )}
         任务
-        {progress.active && (
-          <span className="rounded-full bg-primary/15 px-1.5 text-[10px] leading-4 font-semibold text-primary tabular-nums">
-            {progress.done}/{progress.total}
+        {tone && (
+          <span
+            key={tone}
+            className={cn(
+              "anim-fade rounded-full px-1.5 text-[10px] leading-4 font-semibold tabular-nums",
+              ringTones[tone].badge,
+            )}
+          >
+            {tone === "failed" ? `失败 ${progress.failed}` : `${progress.done}/${progress.total}`}
           </span>
         )}
       </Button>

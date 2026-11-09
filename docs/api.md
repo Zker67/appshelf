@@ -136,7 +136,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `Discover` | `Search(query, Channel<SearchBatch>)` | winget 和 scoop 并行搜索，每个来源的结果一到就发出；新的搜索取消上一次。winget 先发不带版本的结果，读到版本后同一来源再发一次（前端按来源整批替换）；各来源结果缓存 10 分钟 |
 | | `Warm()` | 页面显示时调用，立即返回；在后台启动 winget 搜索用的 PowerShell 并打开 winget 源，让第一次搜索也快 |
 | | `SearchGitHub`、`Details`、`SuggestRules` | GitHub 搜索（按需）；软件详情（只用于展示）；GitHub 软件的检测规则建议（先本机已装的程序，最后是仓库名） |
-| `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的，带注册表里的大小 `size`、安装日期 `installed`（`YYYY-MM-DD`）、安装目录 `location` 和上次打开时间 `lastUsed`（`internal/usage`，没有记录时省略；列表的 `usageTracked` 为假表示 Windows 没有记录程序启动）；第一次调用时开始读取，先给出只含注册表的列表（`partial` 为真），读完 winget、scoop 和应用商店后替换。AppShelf 之外安装或卸载软件时自动重读；AppShelf 卸载成功的程序在任务结束时就从列表去掉并发出 `installed` 变化，不等重读 |
+| `Installed` | `List`、`Refresh` | 本机已装的程序（winget、scoop、注册表、应用商店），标出已在清单的和可更新的，带注册表里的大小 `size`、安装日期 `installed`（`YYYY-MM-DD`）、安装目录 `location` 和上次打开时间 `lastUsed`（`internal/usage`，没有记录时省略；列表的 `usageTracked` 为假表示 Windows 没有记录程序启动）；第一次调用时开始读取，先给出只含注册表的列表（`partial` 为真），读完 winget、scoop 和应用商店后替换。AppShelf 之外安装或卸载软件时自动重读；AppShelf 卸载成功的程序在任务结束时就从列表去掉、更新成功的软件在任务结束时就显示更新后的版本且不再有 `update`，并发出 `installed` 变化，不等重读 |
 | | `StartUpdates` | 按已识别的本机 key 直接更新 winget / scoop 软件，不要求先加入清单；核对当前状态后只排队能更新的 |
 | | `PreviewUninstall(keys)` | 按本机 key 预览卸载，什么都不执行：卸载方式 `method`（winget、scoop、应用商店、卸载程序）、安装程序类型 `installer`、命令 `command`、是否静默 `quiet`、能否执行 `runnable` 和原因 `plan`、提示 `notes`（正在运行、需要管理员权限、运行库等）、卸载程序的签名 `signer` / `signed`、对应的清单软件 `inShelf` |
 | | `StartUninstall(keys)` | 重新预览后把能卸载的加入队列，一个都不能时返回原因；清单里的软件保留，卸载后重读它的状态 |

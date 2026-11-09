@@ -168,6 +168,9 @@ type App struct {
 	// Owned by the loop: the removals that succeeded, by task, whose
 	// programs are off the installed list.
 	dropped map[int]bool
+	// Owned by the loop: the updates that succeeded, by task, whose
+	// packages the installed list shows up to date.
+	upgraded map[int]bool
 
 	mu       sync.Mutex
 	imports  map[string]*core.Import
@@ -295,6 +298,7 @@ func (a *App) afterLoop() {
 	}
 	a.wasRefreshing, a.wasRunning = refreshing, running
 	a.dropRemoved()
+	a.markUpgraded()
 	a.upd.afterLoop()
 }
 
@@ -318,6 +322,26 @@ func (a *App) dropRemoved() {
 	}
 	a.dropped = done
 	a.inv.drop(keys)
+}
+
+// markUpgraded shows each package a task just updated up to date on the
+// installed list as the task ends, not once the queue ends and the list is
+// read again: the pages stop offering its update at once.
+func (a *App) markUpgraded() {
+	items := a.core.Queue.Items()
+	done := make(map[int]bool, len(items))
+	versions := map[string]string{}
+	for _, it := range items {
+		if it.Action != queue.Upgrade || it.State != queue.Succeeded {
+			continue
+		}
+		done[it.ID] = true
+		if !a.upgraded[it.ID] {
+			versions[it.App.Source.Key()] = it.To
+		}
+	}
+	a.upgraded = done
+	a.inv.markUpdated(versions)
 }
 
 // remember keeps an import or a deletion under a new token, forgetting the

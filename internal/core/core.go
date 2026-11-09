@@ -66,6 +66,9 @@ type Core struct {
 	again       bool // refresh again when the one running ends
 	lastRefresh time.Time
 	checking    map[string]bool // apps whose state is being read alone
+	// ranAt is when a task last set an app's state, read after it ran: a
+	// reading of all begun before keeps it.
+	ranAt map[string]time.Time
 
 	availMu sync.Mutex
 	avail   map[catalog.SourceType]source.Availability
@@ -88,6 +91,7 @@ func Open(ctx context.Context, cfg Config) (*Core, error) {
 		sources:  map[catalog.SourceType]source.Source{},
 		statuses: map[string]source.Status{},
 		checking: map[string]bool{},
+		ranAt:    map[string]time.Time{},
 		avail:    map[catalog.SourceType]source.Availability{},
 
 		uninstaller: cfg.Uninstaller,
@@ -181,11 +185,20 @@ func (c *Core) Refresh() {
 	}
 	c.refreshing = true
 	apps := cloneApps(c.cat.Apps)
+	begun := time.Now()
 	go func() {
 		statuses := c.readAll(apps)
 		c.post(func() {
+			for id, at := range c.ranAt {
+				if !at.After(begun) {
+					delete(c.ranAt, id)
+				}
+			}
 			for id, st := range statuses {
-				c.statuses[id] = st
+				// A task that ran since read it after: this may be of before.
+				if _, ran := c.ranAt[id]; !ran {
+					c.statuses[id] = st
+				}
 			}
 			c.prune()
 			c.refreshing = false
@@ -871,9 +884,11 @@ func (e executor) Finished(it queue.Item, st source.Status, res source.Result) s
 			st = c.recheck(c.ctx, it.App)
 		}
 	}
+	at := time.Now()
 	c.post(func() {
 		if _, ok := c.cat.App(it.App.ID); ok {
 			c.statuses[it.App.ID] = st
+			c.ranAt[it.App.ID] = at
 		}
 	})
 	return st

@@ -171,3 +171,130 @@ func TestInstalledUpdateReusesCatalogIdentity(t *testing.T) {
 		t.Fatalf("catalog identity not reused: %+v", items)
 	}
 }
+
+// installedEntry returns the installed list's entry of key.
+func installedEntry(t *testing.T, e *env, key string) InstalledEntry {
+	t.Helper()
+	for _, en := range e.installed.List().Entries {
+		if en.Key == key {
+			return en
+		}
+	}
+	t.Fatalf("%s is not listed", key)
+	return InstalledEntry{}
+}
+
+// A package updated leaves the updates as its task ends, not once the
+// queue ends and the list is read again; a reading begun before the
+// update does not bring it back.
+func TestUpdateTakesThePackageOffTheUpdatesAtOnce(t *testing.T) {
+	e := newEnv(t)
+	updateState(e, availableUpdate())
+	e.winget.mu.Lock()
+	e.winget.after[(catalog.Source{Type: catalog.Winget, ID: "Obsidian.Obsidian"}).Key()] = source.Status{State: source.Installed, Version: "1.9"}
+	e.winget.mu.Unlock()
+	if l := e.updates.List(); len(l.Items) != 1 {
+		t.Fatalf("no update to begin with: %+v", l.Items)
+	}
+
+	// A reading begun before the update is under way, and held.
+	stale := make(chan struct{})
+	e.wapi.mu.Lock()
+	e.wapi.listBlock = stale
+	before := e.wapi.lists
+	e.wapi.mu.Unlock()
+	e.installed.Refresh()
+	e.until(func() bool { e.wapi.mu.Lock(); defer e.wapi.mu.Unlock(); return e.wapi.lists == before+1 })
+
+	if _, err := e.installed.StartUpdates(context.Background(), []string{installedObsidian}); err != nil {
+		t.Fatal(err)
+	}
+	e.until(func() bool {
+		l := e.tasks.List()
+		return len(l.Items) == 1 && l.Items[0].State == TaskSucceeded
+	})
+	// Up to date as the task ends, while the list is still being read.
+	e.until(func() bool { return len(e.updates.List().Items) == 0 })
+	if en := installedEntry(t, e, installedObsidian); en.Version != "1.9" || en.Update != "" {
+		t.Errorf("entry after the update = %+v", en)
+	}
+	if !e.installed.List().Loading {
+		t.Fatal("the reading held has ended")
+	}
+
+	// The stale reading still has the update: it stays gone. The reading
+	// asked again once the queue ended begins after the update, and is
+	// held.
+	fresh := make(chan struct{})
+	e.wapi.mu.Lock()
+	e.wapi.listBlock = fresh
+	e.wapi.mu.Unlock()
+	close(stale)
+	e.until(func() bool { e.wapi.mu.Lock(); defer e.wapi.mu.Unlock(); return e.wapi.lists == before+2 })
+	if l := e.updates.List(); len(l.Items) != 0 {
+		t.Fatalf("a reading begun before the update brought it back: %+v", l.Items)
+	}
+
+	// The fresh reading reads it as it is, and the update is forgotten.
+	e.wapi.mu.Lock()
+	e.wapi.pkgs[0].Version, e.wapi.pkgs[0].Update = "1.9", ""
+	e.wapi.mu.Unlock()
+	close(fresh)
+	e.until(func() bool { return !e.installed.List().Loading })
+	if en := installedEntry(t, e, installedObsidian); en.Version != "1.9" || en.Update != "" {
+		t.Errorf("entry after reading again = %+v", en)
+	}
+	e.app.inv.mu.Lock()
+	kept := len(e.app.inv.updated)
+	e.app.inv.mu.Unlock()
+	if kept != 0 {
+		t.Errorf("%d updates still kept after a reading begun since", kept)
+	}
+}
+
+// A check begun before a catalog app's update ends does not bring the
+// update back with the state it read before.
+func TestUpdateOutlivesACheckBegunBefore(t *testing.T) {
+	e := newEnv(t)
+	updateState(e, availableUpdate())
+	e.winget.mu.Lock()
+	e.winget.after[(catalog.Source{Type: catalog.Winget, ID: "Obsidian.Obsidian"}).Key()] = source.Status{State: source.Installed, Version: "1.9"}
+	e.winget.mu.Unlock()
+	if _, err := e.shelf.SaveApp(catalog.App{Name: "Obsidian", Source: catalog.Source{Type: catalog.Winget, ID: "Obsidian.Obsidian"}}); err != nil {
+		t.Fatal(err)
+	}
+	e.check()
+	if l := e.updates.List(); len(l.Items) != 1 || l.Items[0].AppID == "" {
+		t.Fatalf("no catalog update to begin with: %+v", l.Items)
+	}
+
+	// A check reads the states of before, and is held.
+	block := make(chan struct{})
+	e.winget.mu.Lock()
+	e.winget.statusBlock = block
+	e.winget.mu.Unlock()
+	e.updates.Check()
+	e.until(func() bool {
+		var refreshing bool
+		e.app.read(func() { refreshing = e.core.Refreshing() })
+		return refreshing
+	})
+
+	if _, err := e.updates.Start(context.Background(), []string{installedObsidian}); err != nil {
+		t.Fatal(err)
+	}
+	e.until(func() bool {
+		l := e.tasks.List()
+		return len(l.Items) == 1 && l.Items[0].State == TaskSucceeded
+	})
+	e.until(func() bool { return len(e.updates.List().Items) == 0 })
+
+	e.winget.mu.Lock()
+	e.winget.statusBlock = nil
+	e.winget.mu.Unlock()
+	close(block)
+	e.until(func() bool { checking, _, _ := e.app.upd.times(); return !checking })
+	if l := e.updates.List(); len(l.Items) != 0 {
+		t.Fatalf("a check begun before the update brought it back: %+v", l.Items)
+	}
+}

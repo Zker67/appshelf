@@ -34,6 +34,9 @@ type coreSource struct {
 	after         map[string]source.Status
 	actions       []string
 	upgradeErrors int
+	// statusBlock, when set, makes reading the states of all wait for it,
+	// once they are read: what it returns is of before.
+	statusBlock chan struct{}
 	// fixErr is what Fix returns; Fix without an error makes the source
 	// available.
 	fixErr error
@@ -72,6 +75,12 @@ func (f *coreSource) Statuses(_ context.Context, apps []catalog.App) (map[string
 	out := map[string]source.Status{}
 	for _, a := range apps {
 		out[a.ID] = f.get(a)
+	}
+	f.mu.Lock()
+	block := f.statusBlock
+	f.mu.Unlock()
+	if block != nil {
+		<-block
 	}
 	return out, nil
 }

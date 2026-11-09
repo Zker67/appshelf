@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,10 @@ type inventoryState struct {
 	// gone are the programs AppShelf removed, by key, with when: they stay
 	// off the list until a reading begun after their removal.
 	gone map[string]time.Time
+	// updated are the packages AppShelf updated, by source key: they show
+	// the version read after the update, without one to update to, until a
+	// reading begun after it.
+	updated map[string]updatedPkg
 
 	// sizes measures the directories of the Store's apps and scoop's, which
 	// the registry gives no size, keeping what it measured between readings.
@@ -96,6 +101,7 @@ func (s *inventoryState) run(maxAge time.Duration) {
 		list := inventory.Load(context.Background(), s.app.inventorySources(maxAge))
 		s.mu.Lock()
 		list.Entries = s.withoutGoneLocked(list.Entries, begun)
+		list.Entries = s.withUpdatedLocked(list.Entries, begun)
 		s.mu.Unlock()
 		if s.app.cfg.Icons != nil {
 			s.app.cfg.Icons.SetInventory(list.Entries)
@@ -250,6 +256,63 @@ func (s *inventoryState) withoutGoneLocked(entries []inventory.Entry, begun time
 	for _, e := range entries {
 		if _, ok := s.gone[e.Key]; !ok {
 			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// updatedPkg is a package AppShelf updated: when, and to what version, if
+// known.
+type updatedPkg struct {
+	at      time.Time
+	version string
+}
+
+// markUpdated shows packages AppShelf updated as up to date at once, by
+// source key with the version read after, without waiting for the list to
+// be read again.
+func (s *inventoryState) markUpdated(versions map[string]string) {
+	if len(versions) == 0 {
+		return
+	}
+	now := time.Now()
+	s.mu.Lock()
+	if s.updated == nil {
+		s.updated = map[string]updatedPkg{}
+	}
+	for k, v := range versions {
+		s.updated[k] = updatedPkg{at: now, version: v}
+	}
+	s.list.Entries = s.withUpdatedLocked(s.list.Entries, time.Time{})
+	s.mu.Unlock()
+	s.app.note.mark(ChangedInstalled)
+}
+
+// withUpdatedLocked returns entries with the packages updated shown up to
+// date, first forgetting those updated before begun: a reading begun since
+// reads them as they are. entries is not changed.
+func (s *inventoryState) withUpdatedLocked(entries []inventory.Entry, begun time.Time) []inventory.Entry {
+	for k, u := range s.updated {
+		if u.at.Before(begun) {
+			delete(s.updated, k)
+		}
+	}
+	if len(s.updated) == 0 {
+		return entries
+	}
+	out := slices.Clone(entries)
+	for i := range out {
+		src, ok := entrySource(out[i])
+		if !ok {
+			continue
+		}
+		u, ok := s.updated[src.Key()]
+		if !ok {
+			continue
+		}
+		out[i].Update = ""
+		if u.version != "" {
+			out[i].Version = u.version
 		}
 	}
 	return out

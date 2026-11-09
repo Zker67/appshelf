@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"appshelf/internal/catalog"
 	"appshelf/internal/detect"
@@ -67,8 +69,9 @@ type Entry struct {
 	// PackageFullName its full name, when winget lists it as MSIX\<name>.
 	PackageFamily   string
 	PackageFullName string
-	// Size is the registry's estimate in bytes, InstallDate its date as
-	// YYYY-MM-DD; both empty when unknown.
+	// Size is the registry's estimate in bytes, else the size of the
+	// directory of a Store app or a scoop app (Sizes); InstallDate the
+	// registry's date as YYYY-MM-DD. Both are empty when unknown.
 	Size        int64
 	InstallDate string
 	// LastUsed is when the user last opened it, as Windows recorded it;
@@ -89,7 +92,9 @@ func (e Entry) RuleName() string { return cmp.Or(e.DisplayName, e.Name) }
 //   - winget's programs of no source (ARP\<scope>\<arch>\<key>) take their
 //     publisher, icon and location from their registry key;
 //   - the packages of the winget source take them from the registry entry
-//     of their name, preferring the same version;
+//     of their name, preferring the same version, else from an entry whose
+//     name begins with theirs, or theirs with its, of their version
+//     (looseEntry);
 //   - app packages (MSIX\…) and packages of the msstore source are Store
 //     entries;
 //   - when winget could not be read (wingetOK false), the registry's entries
@@ -121,6 +126,10 @@ func Build(pkgs []winget.Package, wingetOK bool, apps []scoop.App, reg []detect.
 	}
 
 	out := make([]Entry, 0, len(pkgs)+len(apps))
+	// loose are the packages of a source no registry entry of their name
+	// joined, by their index in out: they are joined loosely once every
+	// package took the entry of its name or key.
+	var loose []int
 	for _, p := range pkgs {
 		e := Entry{Name: p.Name, Version: p.Version}
 		switch {
@@ -140,18 +149,27 @@ func Build(pkgs []winget.Package, wingetOK bool, apps []scoop.App, reg []detect.
 			e.Key, e.Kind, e.WingetID, e.Update = "winget:"+strings.ToLower(p.ID), Winget, p.ID, p.Update
 			if i, ok := nameEntry(p.Name, p.Version, reg, byName, used); ok {
 				join(&e, i)
+			} else {
+				loose = append(loose, len(out))
 			}
 		default:
 			// A package of another source, which AppShelf does not use.
 			e.Key, e.Kind = "pkg:"+strings.ToLower(p.Source+`\`+p.ID), Local
 			if i, ok := nameEntry(p.Name, p.Version, reg, byName, used); ok {
 				join(&e, i)
+			} else {
+				loose = append(loose, len(out))
 			}
 		}
 		if e.Name == "" {
 			e.Name = cmp.Or(e.DisplayName, p.ID)
 		}
 		out = append(out, e)
+	}
+	for _, j := range loose {
+		if i, ok := looseEntry(out[j].Name, out[j].Version, reg, used); ok {
+			join(&out[j], i)
+		}
 	}
 	if !wingetOK {
 		for i, r := range reg {
@@ -239,6 +257,50 @@ func nameEntry(name, version string, reg []detect.Entry, byName map[string][]int
 	return found, found >= 0
 }
 
+// looseEntry finds the registry entry of a package whose name winget took
+// from its manifest rather than the registry: one name begins with the
+// other, as "Everything" and "Everything 1.4.1.1032 (x64)", and the versions
+// agree, the registry's being the package's, else the registry's name
+// holding it, as "Python 3.14.10 (64-bit)" of 3.14.10. An entry of the same
+// version comes first.
+func looseEntry(name, version string, reg []detect.Entry, used []bool) (int, bool) {
+	n := strings.ToLower(strings.TrimSpace(name))
+	if n == "" || version == "" {
+		return 0, false
+	}
+	found := -1
+	for i, r := range reg {
+		d := strings.ToLower(r.DisplayName)
+		if used[i] || !(namePrefix(d, n) || namePrefix(n, d)) {
+			continue
+		}
+		if r.DisplayVersion == version {
+			return i, true
+		}
+		if found < 0 && slices.Contains(nameWords(d), strings.ToLower(version)) {
+			found = i
+		}
+	}
+	return found, found >= 0
+}
+
+// namePrefix reports whether s begins with the whole words of prefix:
+// "git" begins "git 2.44" but not "github desktop".
+func namePrefix(s, prefix string) bool {
+	if prefix == "" || !strings.HasPrefix(s, prefix) {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(s[len(prefix):])
+	return r == utf8.RuneError || !unicode.IsLetter(r) && !unicode.IsDigit(r)
+}
+
+// nameWords splits a name at spaces, brackets and commas.
+func nameWords(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune("()[],", r)
+	})
+}
+
 // familyName returns the family name of an app package from its full
 // name, Name_Version_Arch_ResourceID_PublisherID: Name_PublisherID.
 func familyName(full string) string {
@@ -311,6 +373,9 @@ type Sources struct {
 	Scan   func() ([]detect.Entry, error)
 	// Usage reads when programs were last opened (usage.Read).
 	Usage func(ctx context.Context) (usage.Record, error)
+	// Sizes measures, when set, the directories of the Store's app
+	// packages and scoop's apps, which the registry gives no size.
+	Sizes *Sizes
 }
 
 // List is what Load found.
@@ -368,6 +433,9 @@ func Load(ctx context.Context, src Sources) List {
 	entries := Build(pkgs, wingetOK, apps, reg)
 	if src.Usage != nil {
 		SetLastUsed(entries, rec)
+	}
+	if src.Sizes != nil {
+		src.Sizes.set(entries)
 	}
 	return List{Entries: entries, At: time.Now(), Notes: notes, UsageTracked: rec.Tracked()}
 }

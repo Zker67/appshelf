@@ -254,7 +254,7 @@ func TestLoadReal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	w := winget.New()
-	src := Sources{Scan: detect.Scan, Usage: usage.Read}
+	src := Sources{Scan: detect.Scan, Usage: usage.Read, Sizes: &Sizes{}}
 	wingetOK := false
 	if av := w.Check(ctx); av.OK {
 		wingetOK = true
@@ -267,13 +267,16 @@ func TestLoadReal(t *testing.T) {
 	if av := s.Check(ctx); av.OK {
 		src.Scoop = s.Installed
 	}
+	begun := time.Now()
 	list := Load(ctx, src)
+	took := time.Since(begun)
 	if len(list.Notes) > 0 {
 		t.Logf("notes: %v", list.Notes)
 	}
 	if len(list.Entries) == 0 {
 		t.Fatal("nothing installed found")
 	}
+	sized := map[Kind]int{}
 	kinds := map[Kind]int{}
 	joined, updates := 0, 0
 	for _, e := range list.Entries {
@@ -281,12 +284,16 @@ func TestLoadReal(t *testing.T) {
 			updates++
 		}
 		kinds[e.Kind]++
+		if e.Size > 0 {
+			sized[e.Kind]++
+		}
 		if e.DisplayName != "" && e.Publisher != "" {
 			joined++
 		}
 	}
 	t.Logf("%d entries %v; %d with the registry's name and publisher", len(list.Entries), kinds, joined)
 	t.Logf("%d entries with source-reported updates", updates)
+	t.Logf("entries with a size %v, read in %v", sized, took)
 	used := 0
 	for _, e := range list.Entries {
 		if !e.LastUsed.IsZero() {

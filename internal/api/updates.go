@@ -180,7 +180,7 @@ func installDir(p *pkg) string {
 		return ""
 	}
 	if e.Kind == inventory.Scoop {
-		return scoopAppDir(e.ScoopName, e.Scope == "Machine")
+		return inventory.ScoopDir(e.ScoopName, e.Scope == "Machine")
 	}
 	if dir := ownDir(e.Location); dir != "" {
 		return dir
@@ -193,28 +193,6 @@ func installDir(p *pkg) string {
 		return ""
 	}
 	return ownDir(filepath.Dir(icon))
-}
-
-// scoopAppDir is where scoop keeps an app: $env:SCOOP\apps\<name>, or the
-// global directory's.
-func scoopAppDir(name string, global bool) string {
-	if name == "" {
-		return ""
-	}
-	root := os.Getenv("SCOOP")
-	if global {
-		root = cmp.Or(os.Getenv("SCOOP_GLOBAL"), filepath.Join(os.Getenv("ProgramData"), "scoop"))
-	} else if root == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		root = filepath.Join(home, "scoop")
-	}
-	if !filepath.IsAbs(root) {
-		return ""
-	}
-	return filepath.Join(root, "apps", name)
 }
 
 // ownDir returns dir when it is a program's own directory: absolute, and

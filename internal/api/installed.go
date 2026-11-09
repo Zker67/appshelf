@@ -39,6 +39,10 @@ type inventoryState struct {
 	// gone are the programs AppShelf removed, by key, with when: they stay
 	// off the list until a reading begun after their removal.
 	gone map[string]time.Time
+
+	// sizes measures the directories of the Store's apps and scoop's, which
+	// the registry gives no size, keeping what it measured between readings.
+	sizes inventory.Sizes
 }
 
 // settleDelay is how long the changes of an install or removal outside
@@ -274,7 +278,7 @@ func (s *inventoryState) get() (inventory.List, bool, bool) {
 // inventorySources are the sources usable here.
 func (a *App) inventorySources(maxAge time.Duration) inventory.Sources {
 	ctx := context.Background()
-	src := inventory.Sources{Scan: a.cfg.Scan, Usage: a.cfg.Usage}
+	src := inventory.Sources{Scan: a.cfg.Scan, Usage: a.cfg.Usage, Sizes: &a.inv.sizes}
 	if w := a.cfg.Sources.Winget; w != nil {
 		av := a.availability(ctx, catalog.Winget, w.Check)
 		if av.OK {

@@ -180,6 +180,36 @@ func TestUninstallTakesTheProgramOffTheListAtOnce(t *testing.T) {
 	}
 }
 
+// A removal skipped because its program is gone takes it off the list at
+// once too, not once the list is read again.
+func TestSkippedUninstallTakesTheProgramOffTheListAtOnce(t *testing.T) {
+	e := newEnv(t)
+	key := "winget:obsidian.obsidian"
+	if !e.listed(key) {
+		t.Fatal("the program is not listed to begin with")
+	}
+	e.uninst.mu.Lock()
+	e.uninst.gone[key] = true
+	e.uninst.mu.Unlock()
+	if _, err := e.installed.StartUninstall(context.Background(), []string{key}); err != nil {
+		t.Fatal(err)
+	}
+	// The reading asked once the queue ends is held.
+	hold := make(chan struct{})
+	defer close(hold)
+	e.wapi.mu.Lock()
+	e.wapi.listBlock = hold
+	e.wapi.mu.Unlock()
+	e.until(func() bool {
+		l := e.tasks.List()
+		return len(l.Items) == 1 && l.Items[0].State == TaskSkipped
+	})
+	e.until(func() bool { return !e.listed(key) })
+	if r := e.uninst.ran(); len(r) != 0 {
+		t.Errorf("ran %q: a program gone must not run", r)
+	}
+}
+
 func TestUninstallFailedRetriesInteractively(t *testing.T) {
 	e := newEnv(t)
 	key := "winget:obsidian.obsidian"

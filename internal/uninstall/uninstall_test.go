@@ -239,6 +239,51 @@ func TestRunWaitsForTheUninstallersCopy(t *testing.T) {
 	}
 }
 
+// fakeWinget is winget removing a program the copy fakeWindows plays
+// takes away.
+type fakeWinget struct{ f *fakeWindows }
+
+func (w fakeWinget) Uninstall(context.Context, string, string, bool, io.Writer) (source.Result, error) {
+	return source.Result{}, nil
+}
+
+func (w fakeWinget) Recheck(context.Context, catalog.App) (source.Status, error) {
+	w.f.mu.Lock()
+	defer w.f.mu.Unlock()
+	if w.f.present {
+		return source.Status{State: source.Installed}, nil
+	}
+	return source.Status{State: source.NotInstalled}, nil
+}
+
+// winget says an NSIS program removed as its uninstaller exits, while the
+// copy of it still works: Run waits for the copy, with the program's
+// registry key or without.
+func TestRunWaitsForTheCopyAfterWinget(t *testing.T) {
+	for _, withReg := range []bool{true, false} {
+		f := &fakeWindows{present: true, busy: 3}
+		r := f.runner()
+		r.winget = fakeWinget{f}
+		tg := Target{Key: "winget:upscayl.upscayl", Name: "Upscayl", Method: ByWinget, WingetID: "Upscayl.Upscayl", WingetSource: "winget"}
+		if withReg {
+			tg.Reg = &detect.Entry{Scope: "Machine", Arch: "X64", Name: "upscayl-uuid", DisplayName: "Upscayl"}
+		}
+		var log strings.Builder
+		if _, err := r.Run(context.Background(), tg, false, &log); err != nil {
+			t.Fatalf("reg %v: %v", withReg, err)
+		}
+		if f.present || f.busy != 0 {
+			t.Fatalf("reg %v: Run returned before the copy ended", withReg)
+		}
+		if !strings.Contains(log.String(), "等待它结束") {
+			t.Errorf("reg %v: log = %s", withReg, log.String())
+		}
+		if ok, err := r.Present(context.Background(), tg); ok || err != nil {
+			t.Errorf("reg %v: present after = %v, %v", withReg, ok, err)
+		}
+	}
+}
+
 func TestRunExitCodes(t *testing.T) {
 	exe := filepath.Join(t.TempDir(), "remove.exe")
 	os.WriteFile(exe, []byte("MZ"), 0o644)
@@ -290,6 +335,8 @@ func TestRunWithSources(t *testing.T) {
 	w := &fakeSource{st: source.Status{State: source.Installed}}
 	s := &fakeScoop{fakeSource{st: source.Status{State: source.NotInstalled}}}
 	r := New(Options{}, w, s)
+	r.processes = func() ([]string, error) { return nil, nil }
+	r.grace, r.poll = 20*time.Millisecond, time.Millisecond
 	if _, err := r.Run(context.Background(), Target{Name: "Git", Method: ByWinget, WingetID: "Git.Git"}, true, nil); err != nil {
 		t.Fatal(err)
 	}

@@ -133,7 +133,12 @@ func (r *Runner) Run(ctx context.Context, t Target, interactive bool, log io.Wri
 		if r.winget == nil {
 			return source.Result{}, errors.New("winget 不可用")
 		}
-		return r.winget.Uninstall(ctx, t.WingetID, t.WingetSource, interactive, log)
+		res, err := r.winget.Uninstall(ctx, t.WingetID, t.WingetSource, interactive, log)
+		// winget returns once the uninstaller exits, before the copy of
+		// itself an NSIS or Inno Setup uninstaller leaves has done its work.
+		source.ReportProgress(log, source.Progress{Stage: "正在等待卸载程序结束"})
+		r.settle(ctx, t, log)
+		return res, err
 	case ByScoop:
 		if r.scoop == nil {
 			return source.Result{}, errors.New("scoop 不可用")
@@ -178,17 +183,18 @@ func (r *Runner) runRegistry(ctx context.Context, t Target, p Plan, log io.Write
 	return source.Result{}, fmt.Errorf("卸载程序以退出码 %d 结束", code)
 }
 
-// settle waits while t's registry key is there and an uninstaller still
-// runs: NSIS and Inno Setup copy themselves to the temporary directory and
-// exit at once, the copy doing the work.
+// settle waits while t is there and an uninstaller still runs: NSIS and
+// Inno Setup copy themselves to the temporary directory and exit at once,
+// the copy doing the work.
 func (r *Runner) settle(ctx context.Context, t Target, log io.Writer) {
-	if t.Reg == nil {
+	gone := r.goneCheck(ctx, t)
+	if gone == nil {
 		return
 	}
 	deadline := time.Now().Add(r.settleMax)
 	waited := false
 	for {
-		if _, ok, err := r.lookup(t.Reg.Scope, t.Reg.Arch, t.Reg.Name); err == nil && !ok {
+		if gone() {
 			return
 		}
 		if !r.busy(t) || time.Now().After(deadline) {
@@ -205,13 +211,31 @@ func (r *Runner) settle(ctx context.Context, t Target, log io.Writer) {
 	// Uninstallers remove their key last.
 	end := time.Now().Add(r.grace)
 	for time.Now().Before(end) {
-		if _, ok, err := r.lookup(t.Reg.Scope, t.Reg.Arch, t.Reg.Name); err == nil && !ok {
+		if gone() {
 			return
 		}
 		if !sleep(ctx, min(r.poll, r.grace)) {
 			return
 		}
 	}
+}
+
+// goneCheck returns what tells t gone while settle waits: its registry
+// key, the uninstallers removing it last, else winget; nil when neither.
+func (r *Runner) goneCheck(ctx context.Context, t Target) func() bool {
+	switch {
+	case t.Reg != nil:
+		return func() bool {
+			_, ok, err := r.lookup(t.Reg.Scope, t.Reg.Arch, t.Reg.Name)
+			return err == nil && !ok
+		}
+	case t.Method == ByWinget && r.winget != nil:
+		return func() bool {
+			ok, err := r.Present(ctx, t)
+			return err == nil && !ok
+		}
+	}
+	return nil
 }
 
 // busy reports an uninstaller still running: a copy NSIS or Inno Setup

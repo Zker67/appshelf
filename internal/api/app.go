@@ -298,15 +298,17 @@ func (a *App) afterLoop() {
 	a.upd.afterLoop()
 }
 
-// dropRemoved takes each program a task just removed off the installed
-// list as the task ends, not once the queue ends and the list is read
-// again: the pages stop showing it at once.
+// dropRemoved takes each program a task just removed, or found gone
+// before it ran, off the installed list as the task ends, not once the
+// queue ends and the list is read again: the pages stop showing it at
+// once.
 func (a *App) dropRemoved() {
 	items := a.core.Queue.Items()
 	done := make(map[int]bool, len(items))
 	var keys []string
 	for _, it := range items {
-		if it.Action != queue.Uninstall || it.State != queue.Succeeded || it.Target == nil {
+		// A removal is skipped only when its program is gone.
+		if it.Action != queue.Uninstall || (it.State != queue.Succeeded && it.State != queue.Skipped) || it.Target == nil {
 			continue
 		}
 		done[it.ID] = true

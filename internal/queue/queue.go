@@ -88,6 +88,9 @@ type Item struct {
 	Interactive bool
 
 	log *tasklog.Log
+	// retried is a removal queued again after it failed: its program gone
+	// before it runs again was removed by the earlier run.
+	retried bool
 }
 
 // Stages the queue itself sets; sources report the others.
@@ -232,6 +235,7 @@ func (q *Queue) retry(id int, interactive bool) bool {
 	if interactive {
 		it.Interactive = true
 	}
+	it.retried = it.Action == Uninstall
 	q.items = slices.Delete(q.items, i, i+1)
 	it.State, it.Message, it.LogPath = Waiting, "", ""
 	it.From, it.To = "", ""
@@ -409,6 +413,10 @@ func (q *Queue) runItem(it *Item, live live) (ItemState, string, string) {
 	before := q.exec.Status(ctx, *it)
 	it.From = before.Version
 	if state, msg, skip := judgeBefore(*it, before); skip {
+		if state == Succeeded {
+			// A removal the earlier run did: report it as one that ran.
+			q.exec.Finished(*it, before, source.Result{})
+		}
 		return state, msg, ""
 	}
 
@@ -469,6 +477,9 @@ func judgeBefore(it Item, before source.Status) (ItemState, string, bool) {
 	switch {
 	case it.Action == Uninstall && before.Blocked():
 		return Failed, "无法确认它是否还在本机，没有执行：" + noteOr(before, "原因未知"), true
+	case it.Action == Uninstall && !before.IsInstalled() && it.retried:
+		// The earlier run's uninstaller finished after the check.
+		return Succeeded, "已卸载（上次卸载其实已经完成）", true
 	case it.Action == Uninstall && !before.IsInstalled():
 		return Skipped, "已不在本机", true
 	case it.Action == Uninstall:

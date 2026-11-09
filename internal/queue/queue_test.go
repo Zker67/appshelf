@@ -437,6 +437,41 @@ func TestUninstall(t *testing.T) {
 	}
 }
 
+// A removal judged failed whose program its uninstaller removed after the
+// check succeeds when retried: it does not run again, nor count as skipped.
+func TestRetriedRemovalAlreadyDone(t *testing.T) {
+	f := newFake()
+	late := uninstall.Target{Key: "winget:upscayl.upscayl", Name: "Upscayl", Method: uninstall.ByWinget, WingetID: "Upscayl.Upscayl"}
+	id := UninstallApp(late).ID
+	f.before[id] = source.Status{State: source.Installed}
+	f.after[id] = source.Status{State: source.Installed}
+	q := New(context.Background(), f, nil)
+	q.AddUninstall([]uninstall.Target{late})
+	wait(t, q)
+	it := q.Items()[0]
+	if it.State != Failed {
+		t.Fatalf("first run = %s %q", it.State, it.Message)
+	}
+
+	f.mu.Lock()
+	f.after[id] = source.Status{State: source.NotInstalled}
+	f.mu.Unlock()
+	if !q.Retry(it.ID) {
+		t.Fatal("Retry refused a failed removal")
+	}
+	wait(t, q)
+	it = q.Items()[0]
+	if it.State != Succeeded || !strings.Contains(it.Message, "上次卸载其实已经完成") {
+		t.Errorf("retry = %s %q", it.State, it.Message)
+	}
+	if len(f.runs) != 1 {
+		t.Errorf("runs = %q: the retry must not run again", f.runs)
+	}
+	if len(f.finished) != 2 {
+		t.Errorf("finished = %q: the retry is reported as done", f.finished)
+	}
+}
+
 func TestUninstallDoesNotRunBesideTheSamePackage(t *testing.T) {
 	f := newFake()
 	f.gate = make(chan struct{})

@@ -17,7 +17,7 @@ AppShelf 是个人软件图书馆：在一份可导入导出的软件清单里�
 
 ## 文档入口
 
-- [下载与版本说明](https://github.com/Zker67/appshelf/releases/tag/v0.5.0) · [更新日志](./CHANGELOG.md)
+- [下载与版本说明](https://github.com/Zker67/appshelf/releases/tag/v0.6.0) · [更新日志](./CHANGELOG.md)
 - [项目文档](./docs/README.md) · [前端](./frontend/README.md) · [Go 业务代码](./internal/README.md)
 - [计划与验收](./plans/README.md) · [外部参考](./references/README.md) · [AI 项目规则](./.agents/README.md)
 

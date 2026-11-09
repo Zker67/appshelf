@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"net/url"
 	"time"
 
 	"appshelf/internal/queue"
@@ -71,8 +72,13 @@ func (t *Tasks) List() TaskList {
 	running, stopping := q.Running()
 	out := TaskList{Items: []TaskEntry{}, Running: running, Stopping: stopping}
 	for _, it := range q.Items() {
+		icon := iconOf(it.App.Source)
+		if it.Target != nil {
+			// The icon the installed list showed, kept once it is removed.
+			icon = "/i/" + url.PathEscape(it.Target.Key)
+		}
 		out.Items = append(out.Items, TaskEntry{
-			ID: it.ID, AppID: it.App.ID, Name: it.App.Name, Icon: iconOf(it.App.Source),
+			ID: it.ID, AppID: it.App.ID, Name: it.App.Name, Icon: icon,
 			Action: actionOf(it.Action), State: taskStateOf(it.State), Message: it.Message,
 			HasLog: it.LogPath != "", Started: it.Started, Ended: it.Ended,
 			Stage: it.Stage, Done: it.Progress.Done, Total: it.Progress.Total,

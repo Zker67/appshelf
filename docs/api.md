@@ -161,7 +161,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `/w/<winget ID>` | 本机已装程序的 DisplayIcon、MSI ProductIcon、安装目录或明确匹配的开始菜单图标，其次图标库 |
 | `/s/<scoop 软件名>` | 图标库 |
 | `/g/<owner>/<repo>` | 图标库，其次 GitHub 上 owner 的头像 |
-| `/i/<本机已装的 key>` | 按种类：winget 程序同 `/w/`，scoop 程序同 `/s/`，应用商店应用优先用包清单的 Logo，缺少时用开始菜单图标，其他程序用注册表的 DisplayIcon、MSI ProductIcon、安装目录或明确匹配的开始菜单图标 |
+| `/i/<本机已装的 key>` | 按种类：winget 程序同 `/w/`，scoop 程序同 `/s/`，应用商店应用优先用包清单的 Logo，缺少时用开始菜单图标，其他程序用注册表的 DisplayIcon、MSI ProductIcon、安装目录或明确匹配的开始菜单图标；程序卸载后返回它最后一次的图标（卸载任务也用这个路径） |
 
 本机列表图标 URL 带本次扫描时间作为版本参数，刷新后重新尝试；未改变路由或数据类型。找不到图标时返回 404，前端显示首字母图标并有限重试。缓存、并发与回退策略见 [图标服务](../internal/icons/README.md)。下载只允许公网的 http(s) 地址，最多 2 MB，只接受 PNG、JPEG、GIF、WebP、SVG、ICO；SVG 以禁止脚本的 CSP 返回。
 

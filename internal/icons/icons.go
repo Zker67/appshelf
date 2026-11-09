@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -66,7 +67,15 @@ type Service struct {
 	local     map[string]localImage
 	localBusy map[string]*localCall
 	pkgBusy   chan struct{}
+	// last is the icon each installed program last had, by key: a program
+	// removed keeps it once its files are gone, for its task to show.
+	// removed are the keys of last no longer installed, oldest first.
+	last    map[string]image
+	removed []string
 }
+
+// keepRemoved is how many removed programs keep their icon.
+const keepRemoved = 64
 
 type image struct {
 	data  []byte
@@ -96,6 +105,7 @@ func New(opt Options) *Service {
 		byWinget:  map[string]inventory.Entry{},
 		local:     map[string]localImage{},
 		localBusy: map[string]*localCall{},
+		last:      map[string]image{},
 	}
 }
 
@@ -112,6 +122,18 @@ func (s *Service) SetInventory(entries []inventory.Entry) {
 	}
 	s.mu.Lock()
 	s.byKey, s.byWinget = byKey, byWinget
+	// Programs installed again are no longer removed; those just removed
+	// join the end, the oldest beyond keepRemoved forgotten.
+	s.removed = slices.DeleteFunc(s.removed, func(k string) bool { _, ok := byKey[k]; return ok })
+	for k := range s.last {
+		if _, ok := byKey[k]; !ok && !slices.Contains(s.removed, k) {
+			s.removed = append(s.removed, k)
+		}
+	}
+	for len(s.removed) > keepRemoved {
+		delete(s.last, s.removed[0])
+		s.removed = s.removed[1:]
+	}
 	s.mu.Unlock()
 }
 
@@ -157,13 +179,30 @@ func (s *Service) winget(ctx context.Context, id string) ([]byte, string, error)
 	return s.remote(ctx, WingetIconID(id), "")
 }
 
+// entry returns an installed program's icon, else the one it last had: a
+// program removed has no files left to draw it from.
 func (s *Service) entry(ctx context.Context, key string) ([]byte, string, error) {
 	s.mu.Lock()
 	e, ok := s.byKey[key]
 	s.mu.Unlock()
-	if !ok {
+	if ok {
+		if data, ctype, err := s.entryIcon(ctx, e); err == nil {
+			s.mu.Lock()
+			s.last[key] = image{data, ctype}
+			s.mu.Unlock()
+			return data, ctype, nil
+		}
+	}
+	s.mu.Lock()
+	img, kept := s.last[key]
+	s.mu.Unlock()
+	if !kept {
 		return nil, "", ErrNoIcon
 	}
+	return img.data, img.ctype, nil
+}
+
+func (s *Service) entryIcon(ctx context.Context, e inventory.Entry) ([]byte, string, error) {
 	if data, ctype, err := s.installedFile(e); err == nil {
 		return data, ctype, nil
 	}

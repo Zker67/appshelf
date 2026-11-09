@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -207,6 +208,10 @@ func TestSkippedUninstallTakesTheProgramOffTheListAtOnce(t *testing.T) {
 	e.until(func() bool { return !e.listed(key) })
 	if r := e.uninst.ran(); len(r) != 0 {
 		t.Errorf("ran %q: a program gone must not run", r)
+	}
+	// The task shows the icon the installed list showed.
+	if icon := e.tasks.List().Items[0].Icon; icon != "/i/"+url.PathEscape(key) {
+		t.Errorf("task icon = %q", icon)
 	}
 }
 

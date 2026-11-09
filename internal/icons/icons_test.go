@@ -384,6 +384,47 @@ func TestInstalledIcons(t *testing.T) {
 	}
 }
 
+// A program removed keeps the icon it last had, its files gone and it off
+// the list, until keepRemoved programs removed since push it out.
+func TestRemovedProgramKeepsItsIcon(t *testing.T) {
+	srv := newServer(t)
+	srv.serve("/db.json", "text/plain", []byte(`{"icons_and_screenshots":{}}`))
+	s := newTestService(t, srv, Options{})
+	logo := filepath.Join(t.TempDir(), "logo.png")
+	os.WriteFile(logo, pngData, 0o644)
+	key := `arp:machine\x64\app`
+	path := "/i/" + url.PathEscape(key)
+	s.SetInventory([]inventory.Entry{{Key: key, Kind: inventory.Local, Icon: logo}})
+	if code, _, body := get(t, s, path); code != 200 || !bytes.Equal(body, pngData) {
+		t.Fatalf("installed: %d", code)
+	}
+
+	os.Remove(logo)
+	if code, _, body := get(t, s, path); code != 200 || !bytes.Equal(body, pngData) {
+		t.Errorf("files removed: %d", code)
+	}
+	s.SetInventory(nil)
+	if code, _, body := get(t, s, path); code != 200 || !bytes.Equal(body, pngData) {
+		t.Errorf("off the list: %d", code)
+	}
+
+	s.mu.Lock()
+	for i := range keepRemoved {
+		s.last[fmt.Sprint("later", i)] = image{pngData, "image/png"}
+	}
+	s.mu.Unlock()
+	s.SetInventory(nil)
+	if code, _, _ := get(t, s, path); code != 404 {
+		t.Errorf("after %d programs removed since: %d", keepRemoved, code)
+	}
+	s.mu.Lock()
+	n := len(s.last)
+	s.mu.Unlock()
+	if n != keepRemoved {
+		t.Errorf("%d icons kept, want %d", n, keepRemoved)
+	}
+}
+
 // TestDatabaseReal downloads UniGetUI's database. It needs the network.
 func TestDatabaseReal(t *testing.T) {
 	d := newDatabase(&http.Client{Timeout: 30 * time.Second}, DatabaseURL, t.TempDir())

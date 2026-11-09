@@ -214,7 +214,7 @@ export function TasksSheet({
           </EmptyState>
         ) : (
           <div className="min-h-0 flex-auto overflow-y-auto [scrollbar-width:thin]">
-            <div className="flex flex-col gap-1 p-2">
+            <div className="flex flex-col gap-2 p-2.5">
               {items.map((t) => (
                 <TaskRow key={t.id} task={t} />
               ))}
@@ -263,9 +263,10 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
   return (
     <div
       className={cn(
-        "anim-rise rounded-lg px-3 py-2.5 transition-colors hover:bg-hover",
-        running && "bg-primary/6 hover:bg-primary/8",
-        failed && "bg-destructive/6 hover:bg-destructive/8",
+        "anim-rise rounded-xl border bg-card px-3 py-2.5 shadow-xs transition-colors",
+        running && "border-primary/25 bg-primary/6",
+        failed && "border-destructive/25 bg-destructive/6",
+        !running && !failed && "hover:border-primary/30",
       )}
     >
       <div className="flex items-start gap-3">

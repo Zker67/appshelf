@@ -30,6 +30,7 @@
 | [autoupdate.go](./autoupdate.go) | `checker`：检查的开始与完成、定时、自动更新排队、通知、更新历史 |
 | `about.go` | `About`：版本、自更新、打开目录和链接（只允许 http/https）、外观 |
 | `settings.go` | `settings.json` 的读写（外观、更新设置） |
+| [tray.go](./tray.go) | 不绑定给页面，供 `main.go` 的托盘使用：`TrayStatus`（可更新数、任务数和正在执行的任务）、`UpdateAll`（与更新页「全部更新」相同） |
 
 ## 约定
 

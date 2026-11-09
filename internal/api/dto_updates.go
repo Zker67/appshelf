@@ -155,7 +155,8 @@ type UpdateSettings struct {
 	// updates ran on their own, while the window is not in front.
 	Notify bool `json:"notify"`
 	// Background keeps AppShelf in the notification area when its window
-	// closes, checking as it runs.
+	// closes, checking as it runs; else closing the window quits it. On out
+	// of the box. The icon shows while AppShelf runs either way.
 	Background bool `json:"background"`
 	// OpenAtLogin starts AppShelf when the user logs in: in the
 	// notification area with Background, else with its window.

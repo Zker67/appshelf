@@ -143,7 +143,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `Updates` | `List`、`Check` | 清单软件和本机 winget / scoop 软件按来源 key 合并的更新（含被搁置的，`count` 只数提供的）、更新方式不是默认的软件（`rules`）、检查时间和 AppShelf 自身的新版本；`Check` 立即检查 |
 | | `Start` | 按来源 key 开始更新：清单里已读到状态的走 `Tasks` 的路径，其余走 `Installed` 的路径；前端只传 key，Go 重新解析来源 |
 | | `SetMode`、`Skip`、`Snooze`、`Restore` | 设为提醒 / 自动更新 / 忽略（不能自动更新时返回原因；开启时有更新立即排队）；跳过当前最新版本；暂缓 1–90 天；恢复提醒 |
-| | `History`、`ClearHistory`、`Settings`、`SetSettings` | 更新记录；检查间隔、通知、托盘、开机启动、AppShelf 自身的检查和自动下载 |
+| | `History`、`ClearHistory`、`Settings`、`SetSettings` | 更新记录；检查间隔、通知、关闭窗口后留在托盘（默认开）、开机启动、AppShelf 自身的检查和自动下载 |
 | `About` | `Info`、`CheckForUpdates`、`OpenLogs`、`OpenDataDir`、`OpenURL`、`SetTheme` | 版本、自更新、目录、用默认浏览器打开链接（只允许 http/https）、外观 |
 
 ### 事件

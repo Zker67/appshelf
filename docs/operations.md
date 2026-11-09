@@ -29,7 +29,7 @@ AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\Syst
 
 ## 配置
 
-- `mygo.json`：`name`、`identifier`、`version`、`out`（构建输出目录）、`updates`（自更新的公钥和 GitHub 仓库）。
+- `mygo.json`：`name`、`identifier`、`version`、`out`（构建输出目录）、`updates`（自更新的公钥和 GitHub 仓库）、`windows.installerInclude`（安装包附加脚本 `installer.nsh`，给 NSIS 安装和卸载程序加上简体中文：中文系统上显示中文，其他系统显示英文）。
 - `CHANGELOG.md`：每个版本一节，标题写成 `## 版本号`；构建时成为自更新窗口里的更新说明。
 - GitHub token（可选）：不设置时每个 IP 每小时只有 60 次请求，检查几次 GitHub 软件就会用完；用完后 GitHub 软件附注“GitHub 请求额度已用完”，不能检查更新和安装，直到额度恢复。只读公开仓库，不需要任何权限范围。两种设置方式：
   - 在“设置 → 安装来源 → GitHub 请求额度”点“填写 token”粘贴：先向 GitHub 的 `/rate_limit` 验证（不占额度），GitHub 不接受的不保存；保存后立即生效，不用重启。token 用 Windows DPAPI 以当前用户加密后存到 `github-token.bin`，界面读不回，“清除”删除该文件。
@@ -43,7 +43,7 @@ AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\Syst
 |---|---|
 | `%AppData%\AppShelf\catalog.json` | 软件清单，格式见 [API 与接口说明](./api.md) |
 | `%AppData%\AppShelf\state.json` | 本机状态（GitHub 安装记录、每个软件的更新方式、最近更新记录） |
-| `%AppData%\AppShelf\settings.json` | 外观（跟随系统、浅色、深色）；更新设置 `updates`：`checkEvery`（`off`、`1h`、`3h`、`6h`、`12h`、`24h`，默认 `6h`）、`quiet`（不发通知）、`background`（关闭窗口后留在托盘）；`sourceSetupSeen`（已回答首次「准备安装来源」提示，不再自动弹出） |
+| `%AppData%\AppShelf\settings.json` | 外观（跟随系统、浅色、深色）；更新设置 `updates`：`checkEvery`（`off`、`1h`、`3h`、`6h`、`12h`、`24h`，默认 `6h`）、`quiet`（不发通知）、`exitOnClose`（关闭窗口即退出；默认不写，关闭窗口后留在托盘）；`sourceSetupSeen`（已回答首次「准备安装来源」提示，不再自动弹出） |
 | `%AppData%\AppShelf\github-token.bin` | 设置里填写的 GitHub token，以当前 Windows 用户的 DPAPI 加密；复制到别的电脑或用户下无法解密。不入库、不随清单导出 |
 | 当前用户的 `HKCU\...\Run` 启动项 | 打开“开机时启动”后由 MyGo 写入，可在设置里关闭，或在任务管理器的“启动应用”里禁用 |
 | `%AppData%\AppShelf\logs\` | 每次安装、更新或卸载一份日志，`YYYYMMDD-HHMMSS-<install|upgrade|uninstall>-<软件 ID>.log`（Windows 不允许的字符换成 `_`）；任务面板里直接显示日志内容，“打开日志文件”打开完整文件 |

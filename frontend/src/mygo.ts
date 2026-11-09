@@ -614,7 +614,8 @@ export interface UpdateSettings {
   notify: boolean;
   /**
    * Background keeps AppShelf in the notification area when its window
-   * closes, checking as it runs.
+   * closes, checking as it runs; else closing the window quits it. On out
+   * of the box. The icon shows while AppShelf runs either way.
    */
   background: boolean;
   /**

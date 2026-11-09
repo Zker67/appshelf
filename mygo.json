@@ -10,5 +10,6 @@
   "updates": {
     "publicKey": "1IAp4m4IlyC1Va9tGqkMAd8u0YNogVN9nA5fFX7eEtY=",
     "github": "Zker67/appshelf"
-  }
+  },
+  "windows": { "installerInclude": "installer.nsh" }
 }

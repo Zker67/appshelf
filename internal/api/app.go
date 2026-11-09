@@ -105,8 +105,9 @@ type Hooks struct {
 	Notify func(title, body string)
 	Active func() bool
 	// SetBackground keeps AppShelf in the notification area when its
-	// window closes, or stops. OpenAtLogin and SetOpenAtLogin read and
-	// change whether it starts when the user logs in. All three or none.
+	// window closes, or makes closing the window quit it. OpenAtLogin and
+	// SetOpenAtLogin read and change whether it starts when the user logs
+	// in. All three or none.
 	SetBackground  func(on bool)
 	OpenAtLogin    func() bool
 	SetOpenAtLogin func(on bool) error

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -55,8 +56,35 @@ func main() {
 		}
 	}
 	var shelf *api.App
-	bg := &tray{open: showWindow, check: func() { shelf.CheckUpdates() }}
+	// showPage shows the window on one of its pages, or its tasks.
+	showPage := func(page string) {
+		showWindow()
+		shelf.ShowPage(page)
+	}
+	bg := &tray{
+		open:   showWindow,
+		show:   showPage,
+		status: func() api.TrayStatus { return shelf.TrayStatus() },
+		check:  func() { shelf.CheckUpdates() },
+	}
+	bg.updateAll = func() {
+		n, err := shelf.UpdateAll(context.Background())
+		title, body := fmt.Sprintf("开始更新 %d 个软件", n), "点击查看任务进度"
+		if err != nil {
+			title, body = "无法全部更新", err.Error()
+		}
+		note := mygo.NewNotification(mygo.NotificationOptions{ID: "appshelf-tray", Title: title, Body: body})
+		note.OnClick(func() { showPage("tasks") })
+		if err := note.Show(); err != nil {
+			log.Println("notification:", err)
+		}
+	}
 	shelf = api.New(api.Hooks{
+		// The pages hear of changes, and the notification area icon.
+		Emit: func(c api.Change) {
+			api.Changed.Broadcast(c)
+			bg.changed()
+		},
 		SaveFile: func(ctx context.Context, title, name string) (string, error) {
 			return mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: mygo.CallerWindow(ctx), Title: title, DefaultPath: name, Filters: catalogFiles})
 		},
@@ -75,16 +103,13 @@ func main() {
 		Notify: func(title, body string) {
 			// One notification of updates at a time: a newer one replaces it.
 			n := mygo.NewNotification(mygo.NotificationOptions{ID: "appshelf-updates", Title: title, Body: body})
-			n.OnClick(func() {
-				showWindow()
-				shelf.ShowPage("updates")
-			})
+			n.OnClick(func() { showPage("updates") })
 			if err := n.Show(); err != nil {
 				log.Println("notification:", err)
 			}
 		},
 		Active:         app.IsActive,
-		SetBackground:  bg.set,
+		SetBackground:  bg.setStay,
 		OpenAtLogin:    app.OpenAtLogin,
 		SetOpenAtLogin: app.SetOpenAtLogin,
 		SelfAvailable:  updater.AvailableVersion,
@@ -209,7 +234,8 @@ func main() {
 			Hidden:          background && app.WasOpenedAtLogin(),
 		})
 		win.Store(window)
-		bg.set(background)
+		bg.setStay(background)
+		bg.start()
 		// With the icon, closing the window hides it; quitting closes it.
 		var quitting atomic.Bool
 		app.OnBeforeQuit(func(*mygo.QuitEvent) { quitting.Store(true) })

@@ -362,14 +362,30 @@ func TestUpdateChecksAndSettings(t *testing.T) {
 	e.app.hooks.SetBackground = func(on bool) { bg = append(bg, on) }
 	e.app.hooks.OpenAtLogin = func() bool { return login }
 	e.app.hooks.SetOpenAtLogin = func(on bool) error { login = on; return nil }
+	// Staying in the notification area is on out of the box.
+	if s := e.updates.Settings(); !s.CanBackground || !s.Background || s.OpenAtLogin {
+		t.Errorf("defaults with the notification area: %+v", s)
+	}
+	if err := e.updates.SetSettings(UpdateSettings{CheckEvery: Check6h, Notify: true, Background: false, OpenAtLogin: true}); err != nil {
+		t.Fatal(err)
+	}
+	if s := e.updates.Settings(); s.Background || !s.OpenAtLogin || len(bg) != 1 || bg[0] || !login {
+		t.Errorf("closing quits: %+v %v %v", s, bg, login)
+	}
+	if LoadBackground(filepath.Join(e.dir, "settings.json")) {
+		t.Error("closing to quit was not kept")
+	}
 	if err := e.updates.SetSettings(UpdateSettings{CheckEvery: Check6h, Notify: true, Background: true, OpenAtLogin: true}); err != nil {
 		t.Fatal(err)
 	}
-	if s := e.updates.Settings(); !s.CanBackground || !s.Background || !s.OpenAtLogin || len(bg) != 1 || !bg[0] || !login {
-		t.Errorf("background: %+v %v %v", s, bg, login)
+	if s := e.updates.Settings(); !s.Background || len(bg) != 2 || !bg[1] {
+		t.Errorf("background: %+v %v", s, bg)
 	}
 	if !LoadBackground(filepath.Join(e.dir, "settings.json")) {
 		t.Error("background was not kept")
+	}
+	if !LoadBackground(filepath.Join(e.dir, "none.json")) {
+		t.Error("a file without the setting does not stay in the notification area")
 	}
 }
 

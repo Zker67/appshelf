@@ -10,7 +10,7 @@ import { InstalledPage } from "@/pages/installed";
 import { ShelfPage } from "@/pages/shelf";
 import { UninstallPage } from "@/pages/uninstall";
 import { UpdatesPage } from "@/pages/updates";
-import { ActionsProvider } from "@/state/actions";
+import { ActionsProvider, useActions } from "@/state/actions";
 import { NavProvider, useNav, type Page } from "@/state/nav";
 import { Activity, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -93,16 +93,21 @@ function PageSlot({ page, dir, children }: { page: Page; dir: Direction; childre
 
 const pages: ReadonlySet<string> = new Set<Page>(order);
 
-/** Navigation shows the page Go asks for, as after a click on a notification. */
+/**
+ * Navigation shows the page Go asks for, as after a click on a notification,
+ * or the tasks ("tasks"), as from the notification area's menu.
+ */
 function Navigation() {
   const nav = useNav();
   const go = nav.go;
+  const { openTasks } = useActions();
   useEffect(
     () =>
       events.navigate.on((page) => {
-        if (pages.has(page)) go(page as Page);
+        if (page === "tasks") openTasks();
+        else if (pages.has(page)) go(page as Page);
       }),
-    [go],
+    [go, openTasks],
   );
   return null;
 }

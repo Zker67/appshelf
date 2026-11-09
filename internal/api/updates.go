@@ -597,9 +597,10 @@ func (s *Updates) Settings() UpdateSettings {
 	c := a.settings.Updates
 	a.mu.Unlock()
 	h := a.hooks
-	out := UpdateSettings{CheckEvery: c.CheckEvery, Notify: !c.Quiet, Background: c.Background,
+	out := UpdateSettings{CheckEvery: c.CheckEvery, Notify: !c.Quiet,
 		CanBackground: h.SetBackground != nil && h.SetOpenAtLogin != nil && h.OpenAtLogin != nil}
 	if out.CanBackground {
+		out.Background = !c.ExitOnClose
 		out.OpenAtLogin = h.OpenAtLogin()
 	}
 	if a.canUpdate() && h.SelfChecks != nil && h.SetSelfChecks != nil {
@@ -621,7 +622,13 @@ func (s *Updates) SetSettings(choices UpdateSettings) error {
 		return errors.New("这个版本不支持后台运行和开机启动")
 	}
 	a.mu.Lock()
-	a.settings.Updates = updatesChoices{CheckEvery: choices.CheckEvery, Quiet: !choices.Notify, Background: choices.Background}
+	// Without the notification area, closing the window quits whatever was
+	// kept.
+	exit := a.settings.Updates.ExitOnClose
+	if cur.CanBackground {
+		exit = !choices.Background
+	}
+	a.settings.Updates = updatesChoices{CheckEvery: choices.CheckEvery, Quiet: !choices.Notify, ExitOnClose: exit}
 	st := a.settings
 	a.mu.Unlock()
 	if err := saveSettings(a.cfg.Settings, st); err != nil {

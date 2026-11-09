@@ -14,12 +14,14 @@ type settings struct {
 
 // updatesChoices are the update settings kept in settings.json, written so
 // that a file without them means the defaults: checking every 6 hours,
-// notifications on, no notification area icon. Starting at login and
-// AppShelf's own checks are kept by the system and MyGo's updater.
+// notifications on, closing the window leaving AppShelf in the
+// notification area. Starting at login and AppShelf's own checks are kept
+// by the system and MyGo's updater.
 type updatesChoices struct {
 	CheckEvery CheckInterval `json:"checkEvery,omitempty"`
 	Quiet      bool          `json:"quiet,omitempty"`
-	Background bool          `json:"background,omitempty"`
+	// ExitOnClose quits AppShelf when its window closes.
+	ExitOnClose bool `json:"exitOnClose,omitempty"`
 }
 
 func loadSettings(path string) settings {
@@ -43,7 +45,7 @@ func LoadTheme(path string) ThemeSource { return loadSettings(path).Theme }
 
 // LoadBackground reads whether AppShelf stays in the notification area when
 // its window closes, for the app to start so.
-func LoadBackground(path string) bool { return loadSettings(path).Updates.Background }
+func LoadBackground(path string) bool { return !loadSettings(path).Updates.ExitOnClose }
 
 func saveSettings(path string, s settings) error {
 	if path == "" {

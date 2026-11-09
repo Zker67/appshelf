@@ -37,6 +37,8 @@ type coreSource struct {
 	// statusBlock, when set, makes reading the states of all wait for it,
 	// once they are read: what it returns is of before.
 	statusBlock chan struct{}
+	// upgradeBlock, when set, makes an update wait for it, or its context.
+	upgradeBlock chan struct{}
 	// fixErr is what Fix returns; Fix without an error makes the source
 	// available.
 	fixErr error
@@ -97,6 +99,16 @@ func (f *coreSource) Install(_ context.Context, a catalog.App, _ io.Writer) (sou
 	return source.Result{}, nil
 }
 func (f *coreSource) Upgrade(ctx context.Context, a catalog.App, log io.Writer) (source.Result, error) {
+	f.mu.Lock()
+	block := f.upgradeBlock
+	f.mu.Unlock()
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			return source.Result{}, ctx.Err()
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.actions = append(f.actions, "upgrade:"+a.ID)

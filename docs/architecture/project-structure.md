@@ -54,10 +54,12 @@ Go 模块 `appshelf`，最初由 `mygo init -template native` 生成，0.2.0 起
 | 路径 | 职责 |
 |---|---|
 | [main.go](../../main.go) | 应用入口：单实例锁、数据目录、组装来源、`core`、图标和详情服务，绑定 `internal/api` 的服务，注册图标协议，创建窗口，接入更新器 |
+| [tray.go](../../tray.go) | 常驻托盘图标：右键菜单（查看更新、全部更新、检查更新、任务、退出确认）、悬停提示、有更新时的橙点 |
 | [frontend/](../../frontend/) | Web 前端：React + TypeScript + Tailwind CSS + shadcn/ui，Vite+ 构建，见 [frontend/README.md](../../frontend/README.md) |
 | [internal/](../../internal/) | 全部业务代码，按包分层，见 [internal/README.md](../../internal/README.md) |
 | [go.mod](../../go.mod) / `go.sum` | 依赖和 MyGo CLI 工具版本 |
-| [mygo.json](../../mygo.json) | 应用名、标识符、版本号、输出目录、自更新配置 |
+| [mygo.json](../../mygo.json) | 应用名、标识符、版本号、输出目录、自更新配置、安装包附加脚本 |
+| [installer.nsh](../../installer.nsh) | 经 `windows.installerInclude` 给 NSIS 安装和卸载程序加上简体中文 |
 | [CHANGELOG.md](../../CHANGELOG.md) | 每个版本的更新说明，构建时写进自更新清单 |
 | [resources/icon.png](../../resources/icon.png) | 应用图标（1024×1024，冰川蓝玻璃圆角方形，外部透明；`frontend/src/assets/logo.png` 和 `frontend/public/favicon.png` 是同一图标的 128×128） |
 | [.agents/skills/mygo-maintenance/](../../.agents/skills/mygo-maintenance/) | MyGo 版本维护 Skill |

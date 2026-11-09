@@ -355,9 +355,11 @@ function UpdatesTab() {
             icon={PanelBottomIcon}
             label="关闭窗口后留在托盘"
             hint={
-              data.canBackground
-                ? "在任务栏右下角继续定期检查，单击图标打开窗口"
-                : "这个版本不支持托盘"
+              !data.canBackground
+                ? "这个版本不支持托盘"
+                : data.background
+                  ? "继续定期检查、执行任务；单击托盘图标打开窗口，右键查看更新和任务"
+                  : "关闭窗口即退出软件图书馆"
             }
           >
             <Switch

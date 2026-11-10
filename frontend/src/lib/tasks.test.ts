@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { formatElapsed, lineKind, queueProgress, taskProgress } from "./tasks";
+import { formatElapsed, lineKind, newWaits, queueProgress, taskProgress } from "./tasks";
 import { formatBytes } from "./text";
 
 describe("formatBytes", () => {
@@ -72,5 +72,27 @@ describe("queueProgress", () => {
       ]),
     ).toEqual({ done: 3, total: 5, failed: 1, active: true });
     expect(queueProgress([])).toEqual({ done: 0, total: 0, failed: 0, active: false });
+  });
+
+  it("does not count a removal the user canceled as failed", () => {
+    expect(queueProgress([{ state: "failed", canceled: true }, { state: "failed" }])).toEqual({
+      done: 2,
+      total: 2,
+      failed: 1,
+      active: false,
+    });
+  });
+});
+
+describe("newWaits", () => {
+  it("tells each run waiting for the user once", () => {
+    const told = new Set<string>();
+    const waiting = { id: 1, started: "a", state: "running", wait: "user" } as const;
+    const working = { id: 2, started: "a", state: "running", wait: "working" } as const;
+    expect(newWaits([waiting, working], told)).toEqual([waiting]);
+    expect(newWaits([waiting, working], told)).toEqual([]);
+    // A retry is another run.
+    expect(newWaits([{ ...waiting, started: "b" }], told)).toHaveLength(1);
+    expect(newWaits([{ ...waiting, id: 3, state: "failed" }], told)).toEqual([]);
   });
 });

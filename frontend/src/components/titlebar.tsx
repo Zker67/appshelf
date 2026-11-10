@@ -22,6 +22,7 @@ import { About, type ThemeSource } from "@/mygo";
 import { useActions } from "@/state/actions";
 import { useNav, type Page } from "@/state/nav";
 import { queueProgress } from "@/lib/tasks";
+import { useWaitToasts } from "@/lib/use-wait-toasts";
 import { ListChecksIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { toast } from "sonner";
@@ -223,6 +224,7 @@ function Tools() {
   const { data: tasks } = useTasks();
   const { data: about } = useAbout();
   const progress = queueProgress(tasks?.items ?? []);
+  useWaitToasts(tasks?.items);
   // The ring stays after the tasks end, until those done are cleared.
   const tone: RingTone | null =
     progress.total === 0

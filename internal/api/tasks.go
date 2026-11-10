@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"appshelf/internal/queue"
+	"appshelf/internal/uninstall"
 )
 
 // Tasks installs and updates apps of the catalog, one at a time. They
@@ -84,7 +85,13 @@ func (t *Tasks) List() TaskList {
 			Stage: it.Stage, Done: it.Progress.Done, Total: it.Progress.Total, Percent: it.Progress.Percent, Speed: it.Progress.Speed,
 			Interactive: it.State == queue.Failed && interactiveRetry(it),
 			Leftovers:   canFindLeftovers(it),
+			Canceled:    it.State == queue.Failed && it.Canceled,
 		})
+		if it.State == queue.Running && it.Action == queue.Uninstall && it.Progress.Wait != "" {
+			e := &out.Items[len(out.Items)-1]
+			e.Wait, e.Prompt, e.Window = TaskWait(it.Progress.Wait), it.Progress.Prompt, it.Progress.Window
+			e.CanSwitch = canSwitch(it)
+		}
 	}
 	return out
 }
@@ -148,6 +155,45 @@ func (t *Tasks) RetryInteractive(id int) error {
 		return errors.New("这个任务不能重试")
 	}
 	return nil
+}
+
+// Control passes what the user asks to a removal waiting for its
+// uninstaller: stop waiting, show its window, end it, or end it to run
+// again with its window.
+func (t *Tasks) Control(id int, c TaskControl) error {
+	a := t.a
+	<-a.ready
+	cmd, ok := map[TaskControl]uninstall.Command{
+		ControlStopWaiting: uninstall.StopWaiting,
+		ControlShowWindow:  uninstall.ShowWindow,
+		ControlEnd:         uninstall.EndUninstaller,
+		ControlSwitch:      uninstall.SwitchToWindow,
+	}[c]
+	if !ok {
+		return errors.New("不支持的操作")
+	}
+	for _, it := range a.core.Queue.Items() {
+		if it.ID != id {
+			continue
+		}
+		switch {
+		case it.State != queue.Running || it.Action != queue.Uninstall || it.Progress.Wait == "":
+			return errors.New("这个任务现在没有在等待卸载程序")
+		case c == ControlSwitch && !canSwitch(it):
+			return errors.New("这个任务不能改用卸载程序的窗口")
+		case !a.core.Queue.Control(id, cmd):
+			return errors.New("这个任务现在不能这样操作")
+		}
+		return nil
+	}
+	return errors.New("找不到这个任务")
+}
+
+// canSwitch reports a quiet removal waiting for the user, or stuck, that
+// can run again with its uninstaller's window.
+func canSwitch(it queue.Item) bool {
+	w := it.Progress.Wait
+	return it.State == queue.Running && (w == uninstall.WaitUser || w == uninstall.WaitStalled) && interactiveRetry(it)
 }
 
 // ClearDone removes the finished tasks.

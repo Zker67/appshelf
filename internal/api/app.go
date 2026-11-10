@@ -34,6 +34,7 @@ import (
 	"appshelf/internal/source/scoop"
 	"appshelf/internal/source/winget"
 	"appshelf/internal/state"
+	"appshelf/internal/uninstall"
 	"appshelf/internal/usage"
 )
 
@@ -107,10 +108,12 @@ type Hooks struct {
 	Emit func(Change)
 
 	// Notify shows a system notification, which shows the updates when
-	// clicked; nil shows none. Active reports whether AppShelf's window is
-	// in front, when notifications are not shown.
-	Notify func(title, body string)
-	Active func() bool
+	// clicked; nil shows none. NotifyTasks shows one that shows the tasks.
+	// Active reports whether AppShelf's window is in front, when
+	// notifications are not shown.
+	Notify      func(title, body string)
+	NotifyTasks func(title, body string)
+	Active      func() bool
 	// SetBackground keeps AppShelf in the notification area when its
 	// window closes, or makes closing the window quit it. OpenAtLogin and
 	// SetOpenAtLogin read and change whether it starts when the user logs
@@ -174,6 +177,11 @@ type App struct {
 	// Owned by the loop: the updates that succeeded, by task, whose
 	// packages the installed list shows up to date.
 	upgraded map[int]bool
+
+	// waitMu guards waitNoted: the removals running whose user was told
+	// their uninstaller waits for them, by task and start.
+	waitMu    sync.Mutex
+	waitNoted map[waitRun]bool
 
 	mu      sync.Mutex
 	imports map[string]*core.Import
@@ -242,7 +250,50 @@ func (a *App) Post(fn func()) {
 
 // Progress tells the pages the tasks changed, as a task reports progress
 // or writes output: the core's Config.Progress.
-func (a *App) Progress() { a.note.mark(ChangedTasks) }
+func (a *App) Progress() {
+	a.note.mark(ChangedTasks)
+	a.noticeWaits()
+}
+
+// waitRun is one run of a task.
+type waitRun struct {
+	id      int
+	started time.Time
+}
+
+// noticeWaits tells the user, once a run, that a removal's uninstaller
+// waits for them: with a notification when AppShelf's window is not in
+// front; the page shows it otherwise.
+func (a *App) noticeWaits() {
+	select {
+	case <-a.ready:
+	default:
+		return
+	}
+	a.waitMu.Lock()
+	defer a.waitMu.Unlock()
+	noted := map[waitRun]bool{}
+	for _, it := range a.core.Queue.Items() {
+		if it.Action != queue.Uninstall || it.State != queue.Running {
+			continue
+		}
+		run := waitRun{it.ID, it.Started}
+		if a.waitNoted[run] {
+			noted[run] = true
+			continue
+		}
+		if it.Progress.Wait != uninstall.WaitUser {
+			continue
+		}
+		noted[run] = true
+		body := it.Progress.Prompt
+		if body == "" {
+			body = "请在卸载程序的窗口里完成操作"
+		}
+		a.notifyTasks("「"+it.App.Name+"」的卸载程序在等你操作", body)
+	}
+	a.waitNoted = noted
+}
 
 // Start runs the loop with the core, reads the states and lists what is
 // installed. ctx ends the loop.

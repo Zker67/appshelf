@@ -75,7 +75,7 @@ Go 模块 `appshelf`，最初由 `mygo init -template native` 生成，0.2.0 起
 | 4 | `internal/source/winget`、`internal/source/scoop`、`internal/source/github`、`internal/uninstall`、`internal/tasklog`、`internal/leftover` | 三个安装来源；卸载方式与执行；任务日志与进度；卸载残留的查找与清理 |
 | 5 | `internal/source`、`internal/runner`、`internal/detect` | 来源接口、状态和进度类型；外部命令、PowerShell 脚本、提权启动安装程序；注册表扫描（含卸载命令、大小、日期、推断的安装位置）、检测规则和规则建议 |
 | 6 | `internal/catalog`、`internal/state`、`internal/version` | 清单的格式、校验、编辑、导入合并；本机状态；版本号规范化和比较 |
-| 7 | `internal/jsonfile`、`internal/secret`、`internal/procs`、`internal/watch`、`internal/usage` | JSON 原子写入；以当前用户 DPAPI 加密保存机密；某目录下的程序是否在运行；监听已装程序的注册表键和 scoop 目录；程序的上次打开时间（UserAssist） |
+| 7 | `internal/jsonfile`、`internal/secret`、`internal/procs`、`internal/watch`、`internal/usage` | JSON 原子写入；以当前用户 DPAPI 加密保存机密；某目录下的程序是否在运行，卸载时的进程追踪；监听已装程序的注册表键和 scoop 目录；程序的上次打开时间（UserAssist） |
 
 前端只调用 `internal/api` 绑定的服务（客户端由 `go tool mygo generate` 生成到 `frontend/src/mygo.ts`），图标走 Go 注册的 `icon` 协议；安装判断、检测和队列都在 Go 端。
 

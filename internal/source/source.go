@@ -100,6 +100,14 @@ type Progress struct {
 	// Speed is how many bytes a second the download comes at, worked out
 	// by the task's log from Done; sources leave it 0.
 	Speed int64
+	// Wait is, while a removal waits for its uninstaller, how it waits:
+	// uninstall's WaitWorking, WaitUser, WaitStalled or WaitInstaller; ""
+	// when it does not wait.
+	Wait string
+	// Prompt is what the uninstaller's window says, when it has one;
+	// Window means it has one to bring to the front.
+	Prompt string
+	Window bool
 }
 
 // ProgressReporter is a log that also shows the progress of the work it

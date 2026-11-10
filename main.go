@@ -117,6 +117,13 @@ func main() {
 				log.Println("notification:", err)
 			}
 		},
+		NotifyTasks: func(title, body string) {
+			n := mygo.NewNotification(mygo.NotificationOptions{ID: "appshelf-tasks", Title: title, Body: body})
+			n.OnClick(func() { showPage("tasks") })
+			if err := n.Show(); err != nil {
+				log.Println("notification:", err)
+			}
+		},
 		Active:         app.IsActive,
 		SetBackground:  bg.setStay,
 		OpenAtLogin:    app.OpenAtLogin,

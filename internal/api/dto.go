@@ -225,7 +225,48 @@ type TaskEntry struct {
 	// Leftovers means the program removed can be searched for what it
 	// left behind.
 	Leftovers bool `json:"leftovers,omitempty"`
+	// Wait is how a running removal waits for its uninstaller, "" when it
+	// does not; Prompt is what the uninstaller's window says, and Window
+	// means it has one to bring to the front.
+	Wait   TaskWait `json:"wait,omitempty"`
+	Prompt string   `json:"prompt,omitempty"`
+	Window bool     `json:"window,omitempty"`
+	// CanSwitch means a quiet removal waiting can end its uninstaller and
+	// run again with its window.
+	CanSwitch bool `json:"canSwitch,omitempty"`
+	// Canceled marks a failed removal the user canceled.
+	Canceled bool `json:"canceled,omitempty"`
 }
+
+// TaskWait is how a removal waits for its uninstaller.
+type TaskWait string
+
+const (
+	// WaitWorking: its processes still run.
+	WaitWorking TaskWait = "working"
+	// WaitUser: its window waits for the user.
+	WaitUser TaskWait = "user"
+	// WaitStalled: a quiet uninstaller has done nothing for a while.
+	WaitStalled TaskWait = "stalled"
+	// WaitInstaller: Windows Installer is busy with another program.
+	WaitInstaller TaskWait = "installer"
+)
+
+// TaskControl is what the user asks of a removal waiting for its
+// uninstaller.
+type TaskControl string
+
+const (
+	// ControlStopWaiting stops waiting; the uninstaller keeps running.
+	ControlStopWaiting TaskControl = "stopWaiting"
+	// ControlShowWindow brings the uninstaller's window to the front.
+	ControlShowWindow TaskControl = "showWindow"
+	// ControlEnd ends the uninstaller.
+	ControlEnd TaskControl = "end"
+	// ControlSwitch ends a quiet uninstaller and runs the removal again
+	// with its window.
+	ControlSwitch TaskControl = "switchToWindow"
+)
 
 // LeftoverKind is what a leftover is.
 type LeftoverKind string

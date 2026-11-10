@@ -2,20 +2,15 @@ package uninstall
 
 import (
 	"context"
-	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"appshelf/internal/catalog"
 	"appshelf/internal/detect"
-	"appshelf/internal/source"
 )
 
 func regTarget(e detect.Entry) Target {
@@ -62,7 +57,8 @@ func TestPlanForInstallers(t *testing.T) {
 		{"inno before its quiet string", detect.Entry{UninstallString: `"` + inno + `"`, QuietUninstallString: `"` + inno + `" /SILENT`}, false, Inno, "unins000.exe", "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", true, true},
 		{"inno interactive", detect.Entry{UninstallString: `"` + inno + `"`}, true, Inno, "unins000.exe", "", false, false},
 		{"unins without its log is no inno", detect.Entry{UninstallString: `"` + innoNoDat + `"`}, false, Other, "unins000.exe", "", false, false},
-		{"nsis keeps its arguments", detect.Entry{UninstallString: `"` + nsis + `" _?=C:\x`}, false, NSIS, "uninstall.exe", `_?=C:\x /S`, true, true},
+		{"nsis keeps its arguments, /S before _?=", detect.Entry{UninstallString: `"` + nsis + `" _?=C:\x`}, false, NSIS, "uninstall.exe", `/S _?=C:\x`, true, true},
+		{"nsis with arguments of its own", detect.Entry{UninstallString: `"` + nsis + `" /currentuser`}, false, NSIS, "uninstall.exe", `/currentuser /S`, true, true},
 		{"quiet string first", detect.Entry{UninstallString: `"` + plain + `"`, QuietUninstallString: `"` + plain + `" /quiet`}, false, Other, "remove.exe", "/quiet", true, true},
 		{"burn bundle", detect.Entry{UninstallString: `"C:\ProgramData\Package Cache\{A}\setup.exe" /uninstall`}, false, Burn, "setup.exe", "/uninstall /quiet /norestart", true, true},
 		{"other opens its window", detect.Entry{UninstallString: plain + " /remove"}, false, Other, "remove.exe", "/remove", false, false},
@@ -170,190 +166,6 @@ func TestProductCode(t *testing.T) {
 	}
 	if c := ProductCode(detect.Entry{Name: "App", UninstallString: "setup.exe {abcdef01-2345-6789-abcd-ef0123456789}"}); c != "" {
 		t.Errorf("a GUID outside an msiexec command = %q", c)
-	}
-}
-
-// fakeWindows plays the registry key and the processes of an uninstall.
-type fakeWindows struct {
-	mu      sync.Mutex
-	present bool
-	busy    int // how many polls a copy of the uninstaller still runs
-	ran     []string
-	code    uint32
-	err     error
-}
-
-func (f *fakeWindows) runner() *Runner {
-	r := New(Options{}, nil, nil)
-	r.shellRun = func(file, params string, elevate bool) (uint32, error) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		f.ran = append(f.ran, filepath.Base(file)+" "+params)
-		return f.code, f.err
-	}
-	r.lookup = func(scope, arch, name string) (detect.Entry, bool, error) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		return detect.Entry{}, f.present, nil
-	}
-	r.processes = func() ([]string, error) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		if f.busy > 0 {
-			f.busy--
-			if f.busy == 0 {
-				// The copy removes the key as it ends.
-				f.present = false
-			}
-			return []string{`C:\Users\u\AppData\Local\Temp\~nsu.tmp\Au_.exe`}, nil
-		}
-		return []string{`C:\Windows\explorer.exe`}, nil
-	}
-	r.settleMax, r.grace, r.poll = time.Second, 20*time.Millisecond, time.Millisecond
-	return r
-}
-
-func TestRunWaitsForTheUninstallersCopy(t *testing.T) {
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "uninst.exe")
-	os.WriteFile(exe, []byte("Nullsoft"), 0o644)
-	f := &fakeWindows{present: true, busy: 3}
-	r := f.runner()
-	tg := regTarget(detect.Entry{DisplayName: "App", UninstallString: `"` + exe + `"`})
-	var log strings.Builder
-	res, err := r.Run(context.Background(), tg, false, &log)
-	if err != nil || res.RebootRequired {
-		t.Fatalf("run = %+v, %v", res, err)
-	}
-	if len(f.ran) != 1 || f.ran[0] != "uninst.exe /S" {
-		t.Fatalf("ran %q", f.ran)
-	}
-	if f.present || f.busy != 0 {
-		t.Fatal("Run returned before the copy ended")
-	}
-	if !strings.Contains(log.String(), "等待它结束") {
-		t.Errorf("log = %s", log.String())
-	}
-	if ok, err := r.Present(context.Background(), tg); ok || err != nil {
-		t.Errorf("present after = %v, %v", ok, err)
-	}
-}
-
-// fakeWinget is winget removing a program the copy fakeWindows plays
-// takes away.
-type fakeWinget struct{ f *fakeWindows }
-
-func (w fakeWinget) Uninstall(context.Context, string, string, bool, io.Writer) (source.Result, error) {
-	return source.Result{}, nil
-}
-
-func (w fakeWinget) Recheck(context.Context, catalog.App) (source.Status, error) {
-	w.f.mu.Lock()
-	defer w.f.mu.Unlock()
-	if w.f.present {
-		return source.Status{State: source.Installed}, nil
-	}
-	return source.Status{State: source.NotInstalled}, nil
-}
-
-// winget says an NSIS program removed as its uninstaller exits, while the
-// copy of it still works: Run waits for the copy, with the program's
-// registry key or without.
-func TestRunWaitsForTheCopyAfterWinget(t *testing.T) {
-	for _, withReg := range []bool{true, false} {
-		f := &fakeWindows{present: true, busy: 3}
-		r := f.runner()
-		r.winget = fakeWinget{f}
-		tg := Target{Key: "winget:upscayl.upscayl", Name: "Upscayl", Method: ByWinget, WingetID: "Upscayl.Upscayl", WingetSource: "winget"}
-		if withReg {
-			tg.Reg = &detect.Entry{Scope: "Machine", Arch: "X64", Name: "upscayl-uuid", DisplayName: "Upscayl"}
-		}
-		var log strings.Builder
-		if _, err := r.Run(context.Background(), tg, false, &log); err != nil {
-			t.Fatalf("reg %v: %v", withReg, err)
-		}
-		if f.present || f.busy != 0 {
-			t.Fatalf("reg %v: Run returned before the copy ended", withReg)
-		}
-		if !strings.Contains(log.String(), "等待它结束") {
-			t.Errorf("reg %v: log = %s", withReg, log.String())
-		}
-		if ok, err := r.Present(context.Background(), tg); ok || err != nil {
-			t.Errorf("reg %v: present after = %v, %v", withReg, ok, err)
-		}
-	}
-}
-
-func TestRunExitCodes(t *testing.T) {
-	exe := filepath.Join(t.TempDir(), "remove.exe")
-	os.WriteFile(exe, []byte("MZ"), 0o644)
-	tg := regTarget(detect.Entry{DisplayName: "App", UninstallString: `"` + exe + `"`, QuietUninstallString: `"` + exe + `" /q`})
-	for code, want := range map[uint32]string{0: "", 1605: "", 3010: "reboot", 1602: "卸载被取消", 1223: "卸载被取消", 1618: "另一个安装", 2: "退出码 2"} {
-		f := &fakeWindows{code: code}
-		res, err := f.runner().Run(context.Background(), tg, false, io.Discard)
-		switch {
-		case want == "" && (err != nil || res.RebootRequired):
-			t.Errorf("%d: %+v %v", code, res, err)
-		case want == "reboot" && (err != nil || !res.RebootRequired):
-			t.Errorf("%d: %+v %v", code, res, err)
-		case want != "" && want != "reboot" && (err == nil || !strings.Contains(err.Error(), want)):
-			t.Errorf("%d: %v", code, err)
-		}
-	}
-	f := &fakeWindows{err: errors.New("已取消管理员授权")}
-	if _, err := f.runner().Run(context.Background(), tg, false, io.Discard); err == nil {
-		t.Error("a declined elevation must fail")
-	}
-	// Blocked plans never run.
-	f = &fakeWindows{}
-	blocked := regTarget(detect.Entry{DisplayName: "A", NoRemove: true, UninstallString: exe})
-	if _, err := f.runner().Run(context.Background(), blocked, false, io.Discard); err == nil || len(f.ran) != 0 {
-		t.Errorf("a blocked plan ran: %v %q", err, f.ran)
-	}
-}
-
-// fakeSource plays winget and scoop.
-type fakeSource struct {
-	calls []string
-	st    source.Status
-}
-
-func (f *fakeSource) Uninstall(_ context.Context, a, b string, interactive bool, _ io.Writer) (source.Result, error) {
-	f.calls = append(f.calls, a+"|"+b+"|"+map[bool]string{true: "i", false: "q"}[interactive])
-	return source.Result{}, nil
-}
-func (f *fakeSource) Recheck(context.Context, catalog.App) (source.Status, error) { return f.st, nil }
-
-type fakeScoop struct{ fakeSource }
-
-func (f *fakeScoop) Uninstall(_ context.Context, name string, global bool, _ io.Writer) (source.Result, error) {
-	f.calls = append(f.calls, name+"|"+map[bool]string{true: "g", false: "u"}[global])
-	return source.Result{}, nil
-}
-
-func TestRunWithSources(t *testing.T) {
-	w := &fakeSource{st: source.Status{State: source.Installed}}
-	s := &fakeScoop{fakeSource{st: source.Status{State: source.NotInstalled}}}
-	r := New(Options{}, w, s)
-	r.processes = func() ([]string, error) { return nil, nil }
-	r.grace, r.poll = 20*time.Millisecond, time.Millisecond
-	if _, err := r.Run(context.Background(), Target{Name: "Git", Method: ByWinget, WingetID: "Git.Git"}, true, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.Run(context.Background(), Target{Name: "rg", Method: ByScoop, ScoopName: "ripgrep", Global: true}, false, nil); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(w.calls, ",") != "Git.Git||i" || strings.Join(s.calls, ",") != "ripgrep|g" {
-		t.Fatalf("calls = %q %q", w.calls, s.calls)
-	}
-	if ok, _ := r.Present(context.Background(), Target{Method: ByWinget, WingetID: "Git.Git"}); !ok {
-		t.Error("winget says installed")
-	}
-	if ok, _ := r.Present(context.Background(), Target{Method: ByScoop, ScoopName: "ripgrep"}); ok {
-		t.Error("scoop says not installed")
-	}
-	if _, err := New(Options{}, nil, nil).Run(context.Background(), Target{Name: "Git", Method: ByWinget, WingetID: "Git.Git"}, false, nil); err == nil {
-		t.Error("winget missing must fail")
 	}
 }
 

@@ -306,6 +306,11 @@ func newEnv(t *testing.T, opts ...func(*Config)) *env {
 			e.notified = append(e.notified, title+"|"+body)
 			e.mu.Unlock()
 		},
+		NotifyTasks: func(title, body string) {
+			e.mu.Lock()
+			e.notified = append(e.notified, "tasks:"+title+"|"+body)
+			e.mu.Unlock()
+		},
 		Active: func() bool {
 			e.mu.Lock()
 			defer e.mu.Unlock()
@@ -336,6 +341,7 @@ func newEnv(t *testing.T, opts ...func(*Config)) *env {
 		Paths:       core.Paths{Catalog: filepath.Join(e.dir, "catalog.json"), State: filepath.Join(e.dir, "state.json"), Logs: filepath.Join(e.dir, "logs")},
 		Sources:     func(*state.Store) []source.Source { return []source.Source{e.winget, newCoreSource(catalog.GitHub)} },
 		Post:        e.app.Post,
+		Progress:    e.app.Progress,
 		Uninstaller: e.uninst,
 	})
 	if err != nil {

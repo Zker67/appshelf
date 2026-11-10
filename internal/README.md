@@ -11,7 +11,7 @@ AppShelf 的全部业务代码。分层和依赖方向见 [项目结构总览](.
 | [core](./core) | `core.go`、`uninstall.go` | 打开清单和本机状态（损坏的文件改名留存），并行读取各来源状态、套用检测规则，保存编辑，导入导出，开始安装和更新前的核对、清单外软件的批量更新核对（[updates.go](./core/updates.go)）、卸载预览和排队（[uninstall.go](./core/uninstall.go)），以及队列的执行者 | 假来源和临时目录 |
 | [queue](./queue) | `queue.go` | 任务队列（安装、更新、卸载）：一个 goroutine 逐项执行；执行前复查（已装跳过、状态不确定不执行；卸载时已不在则跳过），执行后复查（卸载以程序是否还在判断成败）；阶段、进度和日志；重试（卸载可改用卸载程序窗口重试）、停止、继续、清除已完成 | 假执行者 |
 | [tasklog](./tasklog) | `tasklog.go` | 一个任务的日志：原样写进文件，同时整理成行（处理 `\r` 重绘、ANSI、进度条字符）留在内存，并记下来源报告的进度，见 [tasklog/README.md](./tasklog/README.md) | 单元测试 |
-| [uninstall](./uninstall) | `plan.go`、`run.go`、`inspect.go` | 卸载：winget、scoop、应用商店应用交给各自卸载，其余按注册表的卸载命令；识别 MSI、WiX、Inno Setup、NSIS 并静默卸载，等待卸载程序的副本结束；读取签名，拦下不能卸载的程序，见 [uninstall/README.md](./uninstall/README.md) | 替换的进程和注册表；真实本机只读生成卸载方式和读签名；真实卸载需显式开启 |
+| [uninstall](./uninstall) | `plan.go`、`run.go`、`track.go`、`inspect.go` | 卸载：winget、scoop、应用商店应用交给各自卸载，其余按注册表的卸载命令；识别 MSI、WiX、Inno Setup、NSIS 并静默卸载；追踪这次卸载的进程，识别等待用户操作和可能卡住，可停止等待、结束卸载程序；读取签名，拦下不能卸载的程序，见 [uninstall/README.md](./uninstall/README.md) | 替换的进程、窗口、活动和注册表；真实本机只读生成卸载方式和读签名；真实卸载需显式开启 |
 | [leftover](./leftover) | `leftover.go`、`scan_windows.go`、`clean_windows.go` | 卸载后的残留：目录、注册表设置、快捷方式、开机启动项，按理由打分；清理时文件进回收站、注册表先备份，见 [leftover/README.md](./leftover/README.md) | 真实临时目录和 `HKCU` 临时键，真实回收站和 `reg export` |
 | [watch](./watch) | `watch.go`、`watch_windows.go` | 监听 Uninstall 注册表键、应用包仓库键和 scoop 的 `apps` 目录，发现 AppShelf 之外的安装和卸载，见 [watch/README.md](./watch/README.md) | 真实注册表和目录 |
 | [source](./source) | 见 [source/README.md](./source/README.md) | 来源接口、状态类型和三个来源 | 见来源说明 |
@@ -19,7 +19,7 @@ AppShelf 的全部业务代码。分层和依赖方向见 [项目结构总览](.
 | [detect](./detect) | `detect.go`、`scan_windows.go`、`location.go`、`suggest.go` | 扫描注册表 Uninstall 项（64 位、32 位、当前用户），读出卸载命令、大小、安装日期等，缺安装位置时从卸载程序和图标推断；按检测规则认出软件；按键查一个程序（`Lookup`）；由程序名或仓库名生成检测规则 | 真实扫描本机注册表 |
 | [catalog](./catalog) | `catalog.go`（格式和校验）、`edit.go`（编辑）、`merge.go`（导入合并） | 软件清单 | 单元测试 |
 | [state](./state) | `state.go` | 本机状态：GitHub 软件的安装记录、每个软件的更新方式（自动 / 提醒 / 忽略、跳过的版本、暂缓期限）、最近 200 条更新记录 | 真实临时文件，含旧格式文件 |
-| [procs](./procs) | `procs.go`、`procs_windows.go` | 某个目录下的程序是否正在运行，见 [procs/README.md](./procs/README.md) | 真实进程（测试程序自己） |
+| [procs](./procs) | `procs.go`、`procs_windows.go` | 某个目录下的程序是否正在运行；进程快照、活动、窗口和结束进程，供卸载追踪，见 [procs/README.md](./procs/README.md) | 真实进程（测试程序自己和它启动的进程） |
 | [version](./version) | `version.go` | 版本号规范化（去掉 `v`、`refs/tags/`、`+build`）、比较和大版本升级判断 | 单元测试 |
 | [jsonfile](./jsonfile) | `jsonfile.go` | JSON 读取和原子写入（同目录临时文件、落盘、改名） | 由 `catalog`、`state` 的测试覆盖 |
 | [secret](./secret) | `secret.go`、`secret_windows.go` | 用 Windows DPAPI 以当前用户加密保存机密（设置里的 GitHub token），见 [secret/README.md](./secret/README.md) | 真实 DPAPI 加解密、明文不落盘 |

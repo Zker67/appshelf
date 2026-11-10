@@ -485,3 +485,86 @@ func TestUninstallDoesNotRunBesideTheSamePackage(t *testing.T) {
 	close(f.gate)
 	wait(t, q)
 }
+
+// controlled is a fake whose quiet removals wait for a command of the
+// user, and whose removals with the window take the program away.
+type controlled struct {
+	*fake
+	got         chan uninstall.Command
+	interactive []bool
+}
+
+func (c *controlled) Run(ctx context.Context, it Item, log io.Writer) (source.Result, error) {
+	c.mu.Lock()
+	c.interactive = append(c.interactive, it.Interactive)
+	c.mu.Unlock()
+	if it.Interactive {
+		c.mu.Lock()
+		c.after[it.App.ID] = source.Status{State: source.NotInstalled}
+		c.mu.Unlock()
+		return c.fake.Run(ctx, it, log)
+	}
+	cmd := <-it.Control
+	c.got <- cmd
+	c.fake.Run(ctx, it, log)
+	return source.Result{}, errors.New("卸载程序已被结束")
+}
+
+// Commands reach a removal while it runs, and only then; switching to the
+// window runs it again so when the program is still there.
+func TestControlAndSwitchToWindow(t *testing.T) {
+	f := newFake()
+	c := &controlled{fake: f, got: make(chan uninstall.Command, 1)}
+	tg := uninstall.Target{Key: "arp:app", Name: "App", Method: uninstall.ByRegistry}
+	id := UninstallApp(tg).ID
+	f.before[id] = source.Status{State: source.Installed}
+	f.after[id] = source.Status{State: source.Installed}
+	q := New(context.Background(), c, nil)
+	if q.Control(99, uninstall.StopWaiting) {
+		t.Error("a command reached no task")
+	}
+	q.AddUninstall([]uninstall.Target{tg})
+	waitState(t, q, id, Running)
+	item := q.Items()[0]
+	if !q.Control(item.ID, uninstall.SwitchToWindow) {
+		t.Fatal("the running removal refused the command")
+	}
+	if got := <-c.got; got != uninstall.SwitchToWindow {
+		t.Fatalf("got %v", got)
+	}
+	wait(t, q)
+	it := q.Items()[0]
+	if it.State != Succeeded || len(c.interactive) != 2 || c.interactive[0] || !c.interactive[1] {
+		t.Fatalf("item %s %q, runs interactive %v", it.State, it.Message, c.interactive)
+	}
+	if q.Control(it.ID, uninstall.StopWaiting) {
+		t.Error("a finished task took a command")
+	}
+}
+
+// A removal the user canceled, its program still there, fails marked so;
+// a retry clears the mark.
+func TestCanceledRemoval(t *testing.T) {
+	f := newFake()
+	tg := uninstall.Target{Key: "arp:app", Name: "App", Method: uninstall.ByRegistry}
+	id := UninstallApp(tg).ID
+	f.before[id] = source.Status{State: source.Installed}
+	f.after[id] = source.Status{State: source.Installed, Note: "原因"}
+	f.runErr[id] = fmt.Errorf("%w：你拒绝了管理员权限，没有卸载", uninstall.ErrCanceled)
+	q := New(context.Background(), f, nil)
+	q.AddUninstall([]uninstall.Target{tg})
+	wait(t, q)
+	it := q.Items()[0]
+	if it.State != Failed || !it.Canceled || !strings.Contains(it.Message, "拒绝了管理员权限") {
+		t.Fatalf("canceled = %s %v %q", it.State, it.Canceled, it.Message)
+	}
+	f.mu.Lock()
+	f.runErr[id] = errors.New("卸载程序以退出码 2 结束")
+	f.mu.Unlock()
+	q.Retry(it.ID)
+	wait(t, q)
+	it = q.Items()[0]
+	if it.State != Failed || it.Canceled || it.Message != "卸载程序以退出码 2 结束：原因" {
+		t.Errorf("failed = %s %v %q", it.State, it.Canceled, it.Message)
+	}
+}

@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"appshelf/internal/catalog"
+	"appshelf/internal/detect"
 	"appshelf/internal/source"
 	"appshelf/internal/source/winget"
 	"appshelf/internal/uninstall"
@@ -23,6 +26,8 @@ type fakeUninstaller struct {
 	gone map[string]bool // by key
 	keep map[string]bool // programs that stay after their run
 	runs []string        // key and "i" or "q"
+	// hold, when set, keeps a quiet run waiting for the user until closed.
+	hold chan struct{}
 }
 
 func (f *fakeUninstaller) Inspect(_ context.Context, targets []uninstall.Target) []uninstall.Inspection {
@@ -39,6 +44,8 @@ func (f *fakeUninstaller) Present(_ context.Context, t uninstall.Target) (bool, 
 	return !f.gone[t.Key], nil
 }
 
+func (f *fakeUninstaller) Remains(uninstall.Target) string { return "" }
+
 func (f *fakeUninstaller) Run(_ context.Context, t uninstall.Target, interactive bool, log io.Writer) (source.Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -48,6 +55,12 @@ func (f *fakeUninstaller) Run(_ context.Context, t uninstall.Target, interactive
 	}
 	f.runs = append(f.runs, t.Key+"|"+mode)
 	fmt.Fprintln(log, "removing", t.Name)
+	if hold := f.hold; hold != nil && !interactive {
+		f.mu.Unlock()
+		source.ReportProgress(log, source.Progress{Stage: "卸载程序弹出了窗口，可能在等你操作", Wait: uninstall.WaitUser, Prompt: "「卸载」请先关闭程序", Window: true})
+		<-hold
+		f.mu.Lock()
+	}
 	if f.keep[t.Key] {
 		return source.Result{}, fmt.Errorf("卸载程序以退出码 2 结束")
 	}
@@ -245,5 +258,80 @@ func TestUninstallFailedRetriesInteractively(t *testing.T) {
 	}
 	if err := e.tasks.RetryInteractive(task.ID); err == nil {
 		t.Error("a task that succeeded retried")
+	}
+}
+
+// Programs removed quietly go first, those opening their uninstaller's
+// window last.
+func TestUninstallQuietFirst(t *testing.T) {
+	e := newEnv(t)
+	exe := filepath.Join(t.TempDir(), "remove.exe")
+	os.WriteFile(exe, []byte("MZ"), 0o644)
+	e.mu.Lock()
+	e.registry = []detect.Entry{{DisplayName: "Windowed", Name: "Windowed", Scope: "Machine", Arch: "X64", Key: `HKLM\Windowed`, UninstallString: `"` + exe + `"`}}
+	e.mu.Unlock()
+	e.listARP(`ARP\Machine\X64\Windowed`, "Windowed")
+	e.installed.Refresh()
+	key := `arp:machine\x64\windowed`
+	e.until(func() bool { return e.listed(key) })
+	if _, err := e.installed.StartUninstall(context.Background(), []string{key, "winget:obsidian.obsidian"}); err != nil {
+		t.Fatal(err)
+	}
+	e.until(func() bool { return !e.tasks.List().Running && len(e.uninst.ran()) == 2 })
+	if got := e.uninst.ran(); !slices.Equal(got, []string{"winget:obsidian.obsidian|q", key + "|q"}) {
+		t.Errorf("runs = %q", got)
+	}
+}
+
+// A removal waiting for the user shows it on its task, tells once with a
+// notification while the window is away, and takes the user's commands.
+func TestUninstallWaitingForTheUser(t *testing.T) {
+	e := newEnv(t)
+	key := "winget:obsidian.obsidian"
+	e.uninst.hold = make(chan struct{})
+	if _, err := e.installed.StartUninstall(context.Background(), []string{key}); err != nil {
+		t.Fatal(err)
+	}
+	var task TaskEntry
+	e.until(func() bool {
+		l := e.tasks.List()
+		if len(l.Items) == 1 {
+			task = l.Items[0]
+		}
+		return task.Wait == WaitUser
+	})
+	if task.Prompt != "「卸载」请先关闭程序" || !task.Window || !task.CanSwitch {
+		t.Errorf("task = %+v", task)
+	}
+	told := func() []string {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		var out []string
+		for _, n := range e.notified {
+			if strings.HasPrefix(n, "tasks:") {
+				out = append(out, n)
+			}
+		}
+		return out
+	}
+	e.until(func() bool { return len(told()) > 0 })
+	e.app.Progress() // again: told once
+	notified := told()
+	if len(notified) != 1 || notified[0] != "tasks:「Obsidian」的卸载程序在等你操作|「卸载」请先关闭程序" {
+		t.Errorf("notified %q", notified)
+	}
+	if err := e.tasks.Control(task.ID, "nonsense"); err == nil {
+		t.Error("an unknown command was taken")
+	}
+	if err := e.tasks.Control(task.ID+1, ControlStopWaiting); err == nil {
+		t.Error("a command reached no task")
+	}
+	if err := e.tasks.Control(task.ID, ControlShowWindow); err != nil {
+		t.Error(err)
+	}
+	close(e.uninst.hold)
+	e.until(func() bool { return !e.tasks.List().Running })
+	if err := e.tasks.Control(task.ID, ControlStopWaiting); err == nil {
+		t.Error("a finished task took a command")
 	}
 }

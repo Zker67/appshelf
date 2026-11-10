@@ -19,7 +19,7 @@
 | `app.go` | `App`、`Hooks`（文件对话框、打开路径和链接、自更新、外观、系统通知、托盘、开机启动）、`Config`、循环和通知器 |
 | `dto.go` | 前端看到的全部类型；改动后要重新生成 `mygo.ts` |
 | `shelf.go` | `Shelf`：清单快照、检查更新、添加、批量加入、删除与撤销、分类和标签、备注、导入导出 |
-| `tasks.go` | `Tasks`：开始安装和更新（先等正在读取的状态，不预览）、队列操作（含用卸载程序窗口重试 `RetryInteractive`），任务的阶段和进度，应用内日志（`Log` 按游标增量读取）和日志文件 |
+| `tasks.go` | `Tasks`：开始安装和更新（先等正在读取的状态，不预览）、队列操作（含用卸载程序窗口重试 `RetryInteractive`、卸载等待中的 `Control`：停止等待、显示窗口、结束卸载程序、改用窗口卸载），任务的阶段和进度，应用内日志（`Log` 按游标增量读取）和日志文件 |
 | [leftovers.go](./leftovers.go) | `Tasks.FindLeftovers` / `CleanLeftovers` / `OpenBackup`：为卸载成功的任务查找残留，结果和令牌留在服务端，清理只按 ID 选择；注册表备份到 `<数据目录>\backups\leftovers-<时间>-<软件名>` |
 | `sources.go` | `Sources`：来源状态与额度、安装 winget 模块、编辑时搜索（等版本读完一起返回）、检查 GitHub 仓库 |
 | `discover.go` | `Discover`：统一搜索（`Channel` 流式返回，新的搜索取消旧的；winget 先发结果，读到版本再发一次）、预热（`Warm`）、GitHub 搜索、详情、更新日志（`ReleaseNotes`）、规则建议；以及 `Changed` 事件 |

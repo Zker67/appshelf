@@ -66,14 +66,34 @@ export interface QueueProgress {
   active: boolean;
 }
 
-export function queueProgress(items: readonly Pick<TaskEntry, "state">[]): QueueProgress {
+/** queueProgress counts the tasks; a removal the user canceled is no failure. */
+export function queueProgress(
+  items: readonly Pick<TaskEntry, "state" | "canceled">[],
+): QueueProgress {
   let done = 0;
   let failed = 0;
   let active = false;
   for (const t of items) {
     if (t.state === "waiting" || t.state === "running") active = true;
     else done++;
-    if (t.state === "failed") failed++;
+    if (t.state === "failed" && !t.canceled) failed++;
   }
   return { done, total: items.length, failed, active };
+}
+
+/** newWaits returns the removals now waiting for the user that were not told yet, noting them in told. */
+export function newWaits<T extends Pick<TaskEntry, "id" | "started" | "state" | "wait">>(
+  items: readonly T[],
+  told: Set<string>,
+): T[] {
+  const out: T[] = [];
+  for (const t of items) {
+    if (t.state !== "running" || t.wait !== "user") continue;
+    // One run of a task: a retry runs again under the same ID.
+    const key = `${t.id}@${t.started ?? ""}`;
+    if (told.has(key)) continue;
+    told.add(key);
+    out.push(t);
+  }
+  return out;
 }

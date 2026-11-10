@@ -80,6 +80,12 @@ type Plan struct {
 	// Elevate means administrator rights are asked for before it runs:
 	// msiexec without its window cannot ask for them itself.
 	Elevate bool
+	// Copy means File runs from a copy in the temporary directory, Params
+	// ending with _?= naming File's directory: an NSIS uninstaller then
+	// does the work itself, rather than in a copy it leaves running, and
+	// returns its exit code. Bulk Crap Uninstaller does the same
+	// (UninstallManager.UpdateNsisStartInfo).
+	Copy bool
 	// Blocked is why it must not run, "" when it can.
 	Blocked string
 	// Notes are what to know before it runs.
@@ -216,6 +222,7 @@ func planRegistry(p *Plan, t Target, interactive bool) {
 		p.Blocked = "注册表里的卸载命令无效"
 		return
 	}
+	given := params
 	quiet := ""
 	switch {
 	case interactive:
@@ -227,9 +234,12 @@ func planRegistry(p *Plan, t Target, interactive bool) {
 		file, params = SplitCommand(e.QuietUninstallString)
 		quiet = "registry"
 	case p.Kind == NSIS:
-		params, quiet = join(params, "/S"), "nsis"
+		params, quiet = nsisQuiet(params), "nsis"
 	case p.Kind == Burn:
 		params, quiet = join(params, "/quiet /norestart"), "burn"
+	}
+	if p.Kind == NSIS && (interactive || quiet == "nsis") && runsInPlace(file, given) {
+		params, p.Copy = join(params, "_?="+filepath.Dir(file)), true
 	}
 	p.File, p.Params = file, params
 	p.Quiet = quiet != ""
@@ -240,6 +250,36 @@ func planRegistry(p *Plan, t Target, interactive bool) {
 	if params != "" {
 		p.Command += " " + params
 	}
+}
+
+// nsisQuiet adds /S to an NSIS uninstaller's arguments: before _?=, which
+// must come last, its directory taking the rest of the line.
+func nsisQuiet(params string) string {
+	if i := strings.Index(params, "_?="); i >= 0 {
+		return join(strings.TrimSpace(params[:i]), "/S "+params[i:])
+	}
+	return join(params, "/S")
+}
+
+// runsInPlace reports an NSIS uninstaller that can run from a copy with
+// _?=, as Bulk Crap Uninstaller tells: the command has no arguments of its
+// own, the file is named as an uninstaller, and its directory is not
+// itself named uninstall.
+func runsInPlace(file, params string) bool {
+	if params != "" || !filepath.IsAbs(file) {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSuffix(filepath.Base(file), filepath.Ext(file)))
+	return strings.Contains(name, "uninst") && !strings.EqualFold(filepath.Base(filepath.Dir(file)), "uninstall")
+}
+
+// withoutInPlace drops the _?= of a copy's arguments, for the uninstaller
+// to run as it is when it cannot be copied.
+func withoutInPlace(params string) string {
+	if i := strings.Index(params, "_?="); i >= 0 {
+		return strings.TrimSpace(params[:i])
+	}
+	return params
 }
 
 func join(a, b string) string {

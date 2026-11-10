@@ -17,6 +17,9 @@ import (
 type Uninstaller interface {
 	Inspect(ctx context.Context, targets []uninstall.Target) []uninstall.Inspection
 	Present(ctx context.Context, t uninstall.Target) (bool, error)
+	// Remains tells why a program still there after its uninstaller ran
+	// may be, "" when nothing tells.
+	Remains(t uninstall.Target) string
 	Run(ctx context.Context, t uninstall.Target, interactive bool, log io.Writer) (source.Result, error)
 }
 
@@ -58,14 +61,20 @@ func (c *Core) PreviewUninstall(ctx context.Context, targets []uninstall.Target)
 }
 
 // EnqueueUninstall queues the runnable programs of a preview and returns
-// how many.
+// how many: those removed quietly first, those opening their uninstaller's
+// window last, for the user not to wait by them.
 func (c *Core) EnqueueUninstall(items []UninstallPreview) int {
-	var targets []uninstall.Target
+	var targets, windowed []uninstall.Target
 	for _, it := range items {
-		if it.Runnable {
+		switch {
+		case !it.Runnable:
+		case it.Quiet:
 			targets = append(targets, it.Target)
+		default:
+			windowed = append(windowed, it.Target)
 		}
 	}
+	targets = append(targets, windowed...)
 	if len(targets) == 0 {
 		return 0
 	}
@@ -83,7 +92,7 @@ func (c *Core) presence(ctx context.Context, t *uninstall.Target) source.Status 
 	case err != nil:
 		return source.UnknownStatus(err.Error())
 	case ok:
-		return source.Status{State: source.Installed, Version: t.Version}
+		return source.Status{State: source.Installed, Version: t.Version, Note: c.uninstaller.Remains(*t)}
 	}
 	return source.Status{State: source.NotInstalled}
 }
@@ -101,7 +110,7 @@ func (c *Core) runUninstall(ctx context.Context, it queue.Item, log io.Writer) (
 		fmt.Fprintf(log, "位置：%s\n", t.Location)
 	}
 	fmt.Fprintf(log, "开始：%s\n\n", time.Now().Format(time.DateTime))
-	return c.uninstaller.Run(ctx, t, it.Interactive, log)
+	return c.uninstaller.Run(uninstall.WithCommands(ctx, it.Control), t, it.Interactive, log)
 }
 
 // afterUninstall reads again the states of the catalog's apps that were

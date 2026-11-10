@@ -126,8 +126,9 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | | `SetNote` | 改一个软件的备注（Markdown），返回保存后的内容，空字符串即删除；不重新读取本机状态。`SaveApp` 编辑已有软件时保留原备注，只有新建时采用传入的备注 |
 | | `Export`、`ReadImport`、`ApplyImport` | 导出到用户选择的文件；导入先读文件返回合并预览和令牌，确认后再合并 |
 | `Tasks` | `Start` | 安装、更新不预览，界面点了就调用：先等正在读取的状态（如刚加入的软件，最多 2 分钟），再逐个核对，只把可执行的加入队列，没有可执行的返回错误。动作只接受 `install`、`upgrade`；`uninstall` 只能经 `Installed.StartUninstall` 加入 |
-| | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列。每项有动作（`install`、`upgrade`、`uninstall`）、状态、阶段 `stage`（如“正在下载”）、下载字节 `done` / `total`、来源只给百分比时的 `percent`（0–100）和下载速度 `speed`（字节/秒），未知时省略；`interactive` 表示这个失败的卸载可以用卸载程序窗口重试，`leftovers` 表示这个成功的卸载可以查找残留 |
+| | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列。每项有动作（`install`、`upgrade`、`uninstall`）、状态、阶段 `stage`（如“正在下载”）、下载字节 `done` / `total`、来源只给百分比时的 `percent`（0–100）和下载速度 `speed`（字节/秒），未知时省略；`interactive` 表示这个失败的卸载可以用卸载程序窗口重试，`leftovers` 表示这个成功的卸载可以查找残留，`canceled` 表示这个失败的卸载是用户取消的（显示为“已取消”，不计入失败）。进行中的卸载在等卸载程序时有 `wait`（`working` 等它结束、`user` 等你操作、`stalled` 可能卡住、`installer` 等另一个安装结束）、卸载程序窗口的文字 `prompt`、有窗口时 `window`，可以改用窗口卸载时 `canSwitch` |
 | | `RetryInteractive(id)` | 失败的卸载改为打开卸载程序窗口再执行一次（winget 用 `--interactive`，注册表程序用不带静默参数的卸载命令） |
+| | `Control(id, c)` | 正在等卸载程序的卸载：`stopWaiting` 停止等待并立即复查（不结束卸载程序）、`showWindow` 把卸载程序窗口提到前面、`end` 结束卸载程序、`switchToWindow` 结束静默卸载并改用窗口重新执行（只在 `canSwitch` 时）。进入“等你操作”时，窗口不在前台发系统通知（点击打开任务），在前台由页面提示 |
 | | `Log(id, from)` | 应用内日志：从第 `from` 行起的整理后的行 `lines`、实际起点 `start`（更早的行已丢弃时大于 `from`）、下次的游标 `next`、还在刷新的当前行 `live`、任务是否结束 `done`。内存里每个任务最多保留最后 2000 行，完整内容用 `OpenLog` 打开日志文件 |
 | | `FindLeftovers(id)` | 为卸载成功的任务查找残留（目录、`HKCU\Software` 下的设置、快捷方式、开机启动项），返回令牌和每一项的 ID、类型、路径、分数、等级（`high` / `medium` / `low`）、理由和是否默认勾选；只读 |
 | | `CleanLeftovers(token, ids)` | 清理这次查找里选中的项（只按 ID 选择，前端传不了路径）：文件和目录移到回收站，注册表先导出备份再删除；每项清理前重新检查。返回每项结果、清理数、失败数和备份目录 |

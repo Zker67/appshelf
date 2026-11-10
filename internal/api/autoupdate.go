@@ -289,6 +289,15 @@ func names(list []string) string {
 	return strings.Join(list[:shown], "、") + fmt.Sprintf(" 等 %d 个", len(list))
 }
 
+// notifyTasks shows a notification of the tasks, unless the window is in
+// front, where the page shows the same.
+func (a *App) notifyTasks(title, body string) {
+	if a.hooks.NotifyTasks == nil || (a.hooks.Active != nil && a.hooks.Active()) {
+		return
+	}
+	go a.hooks.NotifyTasks(title, body)
+}
+
 // notify shows a notification, unless the user turned them off or the
 // window is in front, where the page shows the same.
 func (a *App) notify(title, body string) {

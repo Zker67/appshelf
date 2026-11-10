@@ -496,6 +496,12 @@ export interface TagInfo {
 /** TaskAction is installing, updating or removing. */
 export type TaskAction = "install" | "upgrade" | "uninstall";
 
+/**
+ * TaskControl is what the user asks of a removal waiting for its
+ * uninstaller.
+ */
+export type TaskControl = "stopWaiting" | "showWindow" | "end" | "switchToWindow";
+
 /** TaskEntry is an install or update in the queue. */
 export interface TaskEntry {
   id: number;
@@ -536,6 +542,21 @@ export interface TaskEntry {
    * left behind.
    */
   leftovers?: boolean;
+  /**
+   * Wait is how a running removal waits for its uninstaller, "" when it
+   * does not; Prompt is what the uninstaller's window says, and Window
+   * means it has one to bring to the front.
+   */
+  wait?: TaskWait;
+  prompt?: string;
+  window?: boolean;
+  /**
+   * CanSwitch means a quiet removal waiting can end its uninstaller and
+   * run again with its window.
+   */
+  canSwitch?: boolean;
+  /** Canceled marks a failed removal the user canceled. */
+  canceled?: boolean;
 }
 
 /** TaskList is the queue. */
@@ -566,6 +587,9 @@ export interface TaskLog {
 
 /** TaskState is where a task is. */
 export type TaskState = "waiting" | "running" | "succeeded" | "skipped" | "failed";
+
+/** TaskWait is how a removal waits for its uninstaller. */
+export type TaskWait = "working" | "user" | "stalled" | "installer";
 
 /** ThemeSource is the appearance chosen. */
 export type ThemeSource = "system" | "light" | "dark";
@@ -863,6 +887,14 @@ export const Tasks = {
   /** ClearDone removes the finished tasks. */
   clearDone(): Promise<void> {
     return call("Tasks.ClearDone");
+  },
+  /**
+   * Control passes what the user asks to a removal waiting for its
+   * uninstaller: stop waiting, show its window, end it, or end it to run
+   * again with its window.
+   */
+  control(id: number, c: TaskControl): Promise<void> {
+    return call("Tasks.Control", id, c);
   },
   /**
    * FindLeftovers looks for what a program removed by a task left behind:

@@ -7,6 +7,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -86,11 +87,19 @@ type Item struct {
 	// uninstaller's window.
 	Target      *uninstall.Target
 	Interactive bool
+	// Control carries the user's commands to a removal while it runs.
+	Control <-chan uninstall.Command
+	// Canceled marks a failed removal the user canceled.
+	Canceled bool
 
 	log *tasklog.Log
 	// retried is a removal queued again after it failed: its program gone
 	// before it runs again was removed by the earlier run.
 	retried bool
+	ctl     chan uninstall.Command
+	// toWindow is a removal the user switched to its uninstaller's window:
+	// still there once it ends, it runs again so.
+	toWindow bool
 }
 
 // Stages the queue itself sets; sources report the others.
@@ -237,7 +246,7 @@ func (q *Queue) retry(id int, interactive bool) bool {
 	}
 	it.retried = it.Action == Uninstall
 	q.items = slices.Delete(q.items, i, i+1)
-	it.State, it.Message, it.LogPath = Waiting, "", ""
+	it.State, it.Message, it.LogPath, it.Canceled = Waiting, "", "", false
 	it.From, it.To = "", ""
 	it.Stage, it.Progress, it.log = "", source.Progress{}, nil
 	it.Started, it.Ended = time.Time{}, time.Time{}
@@ -246,6 +255,29 @@ func (q *Queue) retry(id int, interactive bool) bool {
 	q.mu.Unlock()
 	q.notify()
 	return true
+}
+
+// Control passes a command of the user to the removal id while it runs,
+// and reports whether it took it. SwitchToWindow also runs it again with
+// its uninstaller's window when its program is still there after.
+func (q *Queue) Control(id int, c uninstall.Command) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, it := range q.items {
+		if it.ID != id || it.State != Running || it.ctl == nil {
+			continue
+		}
+		select {
+		case it.ctl <- c:
+			if c == uninstall.SwitchToWindow {
+				it.toWindow = true
+			}
+			return true
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // Stop lets the item running finish and leaves the others waiting.
@@ -372,6 +404,10 @@ func (q *Queue) work() {
 			return
 		}
 		it.State, it.Started, it.Stage = Running, time.Now(), StageChecking
+		if it.Action == Uninstall {
+			it.ctl = make(chan uninstall.Command, 4)
+			it.Control = it.ctl
+		}
 		snapshot := *it
 		q.mu.Unlock()
 		q.notify()
@@ -380,10 +416,15 @@ func (q *Queue) work() {
 
 		q.mu.Lock()
 		it.State, it.Message, it.LogPath, it.Ended = state, msg, logPath, time.Now()
-		it.From, it.To = snapshot.From, snapshot.To
+		it.From, it.To, it.Canceled = snapshot.From, snapshot.To, snapshot.Canceled
 		it.Stage, it.Progress = "", source.Progress{}
+		again := it.toWindow && state == Failed && !it.Interactive
+		it.ctl, it.Control, it.toWindow = nil, nil, false
 		q.mu.Unlock()
 		q.notify()
+		if again {
+			q.retry(it.ID, true)
+		}
 	}
 }
 
@@ -445,7 +486,8 @@ func (q *Queue) runItem(it *Item, live live) (ItemState, string, string) {
 	log.Close()
 
 	if it.Action == Uninstall {
-		state, msg := judgeRemoval(after, res, runErr)
+		state, msg, canceled := judgeRemoval(after, res, runErr)
+		it.Canceled = canceled
 		return state, msg, logPath
 	}
 	if runErr != nil {
@@ -506,27 +548,39 @@ func judgeBefore(it Item, before source.Status) (ItemState, string, bool) {
 }
 
 // judgeRemoval judges a removal by whether the program is gone: what the
-// uninstaller said only explains.
-func judgeRemoval(after source.Status, res source.Result, runErr error) (ItemState, string) {
+// uninstaller said only explains. canceled marks one the user canceled.
+func judgeRemoval(after source.Status, res source.Result, runErr error) (state ItemState, msg string, canceled bool) {
 	switch {
 	case after.Blocked():
-		return Failed, "卸载程序已结束，但无法确认结果：" + noteOr(after, "原因未知")
+		return Failed, "卸载程序已结束，但无法确认结果：" + noteOr(after, "原因未知"), false
+	case after.IsInstalled() && errors.Is(runErr, uninstall.ErrCanceled):
+		return Failed, runErr.Error(), true
 	case after.IsInstalled() && runErr != nil:
-		return Failed, runErr.Error()
+		return Failed, withNote(runErr.Error(), after), false
 	case after.IsInstalled():
-		return Failed, "卸载程序已结束，但这个软件还在本机"
+		return Failed, withNote("卸载程序已结束，但这个软件还在本机", after), false
 	case res.RebootRequired:
-		return Succeeded, "需要重启电脑才能完成"
+		return Succeeded, "需要重启电脑才能完成", false
 	case runErr != nil:
-		return Succeeded, "已卸载（卸载程序报告：" + runErr.Error() + "）"
+		return Succeeded, "已卸载（卸载程序报告：" + runErr.Error() + "）", false
 	}
-	return Succeeded, ""
+	return Succeeded, "", false
+}
+
+// withNote adds why a program may still be there.
+func withNote(msg string, st source.Status) string {
+	if st.Note != "" {
+		return msg + "：" + st.Note
+	}
+	return msg
 }
 
 func presence(st source.Status) string {
 	switch {
 	case st.Blocked():
 		return "无法确认（" + noteOr(st, "原因未知") + "）"
+	case st.IsInstalled() && st.Note != "":
+		return "仍在本机（" + st.Note + "）"
 	case st.IsInstalled():
 		return "仍在本机"
 	}

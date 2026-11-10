@@ -19,7 +19,7 @@ import { formatElapsed, lineKind, queueProgress, taskProgress } from "@/lib/task
 import { formatClock, formatDateTime } from "@/lib/text";
 import { useTaskLog } from "@/lib/use-task-log";
 import { cn } from "@/lib/utils";
-import { Tasks, type TaskAction, type TaskEntry, type TaskState } from "@/mygo";
+import { Tasks, type TaskAction, type TaskControl, type TaskEntry, type TaskState } from "@/mygo";
 import { useActions } from "@/state/actions";
 import { useNav } from "@/state/nav";
 import {
@@ -29,16 +29,19 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   CircleSlashIcon,
+  CircleStopIcon,
   ClockIcon,
   CopyIcon,
   ExternalLinkIcon,
   SearchCheckIcon,
   ListChecksIcon,
   LoaderCircleIcon,
+  MonitorUpIcon,
   PauseIcon,
   PlayIcon,
   RotateCcwIcon,
   TerminalIcon,
+  TimerOffIcon,
   XCircleIcon,
   XIcon,
   type LucideIcon,
@@ -65,6 +68,13 @@ const states: Record<
   succeeded: { icon: CheckCircle2Icon, tone: "success", label: (a) => verbs[a].done },
   skipped: { icon: CircleSlashIcon, tone: "muted", label: () => "已跳过" },
   failed: { icon: XCircleIcon, tone: "danger", label: () => "失败" },
+};
+
+/** A failed removal the user canceled reads as canceled, not failed. */
+const canceledState: (typeof states)[TaskState] = {
+  icon: CircleSlashIcon,
+  tone: "muted",
+  label: () => "已取消",
 };
 
 async function run(what: string, fn: () => Promise<unknown>) {
@@ -245,16 +255,76 @@ function useNow(on: boolean): number {
   return now;
 }
 
+/** What the user can do while a removal waits for its uninstaller. */
+function WaitActions({ task: t }: { task: TaskEntry }) {
+  const control = (what: string, c: TaskControl) => run(what, () => Tasks.control(t.id, c));
+  return (
+    <div className="-ml-1.5 flex flex-wrap items-center gap-0.5">
+      {t.window && (
+        <Button variant="ghost" size="xs" onClick={() => control("显示窗口", "showWindow")}>
+          <MonitorUpIcon />
+          显示窗口
+        </Button>
+      )}
+      {t.canSwitch && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-primary"
+              onClick={() => control("改用窗口卸载", "switchToWindow")}
+            >
+              <AppWindowIcon />
+              改用窗口卸载
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-72">
+            结束这次静默卸载，打开它自己的卸载窗口，由你在窗口里完成
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {t.wait === "stalled" && !t.canSwitch && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="xs" onClick={() => control("结束卸载程序", "end")}>
+              <CircleStopIcon />
+              结束卸载程序
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-72">
+            结束卸载程序的进程，之后复查它是否已卸载；以管理员身份运行的需要在它的窗口里关闭
+          </TooltipContent>
+        </Tooltip>
+      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="xs" onClick={() => control("停止等待", "stopWaiting")}>
+            <TimerOffIcon />
+            停止等待
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-72">
+          不再等待，立即复查它是否已卸载；卸载程序不会被结束
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
 function TaskRow({ task: t }: { task: TaskEntry }) {
   const actions = useActions();
-  const st = states[t.state];
-  const Icon = st.icon;
   const running = t.state === "running";
-  const failed = t.state === "failed";
+  const canceled = t.state === "failed" && !!t.canceled;
+  const failed = t.state === "failed" && !canceled;
+  const st = canceled ? canceledState : states[t.state];
+  const Icon = st.icon;
   const canLog = running || t.hasLog;
   // A failed task shows its output; the others when asked.
   const [shown, setShown] = useState<boolean | null>(null);
   const logOpen = canLog && (shown ?? failed);
+  // The uninstaller waits for the user, or seems stuck.
+  const alert = running && (t.wait === "user" || t.wait === "stalled");
   const now = useNow(running);
   const started = t.started ? new Date(t.started).getTime() : 0;
   const elapsed = running && started ? formatElapsed((now - started) / 1000) : "";
@@ -276,7 +346,12 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
           {running && (
             <div className="mt-2 flex flex-col gap-1.5">
               <div className="flex items-baseline gap-2 text-xs">
-                <span className="min-w-0 truncate font-medium text-primary">
+                <span
+                  className={cn(
+                    "min-w-0 truncate font-medium",
+                    alert ? "text-warning" : "text-primary",
+                  )}
+                >
                   {t.stage || verbs[t.action].doing}
                 </span>
                 <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
@@ -286,6 +361,12 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
                 </span>
               </div>
               <ProgressBar percent={progress.percent} />
+              {t.prompt && (
+                <div className="line-clamp-3 text-xs break-words text-muted-foreground select-text">
+                  {t.prompt}
+                </div>
+              )}
+              {t.wait && <WaitActions task={t} />}
             </div>
           )}
           {t.message && (
@@ -323,7 +404,7 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
                   </TooltipContent>
                 </Tooltip>
               )}
-              {failed && t.interactive && (
+              {t.state === "failed" && t.interactive && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -340,7 +421,7 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
                   </TooltipContent>
                 </Tooltip>
               )}
-              {failed && (
+              {t.state === "failed" && (
                 <Button
                   variant="ghost"
                   size="xs"

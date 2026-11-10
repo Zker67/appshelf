@@ -5,7 +5,7 @@
 import { AppIcon } from "@/components/app-icon";
 import { CopyButton } from "@/components/common";
 import { DetailPanel } from "@/components/detail-panel";
-import { PackageInfo, type Fact } from "@/components/package-info";
+import { PackageInfo, SourceLink, type Fact } from "@/components/package-info";
 import { ReleaseNotesView } from "@/components/program-info";
 import { SourceBadge } from "@/components/source-badge";
 import { Pill } from "@/components/status-badge";
@@ -86,6 +86,7 @@ export function UpdateDetail({
         <>
           <span className="truncate font-mono select-text">{id}</span>
           <CopyButton text={id} what="来源 ID" />
+          <SourceLink pkgRef={{ type: i.source.type, id }} />
         </>
       }
       badges={

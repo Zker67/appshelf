@@ -7,7 +7,7 @@ import { AppIcon } from "@/components/app-icon";
 import { CopyButton, EmptyState, SearchBox, SelectionBar, WideLabel } from "@/components/common";
 import type { AddCandidate } from "@/components/dialogs/add-dialog";
 import { DetailPanel } from "@/components/detail-panel";
-import { PackageInfo } from "@/components/package-info";
+import { PackageInfo, SourceLink } from "@/components/package-info";
 import { AddButton, InShelfButton } from "@/components/row-actions";
 import { SettingsFooter, SideGroup, SideRow } from "@/components/side-nav";
 import { GitHubMark, SourceBadge, SourceIcon } from "@/components/source-badge";
@@ -24,7 +24,7 @@ import { fold, formatDateTime, formatStars } from "@/lib/text";
 import { pairTwins } from "@/lib/twins";
 import { revealRow, useList, usePageKeys } from "@/lib/use-list";
 import { cn } from "@/lib/utils";
-import { Discover, type SearchBatch, type SearchHit, type Source } from "@/mygo";
+import { Discover, type PackageRef, type SearchBatch, type SearchHit, type Source } from "@/mygo";
 import { useActions } from "@/state/actions";
 import { useNav, type FindSource } from "@/state/nav";
 import { useQuickAdd } from "@/state/quick-add";
@@ -744,6 +744,15 @@ function HitRow({
   );
 }
 
+/** hitRef is what to read a hit's details by, in its header and below. */
+function hitRef(h: SearchHit): PackageRef {
+  return {
+    type: h.type,
+    id: h.id,
+    ...(h.type === "winget" && h.version ? { version: h.version } : {}),
+  };
+}
+
 function HitDetail({
   hit: h,
   twin,
@@ -771,6 +780,7 @@ function HitDetail({
         <>
           <span className="truncate font-mono select-text">{h.id}</span>
           <CopyButton text={h.id} what="ID" />
+          <SourceLink pkgRef={hitRef(h)} />
         </>
       }
       badges={
@@ -817,13 +827,7 @@ function HitDetail({
         )
       }
     >
-      <PackageInfo
-        pkgRef={{
-          type: h.type,
-          id: h.id,
-          ...(h.type === "winget" && h.version ? { version: h.version } : {}),
-        }}
-      />
+      <PackageInfo pkgRef={hitRef(h)} />
     </DetailPanel>
   );
 }

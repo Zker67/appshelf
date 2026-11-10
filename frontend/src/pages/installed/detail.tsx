@@ -5,7 +5,7 @@
 import { AppIcon } from "@/components/app-icon";
 import { CopyButton } from "@/components/common";
 import { DetailPanel, DetailTabs, type DetailTab } from "@/components/detail-panel";
-import { FactGrid, PackageInfo, type Fact } from "@/components/package-info";
+import { FactGrid, PackageInfo, SourceLink, type Fact } from "@/components/package-info";
 import {
   Notice,
   ReleaseNotesView,
@@ -139,10 +139,11 @@ export function InstalledDetail({
       icon={<AppIcon path={e.icon} name={e.name} size={40} />}
       title={e.name}
       subtitle={
-        id ? (
+        src && id ? (
           <>
             <span className="truncate font-mono select-text">{id}</span>
             <CopyButton text={id} what="来源 ID" />
+            <SourceLink pkgRef={{ type: src.type, id }} />
           </>
         ) : e.publisher ? (
           <span className="truncate select-text">{e.publisher}</span>

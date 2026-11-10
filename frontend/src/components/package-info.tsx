@@ -4,7 +4,9 @@
 
 import { DetailTabs, type DetailTab } from "@/components/detail-panel";
 import { Pill } from "@/components/status-badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorText } from "@/lib/api";
 import { formatDateTime, formatStars } from "@/lib/text";
 import { cn } from "@/lib/utils";
@@ -17,6 +19,7 @@ import {
   Building2Icon,
   CalendarClockIcon,
   CopyrightIcon,
+  ExternalLinkIcon,
   FileArchiveIcon,
   GlobeIcon,
   LayoutDashboardIcon,
@@ -58,6 +61,42 @@ function hostOf(url: string): string {
 }
 
 const isURL = (s: string) => /^https?:\/\//i.test(s.trim());
+
+/**
+ * SourceLink opens the package's page in the browser: a GitHub repository's
+ * from its owner/name at once, any other's homepage once its details are
+ * read, from the same query as the details below. Without a page, nothing.
+ */
+export function SourceLink({ pkgRef }: { pkgRef: PackageRef }) {
+  const github = pkgRef.type === "github";
+  const q = usePackageDetails(github ? null : pkgRef);
+  const url = github
+    ? /^[\w.-]+\/[\w.-]+$/.test(pkgRef.id)
+      ? `https://github.com/${pkgRef.id}`
+      : ""
+    : (q.data?.homepage ?? "");
+  if (!isURL(url)) return null;
+  const label = github ? "在 GitHub 打开" : `打开主页 ${hostOf(url)}`;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground"
+          aria-label={label}
+          onClick={(e) => {
+            e.stopPropagation();
+            openURL(url);
+          }}
+        >
+          <ExternalLinkIcon />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 /** Fact is a tile of the overview: a named value. */
 export interface Fact {

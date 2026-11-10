@@ -5,7 +5,7 @@
 import { AppIcon } from "@/components/app-icon";
 import { CopyButton, InfoCard, InfoRow } from "@/components/common";
 import { DetailPanel } from "@/components/detail-panel";
-import { PackageInfo, type Fact } from "@/components/package-info";
+import { PackageInfo, SourceLink, type Fact } from "@/components/package-info";
 import { CategoryPicker } from "@/components/pickers";
 import { SourceBadge } from "@/components/source-badge";
 import { StatusBadge } from "@/components/status-badge";
@@ -107,6 +107,7 @@ export function ShelfDetail({
         <>
           <span className="truncate font-mono select-text">{id}</span>
           <CopyButton text={id} what="来源 ID" />
+          <SourceLink pkgRef={{ type: src.type, id }} />
         </>
       }
       badges={

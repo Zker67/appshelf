@@ -443,11 +443,31 @@ func (s *Source) Install(ctx context.Context, app catalog.App, log io.Writer) (s
 	return res, err
 }
 
-// Upgrade updates the app's package by its exact ID.
+// Upgrade updates the app's package by its exact ID, its installer in its
+// default mode, which may show its progress.
 func (s *Source) Upgrade(ctx context.Context, app catalog.App, log io.Writer) (source.Result, error) {
-	res, err := s.viaCOM(ctx, log, comOp{Verb: "upgrade", ID: app.Source.ID, Source: "winget", Mode: "Default"}, "正在更新")
+	return s.upgrade(ctx, app, "Default", log)
+}
+
+// UpgradeSilent updates the app's package by its exact ID, its installer
+// asked to show no window: winget's silent mode.
+func (s *Source) UpgradeSilent(ctx context.Context, app catalog.App, log io.Writer) (source.Result, error) {
+	return s.upgrade(ctx, app, "Silent", log)
+}
+
+// UpgradeInteractive updates the app's package by its exact ID with its
+// installer's window, for the user to finish it there.
+func (s *Source) UpgradeInteractive(ctx context.Context, app catalog.App, log io.Writer) (source.Result, error) {
+	return s.upgrade(ctx, app, "Interactive", log)
+}
+
+// upgradeFlags are the command's flags of the cmdlet's modes.
+var upgradeFlags = map[string][]string{"Silent": {"--silent"}, "Interactive": {"--interactive"}}
+
+func (s *Source) upgrade(ctx context.Context, app catalog.App, mode string, log io.Writer) (source.Result, error) {
+	res, err := s.viaCOM(ctx, log, comOp{Verb: "upgrade", ID: app.Source.ID, Source: "winget", Mode: mode}, "正在更新")
 	if errors.Is(err, errUnavailable) {
-		return s.run(ctx, log, "upgrade", app.Source.ID)
+		return s.run(ctx, log, "upgrade", app.Source.ID, upgradeFlags[mode]...)
 	}
 	return res, err
 }
@@ -557,7 +577,7 @@ func interpretCode(code uint32, detail string) (source.Result, error) {
 	case codeInUse:
 		return source.Result{}, errors.New("软件正在运行，请关闭后重试")
 	case codeInstallInProgress:
-		return source.Result{}, errors.New("另一个安装正在进行，请稍后重试")
+		return source.Result{}, source.ErrInstallerBusy
 	case codeCanceledByUser:
 		return source.Result{}, errors.New("安装被取消")
 	}

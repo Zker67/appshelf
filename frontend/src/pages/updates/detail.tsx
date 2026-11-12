@@ -12,6 +12,7 @@ import { Pill } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { UpdateMenu, modeIcons } from "@/components/update-menu";
 import { sourceID } from "@/lib/shelf";
+import { formatDateTime } from "@/lib/text";
 import { holdText, modeLabels } from "@/lib/updates";
 import type { UpdateItem } from "@/mygo";
 import {
@@ -42,6 +43,14 @@ export function UpdateDetail({
     facts.push({ label: "已装版本", icon: BoxIcon, value: i.version, title: i.version });
   }
   facts.push({ label: "更新方式", icon: ModeIcon, value: modeLabels[i.mode] });
+  if (i.autoAt) {
+    facts.push({
+      label: "将自动更新",
+      icon: ClockIcon,
+      value: `${formatDateTime(i.autoAt)} 后`,
+      title: "新版本发现满设置的天数后自动更新；现在也可以手动更新",
+    });
+  }
   if (!i.canAuto && i.autoNote) {
     facts.push({
       label: "不能自动更新",
@@ -63,7 +72,7 @@ export function UpdateDetail({
       {i.running && (
         <span className="flex items-center gap-1.5 text-warning">
           <AppWindowIcon className="size-3.5" />
-          它正在运行，更新时可能会被关闭
+          它正在运行，更新前会先关闭它（有窗口不肯关的不会强行结束）
         </span>
       )}
       {hold && (

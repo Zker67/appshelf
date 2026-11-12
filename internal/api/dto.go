@@ -219,8 +219,8 @@ type TaskEntry struct {
 	// Speed is the download's bytes a second over the last seconds, when
 	// its bytes are known.
 	Speed int64 `json:"speed,omitempty"`
-	// Interactive means a failed removal can run again with its
-	// uninstaller's window.
+	// Interactive means a failed removal or update can run again with the
+	// window of its uninstaller or installer.
 	Interactive bool `json:"interactive,omitempty"`
 	// Leftovers means the program removed can be searched for what it
 	// left behind.
@@ -234,8 +234,11 @@ type TaskEntry struct {
 	// CanSwitch means a quiet removal waiting can end its uninstaller and
 	// run again with its window.
 	CanSwitch bool `json:"canSwitch,omitempty"`
-	// Canceled marks a failed removal the user canceled.
+	// Canceled marks a failed task the user canceled.
 	Canceled bool `json:"canceled,omitempty"`
+	// Cancelable means the task can be canceled now: it waits, or it runs
+	// where it can stop without changing anything, as while it downloads.
+	Cancelable bool `json:"cancelable,omitempty"`
 }
 
 // TaskWait is how a removal waits for its uninstaller.
@@ -382,6 +385,9 @@ type TaskList struct {
 	// stops after the current one.
 	Running  bool `json:"running"`
 	Stopping bool `json:"stopping"`
+	// Reboot names the programs whose tasks need Windows to restart to be
+	// done, since it last started, oldest first.
+	Reboot []string `json:"reboot,omitempty"`
 }
 
 // SourceInfo is whether a source can be used here.

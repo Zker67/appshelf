@@ -72,7 +72,8 @@ func TestComLogKeepsThePercent(t *testing.T) {
 	rec := &recorder{}
 	c := &comLog{log: rec, work: "正在安装"}
 	fmt.Fprint(c, progressMark+"Downloading\t57\n")
-	if _, last := rec.get(); last != (source.Progress{Stage: "正在下载", Percent: 57}) {
+	// A download can be canceled.
+	if _, last := rec.get(); last != (source.Progress{Stage: "正在下载", Percent: 57, Cancelable: true}) {
 		t.Errorf("last = %+v", last)
 	}
 }

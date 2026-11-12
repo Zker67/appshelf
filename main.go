@@ -20,6 +20,8 @@ import (
 	"appshelf/internal/detect"
 	"appshelf/internal/discover"
 	"appshelf/internal/icons"
+	"appshelf/internal/procs"
+	"appshelf/internal/runner"
 	"appshelf/internal/source"
 	"appshelf/internal/source/github"
 	"appshelf/internal/source/scoop"
@@ -178,6 +180,10 @@ func main() {
 			Post:        shelf.Post,
 			Progress:    shelf.Progress,
 			Uninstaller: uninstall.New(uninstall.Options{SelfDir: selfDir}, w, sc),
+			Installers: func() *procs.Installers {
+				return procs.WatchInstallers(procs.Live(), procs.TempDirs())
+			},
+			InstallerBusy: runner.InstallerBusy,
 		})
 		if err != nil {
 			mygo.Dialog.Error("AppShelf 无法启动", err.Error())
@@ -226,6 +232,7 @@ func main() {
 
 			TokenFile: filepath.Join(dataDir, "github-token.bin"),
 			EnvToken:  token,
+			Close:     procs.NewCloser(procs.LiveClose()).Close,
 		})
 
 		// Staying in the notification area, AppShelf started at login starts

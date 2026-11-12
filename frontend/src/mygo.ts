@@ -533,8 +533,8 @@ export interface TaskEntry {
    */
   speed?: number;
   /**
-   * Interactive means a failed removal can run again with its
-   * uninstaller's window.
+   * Interactive means a failed removal or update can run again with the
+   * window of its uninstaller or installer.
    */
   interactive?: boolean;
   /**
@@ -555,8 +555,13 @@ export interface TaskEntry {
    * run again with its window.
    */
   canSwitch?: boolean;
-  /** Canceled marks a failed removal the user canceled. */
+  /** Canceled marks a failed task the user canceled. */
   canceled?: boolean;
+  /**
+   * Cancelable means the task can be canceled now: it waits, or it runs
+   * where it can stop without changing anything, as while it downloads.
+   */
+  cancelable?: boolean;
 }
 
 /** TaskList is the queue. */
@@ -568,6 +573,11 @@ export interface TaskList {
    */
   running: boolean;
   stopping: boolean;
+  /**
+   * Reboot names the programs whose tasks need Windows to restart to be
+   * done, since it last started, oldest first.
+   */
+  reboot?: string[];
 }
 
 /** TaskLog is part of a task's output, as clean lines. */
@@ -662,6 +672,12 @@ export interface UpdateItem {
    */
   canAuto: boolean;
   autoNote?: string;
+  /**
+   * AutoAt is when it is updated on its own, set to and able to, once
+   * its version has been found long enough (UpdateSettings.AutoDelay);
+   * zero when it is not to wait.
+   */
+  autoAt?: string;
   /** Running means a program of it runs: updating may close it. */
   running?: boolean;
   /** Pending means it waits or runs in the tasks. */
@@ -728,6 +744,12 @@ export interface UpdateRule {
 /** UpdateSettings are the user's choices for updates. */
 export interface UpdateSettings {
   checkEvery: CheckInterval;
+  /**
+   * AutoDelay is how many days a new version must have been found, from
+   * the check that first found it, before it is updated to on its own:
+   * 0, 1, 3, 7 or 14. The user can still update at once.
+   */
+  autoDelay: number;
   /**
    * Notify shows a system notification when a check finds updates, or
    * updates ran on their own, while the window is not in front.
@@ -877,6 +899,13 @@ export const Shelf = {
  */
 export const Tasks = {
   /**
+   * Cancel cancels a task: one waiting does not run; one running stops, when
+   * it can without changing anything, as while it downloads.
+   */
+  cancel(id: number): Promise<void> {
+    return call("Tasks.Cancel", id);
+  },
+  /**
    * CleanLeftovers cleans the finds chosen of a FindLeftovers: files and
    * directories go to the Recycle Bin, registry keys and values are exported
    * to the backups first. Each is checked again before it is cleaned.
@@ -929,8 +958,8 @@ export const Tasks = {
     return call("Tasks.Retry", id);
   },
   /**
-   * RetryInteractive runs a failed removal again with its uninstaller's
-   * window, for the user to finish it there.
+   * RetryInteractive runs a failed removal or update again with the window
+   * of its uninstaller or installer, for the user to finish it there.
    */
   retryInteractive(id: number): Promise<void> {
     return call("Tasks.RetryInteractive", id);

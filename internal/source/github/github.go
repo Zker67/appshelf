@@ -488,6 +488,10 @@ func (s *Source) Install(ctx context.Context, app catalog.App, log io.Writer) (s
 		return source.Result{}, err
 	}
 	defer os.Remove(path)
+	// Canceled while it downloaded: the installer does not start.
+	if err := ctx.Err(); err != nil {
+		return source.Result{}, err
+	}
 	source.ReportProgress(log, source.Progress{Stage: "正在运行安装程序"})
 	code, err := s.runInstaller(path, app.Source.InstallerArgs, log)
 	if err != nil {
@@ -502,7 +506,7 @@ func (s *Source) Install(ctx context.Context, app catalog.App, log io.Writer) (s
 	case 1602:
 		return source.Result{}, errors.New("安装被取消")
 	case 1618:
-		return source.Result{}, errors.New("另一个安装正在进行，请稍后重试")
+		return source.Result{}, source.ErrInstallerBusy
 	default:
 		return source.Result{}, fmt.Errorf("安装程序以退出码 %d 结束", code)
 	}
@@ -548,7 +552,7 @@ func (s *Source) download(ctx context.Context, a Asset, log io.Writer) (string, 
 		total = max(resp.ContentLength, 0)
 	}
 	counter := &downloadCounter{log: log, total: total}
-	source.ReportProgress(log, source.Progress{Stage: "正在下载", Total: total})
+	source.ReportProgress(log, source.Progress{Stage: "正在下载", Total: total, Cancelable: true})
 	n, err := io.Copy(io.MultiWriter(f, h, counter), resp.Body)
 	source.ReportProgress(log, source.Progress{Stage: "正在校验", Done: n, Total: total})
 	if cerr := f.Close(); err == nil {
@@ -588,7 +592,7 @@ func (c *downloadCounter) Write(p []byte) (int, error) {
 	c.done += int64(len(p))
 	if c.done-c.shown >= 256<<10 {
 		c.shown = c.done
-		source.ReportProgress(c.log, source.Progress{Stage: "正在下载", Done: c.done, Total: c.total})
+		source.ReportProgress(c.log, source.Progress{Stage: "正在下载", Done: c.done, Total: c.total, Cancelable: true})
 	}
 	return len(p), nil
 }

@@ -28,6 +28,7 @@ import (
 	"appshelf/internal/detect"
 	"appshelf/internal/discover"
 	"appshelf/internal/icons"
+	"appshelf/internal/procs"
 	"appshelf/internal/queue"
 	"appshelf/internal/source"
 	"appshelf/internal/source/github"
@@ -152,6 +153,10 @@ type Config struct {
 	// EnvToken is the one of GH_TOKEN or GITHUB_TOKEN, used without it.
 	TokenFile string
 	EnvToken  string
+	// Close closes the programs running from a directory before an update
+	// the user started replaces them (procs.Closer.Close); nil closes
+	// nothing.
+	Close func(ctx context.Context, dir string, report func(procs.CloseEvent)) (procs.CloseResult, error)
 }
 
 // App connects the services to the core.
@@ -303,6 +308,8 @@ func (a *App) Start(ctx context.Context, cfg Config) {
 		a.settings = loadSettings(cfg.Settings)
 		a.loadToken()
 		a.upd.ctx = ctx
+		a.core.Queue.SetHold(a.autoHold)
+		a.core.SetBeforeUpgrade(a.closeForUpdate)
 		go a.loop.run(ctx, a.afterLoop)
 		close(a.ready)
 		// Reading everything as AppShelf starts is a check for updates.

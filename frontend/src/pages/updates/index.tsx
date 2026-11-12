@@ -459,6 +459,7 @@ function Schedule() {
   const actions = useActions();
   if (!s) return null;
   const parts = [intervalLabels[s.checkEvery], s.notify ? "发现后通知" : "不发通知"];
+  if (s.autoDelay > 0) parts.push(`新版本等 ${s.autoDelay} 天再自动更新`);
   if (s.background) parts.push("关闭窗口后留在托盘");
   return (
     <button

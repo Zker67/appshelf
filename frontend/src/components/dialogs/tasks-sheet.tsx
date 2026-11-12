@@ -36,6 +36,7 @@ import {
   SearchCheckIcon,
   ListChecksIcon,
   LoaderCircleIcon,
+  PowerIcon,
   MonitorUpIcon,
   PauseIcon,
   PlayIcon,
@@ -70,7 +71,7 @@ const states: Record<
   failed: { icon: XCircleIcon, tone: "danger", label: () => "失败" },
 };
 
-/** A failed removal the user canceled reads as canceled, not failed. */
+/** A failed task the user canceled reads as canceled, not failed. */
 const canceledState: (typeof states)[TaskState] = {
   icon: CircleSlashIcon,
   tone: "muted",
@@ -209,6 +210,15 @@ export function TasksSheet({
             </div>
           )}
         </SheetHeader>
+        {!!data?.reboot?.length && (
+          <div className="flex items-start gap-2 border-b bg-warning/10 px-4 py-2 text-xs text-muted-foreground">
+            <PowerIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
+            <span className="min-w-0">
+              重启电脑后才能完成：
+              <span className="text-foreground">{rebootNames(data.reboot)}</span>
+            </span>
+          </div>
+        )}
         {items.length === 0 ? (
           <EmptyState icon={ListChecksIcon} title="没有任务">
             <Button
@@ -234,6 +244,14 @@ export function TasksSheet({
       </SheetContent>
     </Sheet>
   );
+}
+
+/** rebootNames lists the programs waiting for a restart, at most five. */
+function rebootNames(list: readonly string[]): string {
+  const unique = [...new Set(list)];
+  return unique.length > 5
+    ? `${unique.slice(0, 5).join("、")} 等 ${unique.length} 个`
+    : unique.join("、");
 }
 
 /** endedAt writes when a task ended: the time alone today, the date too before. */
@@ -386,6 +404,25 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
             </Pill>
             {!running && ended && <span>{ended}</span>}
             <span className="ml-auto flex items-center gap-0.5">
+              {t.cancelable && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => run("取消", () => Tasks.cancel(t.id))}
+                    >
+                      <CircleSlashIcon />
+                      取消
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-72">
+                    {running
+                      ? "现在还没有改动这台电脑：停止它，这个任务记为已取消"
+                      : "移出队列，不再执行"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {t.leftovers && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -413,11 +450,13 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
                       onClick={() => run("重试", () => Tasks.retryInteractive(t.id))}
                     >
                       <AppWindowIcon />
-                      打开卸载程序重试
+                      {t.action === "upgrade" ? "打开安装程序重试" : "打开卸载程序重试"}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-72">
-                    不再静默执行，打开它自己的卸载窗口，由你在窗口里完成
+                    {t.action === "upgrade"
+                      ? "不再静默更新，打开它自己的安装程序窗口，由你在窗口里完成"
+                      : "不再静默执行，打开它自己的卸载窗口，由你在窗口里完成"}
                   </TooltipContent>
                 </Tooltip>
               )}

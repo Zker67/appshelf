@@ -58,7 +58,7 @@ func (p *progress) lineDone(line string) {
 	case line == "":
 	case !p.downloading && !p.downloaded && strings.Contains(line, "://"):
 		p.downloading = true
-		source.ReportProgress(p.log, source.Progress{Stage: "正在下载"})
+		source.ReportProgress(p.log, source.Progress{Stage: "正在下载", Cancelable: true})
 		p.stop = make(chan struct{})
 		go p.watch(p.stop)
 	case p.downloading:
@@ -81,7 +81,7 @@ func (p *progress) watch(stop chan struct{}) {
 		size := p.downloadSize()
 		p.mu.Lock()
 		if p.downloading && size > 0 {
-			source.ReportProgress(p.log, source.Progress{Stage: "正在下载", Done: size})
+			source.ReportProgress(p.log, source.Progress{Stage: "正在下载", Done: size, Cancelable: true})
 		}
 		p.mu.Unlock()
 	}

@@ -37,3 +37,20 @@
 | [IconCacheEngine.cs](https://github.com/Devolutions/UniGetUI/blob/e857b3f5d61e377b6137f91c0fa3c25b4bfcd4d0/src/UniGetUI.Core.IconStore/IconCacheEngine.cs) | 同一任务共享、磁盘缓存，按 SHA-256、大小、版本或 URL 校验；部分大图缩小至最多 192 像素 | 已有合并任务、文件变化失效和持久缓存；本轮不引入图片缩放依赖 |
 
 当前项目的完整策略见 [图标服务](../../../internal/icons/README.md)，执行与验收见 [图标优化计划](../../../plans/2026-11-07-installed-icons/00-overview.md)。
+
+## 升级流程对照（2026-11-12）
+
+本次依据用户整理的 UniGetUI 升级流程说明（`AbstractOperation.cs`、`AbstractProcessOperation.cs`、`WinGetPkgOperationHelper.cs`、`PackageOperations.cs`、CLI / IPC 文档）对照 AppShelf 源码，未重新锁定 commit。
+
+| UniGetUI 机制 | AppShelf 结论 |
+|---|---|
+| 每个软件独立任务、防重复、默认串行 | 已有 |
+| 升级后重新查询失败时按预期版本构造记录 | 不采纳：AppShelf 以执行后的真实复查为准 |
+| 虚假更新的记录与抑制 | 采纳为“更新后来源仍提示同一版本就停止自动更新这个版本” |
+| 升级前关闭进程 | 采纳为用户发起的更新前自动关闭；有窗口不关的不强行结束（已实施） |
+| 手动任务优先于自动更新、取消、管理员 / 交互式重试 | 交互式重试、手动优先、单项取消（等待项与可安全停下的运行项）已实施；自动提权不采纳 |
+| 按错误改 scope / 架构 / ID 参数重试 | 不采纳：与“精确 ID、不模糊”冲突 |
+| 更新年龄（新版本满 N 天才自动更新） | 采纳，但按 AppShelf 第一次发现的时间算：winget、scoop 拿不到可靠的发布时间（已实施） |
+| 需要重启的结果单独记录 | 采纳：持久记录到这次开机之后，任务面板和托盘提示（已实施） |
+
+取舍和实施状态见 [升级流程优化计划](../../../plans/2026-11-12-upgrade-flow/00-overview.md)。

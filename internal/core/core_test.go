@@ -3,9 +3,11 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +15,7 @@ import (
 
 	"appshelf/internal/catalog"
 	"appshelf/internal/detect"
+	"appshelf/internal/procs"
 	"appshelf/internal/queue"
 	"appshelf/internal/source"
 	"appshelf/internal/state"
@@ -84,13 +87,23 @@ type harness struct {
 
 func newHarness(t *testing.T, sources ...source.Source) *harness {
 	t.Helper()
+	return newHarnessWith(t, nil, sources...)
+}
+
+// newHarnessWith is newHarness with what change changes of the config.
+func newHarnessWith(t *testing.T, change func(*Config), sources ...source.Source) *harness {
+	t.Helper()
 	dir := t.TempDir()
 	h := &harness{t: t, posts: make(chan func(), 256), dir: dir}
-	c, err := Open(context.Background(), Config{
+	cfg := Config{
 		Paths:   Paths{Catalog: filepath.Join(dir, "catalog.json"), State: filepath.Join(dir, "state.json"), Logs: filepath.Join(dir, "logs")},
 		Sources: func(*state.Store) []source.Source { return sources },
 		Post:    func(fn func()) { h.posts <- fn },
-	})
+	}
+	if change != nil {
+		change(&cfg)
+	}
+	c, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,6 +249,318 @@ func TestQueueThroughCore(t *testing.T) {
 	if items := c.Preview([]string{a.ID}, queue.Install); items[0].Runnable {
 		t.Errorf("an installed app is runnable: %+v", items[0])
 	}
+}
+
+// silentSource is a source that can update with no installer window;
+// ran is called as an update runs.
+type silentSource struct {
+	*fakeSource
+	silent []string
+	ran    func()
+}
+
+func (s *silentSource) Upgrade(ctx context.Context, a catalog.App, log io.Writer) (source.Result, error) {
+	s.ran()
+	return s.Install(ctx, a, log)
+}
+
+func (s *silentSource) UpgradeSilent(ctx context.Context, a catalog.App, log io.Writer) (source.Result, error) {
+	s.mu.Lock()
+	s.silent = append(s.silent, a.ID)
+	s.mu.Unlock()
+	s.ran()
+	return s.Install(ctx, a, log)
+}
+
+// An update AppShelf starts itself runs silently; the check after any
+// update waits for the setup its installer left running, which does the
+// work.
+func TestUpgradesSilentlyAndWaitsForInstallers(t *testing.T) {
+	w := &silentSource{fakeSource: newFake(catalog.Winget)}
+	dir := t.TempDir()
+	posts := make(chan func(), 256)
+	h := &harness{t: t, posts: posts, dir: dir}
+	var (
+		mu       sync.Mutex
+		upgrades int // the updates run, whose setups are left
+		polls    int // the snapshots since the last update ran
+		watches  int
+	)
+	w.ran = func() {
+		mu.Lock()
+		upgrades++
+		mu.Unlock()
+	}
+	app := wingetApp("Tool", "Tool.Tool")
+	key := app.Source.Key()
+	sys := procs.System{
+		Snapshot: func() ([]procs.Proc, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if upgrades == 0 {
+				return nil, nil
+			}
+			if polls++; polls <= 3 {
+				return []procs.Proc{{PID: 7, Name: "setup.tmp"}}, nil
+			}
+			// The setup ended, having updated the program.
+			w.mu.Lock()
+			w.state[key] = source.Status{State: source.Installed, Version: "2.0"}
+			w.mu.Unlock()
+			return nil, nil
+		},
+		Path:  func(uint32) (string, bool) { return `C:\Temp\is-1.tmp\setup.tmp`, true },
+		Usage: func(uint32) (procs.Usage, bool) { return procs.Usage{}, false },
+	}
+	c, err := Open(context.Background(), Config{
+		Paths:   Paths{Catalog: filepath.Join(dir, "catalog.json"), State: filepath.Join(dir, "state.json"), Logs: filepath.Join(dir, "logs")},
+		Sources: func(*state.Store) []source.Source { return []source.Source{w} },
+		Post:    func(fn func()) { posts <- fn },
+		Installers: func() *procs.Installers {
+			mu.Lock()
+			watches++
+			mu.Unlock()
+			in := procs.WatchInstallers(sys, []string{`C:\Temp`})
+			in.Times = procs.WaitTimes{Poll: time.Millisecond, Grace: 5 * time.Millisecond, Idle: time.Hour, Max: time.Hour}
+			return in
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.c = c
+	a, err := c.SaveApp(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.until(func() bool { _, ok := c.Status(a.ID); return ok })
+
+	run := func(auto bool) queue.Item {
+		t.Helper()
+		w.mu.Lock()
+		w.state[key] = source.Status{State: source.UpdateAvailable, Version: "1.0", Latest: "2.0"}
+		w.mu.Unlock()
+		mu.Lock()
+		upgrades, polls = 0, 0
+		mu.Unlock()
+		c.Queue.ClearDone()
+		c.Refresh()
+		h.until(func() bool { st, _ := c.Status(a.ID); return !c.Refreshing() && st.State == source.UpdateAvailable })
+		items := c.Preview([]string{a.ID}, queue.Upgrade)
+		// The upgrade itself changes nothing: its setup does, once it ends.
+		var n int
+		if auto {
+			n = c.EnqueueAuto(items)
+		} else {
+			n = c.Enqueue(items, queue.Upgrade)
+		}
+		if n != 1 {
+			t.Fatalf("queued %d: %+v", n, items)
+		}
+		h.until(func() bool {
+			its := c.Queue.Items()
+			return len(its) == 1 && its[0].State.Done()
+		})
+		return c.Queue.Items()[0]
+	}
+
+	it := run(true)
+	if it.State != queue.Succeeded || it.To != "2.0" {
+		t.Fatalf("auto update: %+v", it)
+	}
+	log, _ := os.ReadFile(it.LogPath)
+	if !strings.Contains(string(log), "等待安装程序结束：setup.tmp") {
+		t.Errorf("log %q", log)
+	}
+	it = run(false)
+	if it.State != queue.Succeeded {
+		t.Fatalf("update: %+v", it)
+	}
+	w.mu.Lock()
+	silent := slices.Clone(w.silent)
+	w.mu.Unlock()
+	if !slices.Equal(silent, []string{a.ID}) {
+		t.Errorf("silent updates %v: only the one AppShelf started", silent)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if watches != 2 {
+		t.Errorf("watched %d times", watches)
+	}
+}
+
+// scripted is a source whose updates return errs in turn, then succeed,
+// bringing after; modes are the modes they ran in.
+type scripted struct {
+	*fakeSource
+	errs  []error
+	modes []string
+}
+
+func (s *scripted) up(mode string, a catalog.App) (source.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.modes = append(s.modes, mode)
+	if len(s.errs) > 0 {
+		err := s.errs[0]
+		s.errs = s.errs[1:]
+		return source.Result{}, err
+	}
+	if st, ok := s.after[a.Source.Key()]; ok {
+		s.state[a.Source.Key()] = st
+	}
+	return source.Result{}, nil
+}
+
+func (s *scripted) Upgrade(_ context.Context, a catalog.App, _ io.Writer) (source.Result, error) {
+	return s.up("default", a)
+}
+
+func (s *scripted) UpgradeInteractive(_ context.Context, a catalog.App, _ io.Writer) (source.Result, error) {
+	return s.up("interactive", a)
+}
+
+// An update waits while Windows Installer is busy, runs again once when it
+// found it busy, runs what is set to run before it, and is retried with
+// its installer's window.
+func TestUpgradeWaitsForTheInstallerAndRetriesWithAWindow(t *testing.T) {
+	src := &scripted{fakeSource: newFake(catalog.Winget)}
+	var mu sync.Mutex
+	busy := 0 // how many more times Windows Installer is busy
+	h := newHarnessWith(t, func(c *Config) {
+		c.InstallerBusy = func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			if busy > 0 {
+				busy--
+				return true
+			}
+			return false
+		}
+	}, src)
+	c := h.c
+	c.busyPoll = time.Millisecond
+	a, err := c.SaveApp(wingetApp("Tool", "Tool.Tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := a.Source.Key()
+	h.until(func() bool { _, ok := c.Status(a.ID); return ok })
+	var before []string
+	var beforeErr error
+	c.SetBeforeUpgrade(func(_ context.Context, it queue.Item, log io.Writer) error {
+		mu.Lock()
+		defer mu.Unlock()
+		before = append(before, it.App.ID)
+		return beforeErr
+	})
+
+	run := func(errs ...error) queue.Item {
+		t.Helper()
+		src.mu.Lock()
+		src.state[key] = source.Status{State: source.UpdateAvailable, Version: "1.0", Latest: "2.0"}
+		src.after[key] = source.Status{State: source.Installed, Version: "2.0"}
+		src.errs, src.modes = errs, nil
+		src.mu.Unlock()
+		c.Queue.ClearDone()
+		c.Refresh()
+		h.until(func() bool { st, _ := c.Status(a.ID); return !c.Refreshing() && st.State == source.UpdateAvailable })
+		if n := c.Enqueue(c.Preview([]string{a.ID}, queue.Upgrade), queue.Upgrade); n != 1 {
+			t.Fatalf("queued %d", n)
+		}
+		return h.done()
+	}
+
+	mu.Lock()
+	busy = 3
+	mu.Unlock()
+	it := run(fmt.Errorf("%w（安装程序退出码 1618）", source.ErrInstallerBusy))
+	log, _ := os.ReadFile(it.LogPath)
+	if it.State != queue.Succeeded || !slices.Equal(src.modes, []string{"default", "default"}) {
+		t.Errorf("busy: %+v, modes %v", it, src.modes)
+	}
+	for _, want := range []string{"Windows Installer 正在进行另一个安装或卸载", "没有开始；等它结束后重新开始"} {
+		if !strings.Contains(string(log), want) {
+			t.Errorf("log lacks %q: %s", want, log)
+		}
+	}
+	// Busy twice in a row, it gives up.
+	it = run(source.ErrInstallerBusy, source.ErrInstallerBusy)
+	if it.State != queue.Failed || len(src.modes) != 2 {
+		t.Errorf("busy twice: %+v, modes %v", it, src.modes)
+	}
+	// Failed quietly, it is retried with its installer's window.
+	it = run(errors.New("安装程序运行失败"))
+	if it.State != queue.Failed || !c.CanUpgradeInteractive(catalog.Winget) || c.CanUpgradeInteractive(catalog.Scoop) {
+		t.Fatalf("failed: %+v", it)
+	}
+	if !c.Queue.RetryInteractive(it.ID) {
+		t.Fatal("not retried")
+	}
+	if it = h.done(); it.State != queue.Succeeded || !slices.Equal(src.modes, []string{"default", "interactive"}) {
+		t.Errorf("interactive: %+v, modes %v", it, src.modes)
+	}
+	// What runs before it can keep it from running.
+	mu.Lock()
+	beforeErr = errors.New("「Tool」还开着")
+	mu.Unlock()
+	it = run()
+	if it.State != queue.Failed || it.Message != "「Tool」还开着" || len(src.modes) != 0 {
+		t.Errorf("before: %+v, modes %v", it, src.modes)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(before) != 5 {
+		t.Errorf("before ran %d times: %v", len(before), before)
+	}
+}
+
+// An update waiting for Windows Installer can be canceled: nothing ran.
+func TestCancelWhileWaitingForTheInstaller(t *testing.T) {
+	src := &scripted{fakeSource: newFake(catalog.Winget)}
+	h := newHarnessWith(t, func(c *Config) { c.InstallerBusy = func() bool { return true } }, src)
+	c := h.c
+	c.busyPoll = time.Millisecond
+	a, err := c.SaveApp(wingetApp("Tool", "Tool.Tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src.mu.Lock()
+	src.state[a.Source.Key()] = source.Status{State: source.UpdateAvailable, Version: "1.0", Latest: "2.0"}
+	src.mu.Unlock()
+	h.until(func() bool { st, _ := c.Status(a.ID); return st.State == source.UpdateAvailable })
+	if n := c.Enqueue(c.Preview([]string{a.ID}, queue.Upgrade), queue.Upgrade); n != 1 {
+		t.Fatalf("queued %d", n)
+	}
+	// Progress posts nothing: look at the queue, which needs no loop.
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(time.Millisecond) {
+		its := c.Queue.Items()
+		if len(its) == 1 && its[0].State == queue.Running && its[0].CanCancel() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("not cancelable: %+v", its)
+		}
+	}
+	if !c.Queue.Cancel(c.Queue.Items()[0].ID) {
+		t.Fatal("not canceled")
+	}
+	it := h.done()
+	src.mu.Lock()
+	defer src.mu.Unlock()
+	if it.State != queue.Failed || !it.Canceled || len(src.modes) != 0 {
+		t.Errorf("%+v, modes %v", it, src.modes)
+	}
+}
+
+// done waits for the only task to end and returns it.
+func (h *harness) done() queue.Item {
+	h.t.Helper()
+	h.until(func() bool {
+		its := h.c.Queue.Items()
+		return len(its) == 1 && its[0].State.Done()
+	})
+	return h.c.Queue.Items()[0]
 }
 
 func TestApplyRule(t *testing.T) {

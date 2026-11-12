@@ -31,6 +31,8 @@ type updatesChoices struct {
 	// SelfCheckInterval, 0 meaning a day.
 	SelfCheck SelfCheckMode `json:"selfCheck,omitempty"`
 	SelfEvery int           `json:"selfEvery,omitempty"`
+	// AutoDelay is the days a version waits to be updated to on its own.
+	AutoDelay int `json:"autoDelay,omitempty"`
 }
 
 func (c updatesChoices) selfCheck() SelfCheckMode {

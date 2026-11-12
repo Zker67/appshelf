@@ -50,6 +50,7 @@ func Run(ctx context.Context, name string, args []string, opt Options) (Result, 
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	hideConsole(cmd)
+	endTree(cmd)
 	buf := &tailBuffer{max: keep}
 	var w io.Writer = buf
 	if opt.Log != nil {

@@ -67,6 +67,7 @@ func imagePath(pid uint32) (string, bool) {
 var (
 	kernel32                 = windows.NewLazySystemDLL("kernel32.dll")
 	procGetProcessIoCounters = kernel32.NewProc("GetProcessIoCounters")
+	procGetTickCount64       = kernel32.NewProc("GetTickCount64")
 
 	user32                  = windows.NewLazySystemDLL("user32.dll")
 	procGetWindowTextW      = user32.NewProc("GetWindowTextW")
@@ -76,6 +77,7 @@ var (
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
 	procShowWindow          = user32.NewProc("ShowWindow")
 	procIsIconic            = user32.NewProc("IsIconic")
+	procPostMessageW        = user32.NewProc("PostMessageW")
 )
 
 // ioCounters is IO_COUNTERS.
@@ -232,6 +234,22 @@ func Front(handle uintptr) bool {
 	}
 	r, _, _ := procSetForegroundWindow.Call(handle)
 	return r != 0
+}
+
+// wmClose asks a window to close, as its close button does.
+const wmClose = 0x0010
+
+// CloseWindow asks a window to close, as its close button does, without
+// waiting: its program may first ask to save.
+func CloseWindow(handle uintptr) bool {
+	r, _, _ := procPostMessageW.Call(handle, wmClose, 0, 0)
+	return r != 0
+}
+
+// BootTime is when Windows last started.
+func BootTime() time.Time {
+	ms, _, _ := procGetTickCount64.Call()
+	return time.Now().Add(-time.Duration(ms) * time.Millisecond)
 }
 
 // End ends a process. A process of an administrator, or of another user,

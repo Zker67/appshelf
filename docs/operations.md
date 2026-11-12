@@ -43,8 +43,8 @@ AppShelf 调用的是系统自带的 Windows PowerShell 5.1（`%SystemRoot%\Syst
 | 路径 | 内容 |
 |---|---|
 | `%AppData%\AppShelf\catalog.json` | 软件清单，格式见 [API 与接口说明](./api.md) |
-| `%AppData%\AppShelf\state.json` | 本机状态（GitHub 安装记录、每个软件的更新方式、最近更新记录） |
-| `%AppData%\AppShelf\settings.json` | 外观（跟随系统、浅色、深色）；更新设置 `updates`：`checkEvery`（`off`、`1h`、`3h`、`6h`、`12h`、`24h`，默认 `6h`）、`quiet`（不发通知）、`exitOnClose`（关闭窗口即退出；默认不写，关闭窗口后留在托盘）；`sourceSetupSeen`（已回答首次「准备安装来源」提示，不再自动弹出） |
+| `%AppData%\AppShelf\state.json` | 本机状态（GitHub 安装记录、每个软件的更新方式、最近更新记录、新版本第一次发现的时间、待重启的任务） |
+| `%AppData%\AppShelf\settings.json` | 外观（跟随系统、浅色、深色）；更新设置 `updates`：`checkEvery`（`off`、`1h`、`3h`、`6h`、`12h`、`24h`，默认 `6h`）、`autoDelay`（新版本等几天再自动更新：1、3、7、14，默认不写即不等）、`quiet`（不发通知）、`exitOnClose`（关闭窗口即退出；默认不写，关闭窗口后留在托盘）；`sourceSetupSeen`（已回答首次「准备安装来源」提示，不再自动弹出） |
 | `%AppData%\AppShelf\github-token.bin` | 设置里填写的 GitHub token，以当前 Windows 用户的 DPAPI 加密；复制到别的电脑或用户下无法解密。不入库、不随清单导出 |
 | 当前用户的 `HKCU\...\Run` 启动项 | 打开“开机时启动”后由 MyGo 写入，可在设置里关闭，或在任务管理器的“启动应用”里禁用 |
 | `%AppData%\AppShelf\logs\` | 每次安装、更新或卸载一份日志，`YYYYMMDD-HHMMSS-<install|upgrade|uninstall>-<软件 ID>.log`（Windows 不允许的字符换成 `_`）；任务面板里直接显示日志内容，“打开日志文件”打开完整文件 |

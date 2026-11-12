@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"appshelf/internal/catalog"
+	"appshelf/internal/procs"
+	"appshelf/internal/queue"
 	"appshelf/internal/source"
 )
 
@@ -297,4 +302,106 @@ func TestUpdateOutlivesACheckBegunBefore(t *testing.T) {
 	if l := e.updates.List(); len(l.Items) != 0 {
 		t.Fatalf("a check begun before the update brought it back: %+v", l.Items)
 	}
+}
+
+// fakeCloser plays procs.Closer: it records the directories it closes and
+// answers open while set.
+type fakeCloser struct {
+	mu   sync.Mutex
+	dirs []string
+	open bool
+}
+
+func (f *fakeCloser) close(_ context.Context, dir string, report func(procs.CloseEvent)) (procs.CloseResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.dirs = append(f.dirs, dir)
+	found := []procs.Proc{{PID: 9, Name: "Obsidian.exe"}}
+	report(procs.CloseEvent{Step: procs.CloseAsking, Procs: found})
+	if f.open {
+		w := procs.Window{PID: 9, Title: "保存更改？"}
+		report(procs.CloseEvent{Step: procs.CloseWaiting, Procs: found, Window: w})
+		return procs.CloseResult{Found: found, Open: []procs.Window{w}}, nil
+	}
+	return procs.CloseResult{Found: found}, nil
+}
+
+func (f *fakeCloser) closed() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.dirs)
+}
+
+// An update the user starts closes the program first; a window left open
+// fails it, and it can be retried, with the installer's window too. An
+// update AppShelf starts itself closes nothing.
+func TestUpdateClosesTheProgramFirst(t *testing.T) {
+	fc := &fakeCloser{open: true}
+	e := newEnv(t, func(c *Config) { c.Close = fc.close })
+	dir := t.TempDir()
+	e.installObsidianFor(dir)
+	updateState(e, availableUpdate())
+	e.winget.mu.Lock()
+	e.winget.after[installedObsidian] = source.Status{State: source.Installed, Version: "1.9"}
+	e.winget.mu.Unlock()
+
+	if n, err := e.installed.StartUpdates(context.Background(), []string{installedObsidian}); err != nil || n != 1 {
+		t.Fatalf("start: %d %v", n, err)
+	}
+	var task TaskEntry
+	e.until(func() bool {
+		l := e.tasks.List()
+		if len(l.Items) == 1 && l.Items[0].State == TaskFailed {
+			task = l.Items[0]
+			return true
+		}
+		return false
+	})
+	if !strings.Contains(task.Message, "还开着") || !task.Interactive {
+		t.Errorf("task: %+v", task)
+	}
+	e.winget.mu.Lock()
+	ran := len(e.winget.actions)
+	e.winget.mu.Unlock()
+	if ran != 0 || !slices.Equal(fc.closed(), []string{dir}) {
+		t.Errorf("ran %d, closed %v", ran, fc.closed())
+	}
+	if !slices.ContainsFunc(e.notes(), func(n string) bool { return strings.HasPrefix(n, "tasks:「Obsidian」还开着") }) {
+		t.Errorf("notes: %v", e.notes())
+	}
+
+	// Closed now, it is retried with the installer's window.
+	fc.mu.Lock()
+	fc.open = false
+	fc.mu.Unlock()
+	if err := e.tasks.RetryInteractive(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.until(func() bool {
+		l := e.tasks.List()
+		return len(l.Items) == 1 && l.Items[0].State == TaskSucceeded
+	})
+	e.winget.mu.Lock()
+	actions := slices.Clone(e.winget.actions)
+	e.winget.mu.Unlock()
+	if !slices.Equal(actions, []string{"upgrade-interactive:" + installedAppID(e)}) || len(fc.closed()) != 2 {
+		t.Errorf("actions %v, closed %v", actions, fc.closed())
+	}
+	if err := e.tasks.RetryInteractive(task.ID); err == nil {
+		t.Error("a task that succeeded retried")
+	}
+
+	auto := queue.Item{App: catalog.App{Name: "Obsidian", Source: catalog.Source{Type: catalog.Winget, ID: "Obsidian.Obsidian"}}, Action: queue.Upgrade, Auto: true}
+	if err := e.app.closeForUpdate(context.Background(), auto, io.Discard); err != nil || len(fc.closed()) != 2 {
+		t.Errorf("auto: %v, closed %v", err, fc.closed())
+	}
+}
+
+// installedAppID is the ID the queue gives an installed package it
+// updates, out of the catalog.
+func installedAppID(e *env) string {
+	for _, it := range e.app.core.Queue.Items() {
+		return it.App.ID
+	}
+	return ""
 }

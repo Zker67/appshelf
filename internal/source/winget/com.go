@@ -5,9 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"appshelf/internal/runner"
 	"appshelf/internal/source"
@@ -25,6 +29,10 @@ type comOp struct {
 	ID     string
 	Source string // winget or msstore
 	Mode   string // the cmdlet's -Mode: Default, Silent or Interactive
+	// CancelFile is a file whose creation asks the script to stop the
+	// cmdlet, as Ctrl+C does, rather than its process being ended: the
+	// winget service it drives would go on.
+	CancelFile string
 }
 
 // cmdlet is the module's cmdlet for op.
@@ -47,6 +55,8 @@ type comResult struct {
 	Code           int64  // the HRESULT of the error, as winget's exit code
 	Message        string // the error's message
 	InstallerCode  int64  // the installer's or uninstaller's exit code
+	// Canceled means the script stopped the cmdlet, as CancelFile asked.
+	Canceled bool
 }
 
 // progressMark starts the lines the script writes for a progress record:
@@ -95,6 +105,8 @@ $job = Start-Job -ArgumentList ($P | ConvertTo-Json -Compress) -ScriptBlock {
 $child = $job.ChildJobs[0]
 $stdout = [Console]::Out
 $last = ''
+$cancel = [string]$P.CancelFile
+$canceled = $false
 function Send-Progress {
   foreach ($r in $child.Progress.ReadAll()) {
     if ([string]$r.RecordType -eq 'Completed') { continue }
@@ -108,22 +120,40 @@ function Send-Progress {
 }
 while ($job.State -eq 'NotStarted' -or $job.State -eq 'Running') {
   Send-Progress
+  if ($cancel -and (Test-Path -LiteralPath $cancel)) {
+    # Stopping the job stops the cmdlet, which cancels winget's operation.
+    Stop-Job $job
+    $canceled = $true
+    break
+  }
   Start-Sleep -Milliseconds 300
 }
-Send-Progress
-$rows = @(Receive-Job $job)
-Remove-Job $job -Force
-if ($rows.Count -eq 0) { throw 'winget 没有返回结果' }
-$r = $rows[-1]
-Write-Result @{
-  Unavailable = [string]$r.Unavailable
-  Status = [string]$r.Status
-  RebootRequired = [bool]$r.RebootRequired
-  Code = [int64]$r.Code
-  Message = [string]$r.Message
-  InstallerCode = [int64]$r.InstallerCode
+if ($canceled) {
+  Remove-Job $job -Force
+  Write-Result @{ Canceled = $true }
+} else {
+  Send-Progress
+  $rows = @(Receive-Job $job)
+  Remove-Job $job -Force
+  if ($rows.Count -eq 0) { throw 'winget 没有返回结果' }
+  $r = $rows[-1]
+  Write-Result @{
+    Unavailable = [string]$r.Unavailable
+    Status = [string]$r.Status
+    RebootRequired = [bool]$r.RebootRequired
+    Code = [int64]$r.Code
+    Message = [string]$r.Message
+    InstallerCode = [int64]$r.InstallerCode
+  }
 }
 `
+
+// cancelSeq names the cancel files of the scripts; cancelGrace is how long
+// a script asked to stop has to stop.
+var (
+	cancelSeq   atomic.Int64
+	cancelGrace = 30 * time.Second
+)
 
 // errUnavailable means the module could not be loaded: the command does
 // the work instead.
@@ -142,9 +172,38 @@ func (s *Source) viaCOM(ctx context.Context, log io.Writer, op comOp, work strin
 	source.ReportProgress(log, source.Progress{Stage: "正在准备"})
 	pl := &comLog{log: log, work: work}
 	var r comResult
-	_, err := runner.PowerShell(ctx, comScript, op, &r, runner.Options{Log: pl})
+	op.CancelFile = filepath.Join(os.TempDir(), fmt.Sprintf("appshelf-cancel-%d-%d", os.Getpid(), cancelSeq.Add(1)))
+	defer os.Remove(op.CancelFile)
+	// ctx ending asks the script to stop the cmdlet; one that does not
+	// within cancelGrace is ended.
+	runCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	defer stop()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = os.WriteFile(op.CancelFile, nil, 0o600)
+			t := time.NewTimer(cancelGrace)
+			defer t.Stop()
+			select {
+			case <-t.C:
+				stop()
+			case <-done:
+			}
+		case <-done:
+		}
+	}()
+	_, err := runner.PowerShell(runCtx, comScript, op, &r, runner.Options{Log: pl})
 	pl.flush()
+	if err == nil && r.Canceled {
+		fmt.Fprintln(log, "winget 结果：已停止")
+		return source.Result{}, fmt.Errorf("已停止：%w", context.Cause(ctx))
+	}
 	if err != nil {
+		if ctx.Err() != nil {
+			return source.Result{}, context.Cause(ctx)
+		}
 		return source.Result{}, err
 	}
 	if r.Unavailable != "" {
@@ -192,6 +251,10 @@ func interpretCOM(r comResult, verb string) (source.Result, error) {
 	text := comStatusTexts[r.Status]
 	if text == "" {
 		text = "winget 没有完成：" + r.Status
+	}
+	if r.InstallerCode == 1618 && verb != "uninstall" {
+		// Windows Installer was busy with another program: nothing ran.
+		return source.Result{}, fmt.Errorf("%w（安装程序退出码 1618）", source.ErrInstallerBusy)
 	}
 	if r.InstallerCode != 0 {
 		who := "安装程序"
@@ -280,7 +343,8 @@ func comProgress(status string, percent int, work string) source.Progress {
 	default:
 		stage = strings.TrimSpace(status)
 	}
-	p := source.Progress{Stage: stage}
+	// A download can stop: winget installs nothing until it is done.
+	p := source.Progress{Stage: stage, Cancelable: stage == "正在下载"}
 	if percent > 0 && percent < 100 {
 		p.Percent = float64(percent)
 	}

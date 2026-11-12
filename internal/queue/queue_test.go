@@ -237,6 +237,111 @@ func TestUpgradeFlow(t *testing.T) {
 	if got["current"].Message != "已是最新版本" || got["unchecked"].Message != "没有发现更新（无法检查更新：GitHub 请求额度已用完）" {
 		t.Errorf("messages: %q, %q", got["current"].Message, got["unchecked"].Message)
 	}
+	if got["old"].Latest != "2.0" || got["old"].StillOffered || !got["stuck"].StillOffered {
+		t.Errorf("still offered: %+v, %+v", got["old"], got["stuck"])
+	}
+}
+
+// An update whose version changed while its source still offers the
+// version it was to bring succeeds, saying so.
+func TestUpgradeStillOffered(t *testing.T) {
+	f := newFake()
+	f.before["app"] = source.Status{State: source.UpdateAvailable, Version: "1.0", Latest: "2.0"}
+	f.after["app"] = source.Status{State: source.UpdateAvailable, Version: "2.0.0", Latest: " 2.0 "}
+	f.before["newer"] = source.Status{State: source.UpdateAvailable, Version: "1.0", Latest: "2.0"}
+	f.after["newer"] = source.Status{State: source.UpdateAvailable, Version: "2.0", Latest: "3.0"}
+	q := New(context.Background(), f, nil)
+	q.Add([]catalog.App{appOf("app"), appOf("newer")}, Upgrade)
+	wait(t, q)
+	got := states(q)
+	if it := got["app"]; it.State != Succeeded || !it.StillOffered || !strings.Contains(it.Message, "来源仍提示可以更新到 2.0") {
+		t.Errorf("app: %+v", it)
+	}
+	if it := got["newer"]; it.State != Succeeded || it.StillOffered || it.Message != "" {
+		t.Errorf("a newer version came out: %+v", it)
+	}
+}
+
+// A failed update can run again with its installer's window, as the
+// user's, not AppShelf's own; an install cannot.
+func TestRetryUpdateWithAWindow(t *testing.T) {
+	f := newFake()
+	for _, id := range []string{"up", "in"} {
+		f.runErr[id] = errors.New("安装程序运行失败")
+	}
+	f.before["up"] = source.Status{State: source.UpdateAvailable, Version: "1.0", Latest: "2.0"}
+	f.after["up"] = f.before["up"]
+	f.before["in"] = source.Status{State: source.NotInstalled}
+	q := New(context.Background(), f, nil)
+	q.SetHold(func(context.Context, Item) string { return "" })
+	q.AddAuto([]catalog.App{appOf("up")})
+	q.Add([]catalog.App{appOf("in")}, Install)
+	wait(t, q)
+	got := states(q)
+	if got["up"].State != Failed || got["in"].State != Failed {
+		t.Fatalf("%+v", got)
+	}
+	if q.RetryInteractive(got["in"].ID) {
+		t.Error("an install retried with a window")
+	}
+	if !q.RetryInteractive(got["up"].ID) {
+		t.Fatal("not retried")
+	}
+	wait(t, q)
+	if it := states(q)["up"]; !it.Interactive || it.Auto {
+		t.Errorf("retried: %+v", it)
+	}
+}
+
+// The hold keeps back only the updates AppShelf queued itself, right
+// before they run, once they are found to have an update.
+func TestAutoHold(t *testing.T) {
+	f := newFake()
+	for _, id := range []string{"manual", "held", "free", "current"} {
+		f.before[id] = source.Status{State: source.UpdateAvailable, Version: "1.0", Latest: "2.0"}
+		f.after[id] = source.Status{State: source.Installed, Version: "2.0"}
+	}
+	f.before["current"] = source.Status{State: source.Installed, Version: "2.0"}
+	var mu sync.Mutex
+	var asked []string
+	q := New(context.Background(), f, nil)
+	q.SetHold(func(_ context.Context, it Item) string {
+		mu.Lock()
+		defer mu.Unlock()
+		asked = append(asked, it.App.ID)
+		if !it.Auto || it.Latest != "2.0" {
+			t.Errorf("held %+v", it)
+		}
+		if it.App.ID == "held" {
+			return "它正在运行"
+		}
+		return ""
+	})
+	if n := q.AddAuto([]catalog.App{appOf("held"), appOf("free"), appOf("current")}); n != 3 {
+		t.Fatalf("added %d", n)
+	}
+	q.Add([]catalog.App{appOf("manual")}, Upgrade)
+	wait(t, q)
+	got := states(q)
+	if it := got["held"]; it.State != Skipped || it.Message != "它正在运行" || it.LogPath != "" || !it.Auto {
+		t.Errorf("held: %+v", it)
+	}
+	if got["free"].State != Succeeded || got["manual"].State != Succeeded || got["manual"].Auto {
+		t.Errorf("free %+v, manual %+v", got["free"], got["manual"])
+	}
+	f.mu.Lock()
+	runs := slices.Clone(f.runs)
+	f.mu.Unlock()
+	// The user's goes before the updates AppShelf queued that wait.
+	if !slices.Equal(runs, []string{"manual", "free"}) {
+		t.Errorf("runs %v", runs)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	// Not asked of one already current, nor of one the user started.
+	if !slices.Equal(asked, []string{"held", "free"}) {
+		t.Errorf("asked %v", asked)
+	}
 }
 
 func TestRetryStopAndDuplicates(t *testing.T) {
@@ -566,5 +671,136 @@ func TestCanceledRemoval(t *testing.T) {
 	it = q.Items()[0]
 	if it.State != Failed || it.Canceled || it.Message != "卸载程序以退出码 2 结束：原因" {
 		t.Errorf("failed = %s %v %q", it.State, it.Canceled, it.Message)
+	}
+}
+
+// The user's items go before the updates AppShelf queued itself that
+// wait; the one running goes on.
+func TestUserItemsGoFirst(t *testing.T) {
+	f := newFake()
+	f.gate = make(chan struct{})
+	for _, id := range []string{"a1", "a2", "m1", "m2"} {
+		f.before[id] = source.Status{State: source.UpdateAvailable, Version: "1", Latest: "2"}
+		f.after[id] = source.Status{State: source.Installed, Version: "2"}
+	}
+	q := New(context.Background(), f, nil)
+	q.AddAuto([]catalog.App{appOf("a1"), appOf("a2")})
+	waitState(t, q, "a1", Running)
+	q.Add([]catalog.App{appOf("m1")}, Upgrade)
+	q.Add([]catalog.App{appOf("m2")}, Upgrade)
+	var order []string
+	for _, it := range q.Items() {
+		order = append(order, it.App.ID)
+	}
+	if !slices.Equal(order, []string{"a1", "m1", "m2", "a2"}) {
+		t.Errorf("order %v", order)
+	}
+	close(f.gate)
+	wait(t, q)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !slices.Equal(f.runs, []string{"a1", "m1", "m2", "a2"}) {
+		t.Errorf("runs %v", f.runs)
+	}
+}
+
+// stopper reports a stage that can stop, or not, then waits to be
+// canceled or released; done is the state it leaves when canceled.
+type stopper struct {
+	*fake
+	cancelable bool
+	started    chan struct{}
+	release    chan struct{}
+	upgraded   bool // the update got done before it stopped
+}
+
+func (s *stopper) Run(ctx context.Context, it Item, log io.Writer) (source.Result, error) {
+	source.ReportProgress(log, source.Progress{Stage: "正在下载", Cancelable: s.cancelable})
+	select {
+	case s.started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-ctx.Done():
+		if s.upgraded {
+			s.mu.Lock()
+			s.ran[it.App.ID] = true
+			s.mu.Unlock()
+		}
+		return source.Result{}, ctx.Err()
+	case <-s.release:
+		s.mu.Lock()
+		s.ran[it.App.ID] = true
+		s.mu.Unlock()
+		return source.Result{RebootRequired: true}, nil
+	}
+}
+
+func TestCancel(t *testing.T) {
+	setup := func(cancelable, upgraded bool) (*Queue, *stopper) {
+		f := newFake()
+		for _, id := range []string{"run", "wait"} {
+			f.before[id] = source.Status{State: source.UpdateAvailable, Version: "1", Latest: "2"}
+			f.after[id] = source.Status{State: source.Installed, Version: "2"}
+		}
+		s := &stopper{fake: f, cancelable: cancelable, started: make(chan struct{}, 1), release: make(chan struct{}), upgraded: upgraded}
+		q := New(context.Background(), s, nil)
+		q.Add([]catalog.App{appOf("run"), appOf("wait")}, Upgrade)
+		<-s.started
+		return q, s
+	}
+	idOf := func(q *Queue, app string) int {
+		for _, it := range q.Items() {
+			if it.App.ID == app {
+				return it.ID
+			}
+		}
+		return 0
+	}
+
+	// While it downloads: canceled, it changed nothing.
+	q, s := setup(true, false)
+	items := states(q)
+	if !items["run"].CanCancel() || !items["wait"].CanCancel() {
+		t.Fatalf("cancelable: %+v", items)
+	}
+	if !q.Cancel(idOf(q, "wait")) || !q.Cancel(idOf(q, "run")) || q.Cancel(idOf(q, "run")) {
+		t.Fatal("not canceled, or canceled twice")
+	}
+	wait(t, q)
+	got := states(q)
+	if it := got["run"]; it.State != Failed || !it.Canceled || it.Message != "已取消" || it.CanCancel() {
+		t.Errorf("run: %+v", it)
+	}
+	if it := got["wait"]; it.State != Failed || !it.Canceled || it.LogPath != "" {
+		t.Errorf("wait: %+v", it)
+	}
+	if !q.Retry(idOf(q, "wait")) {
+		t.Error("a canceled item cannot retry")
+	}
+	close(s.release)
+	wait(t, q)
+	if it := states(q)["wait"]; it.State != Succeeded || it.Canceled || !it.Reboot {
+		t.Errorf("retried: %+v", it)
+	}
+
+	// Done all the same before it stopped: it succeeded.
+	q, s = setup(true, true)
+	q.Cancel(idOf(q, "run"))
+	close(s.release)
+	wait(t, q)
+	if it := states(q)["run"]; it.State != Succeeded || it.Canceled || it.Message != "取消时已经更新好了" {
+		t.Errorf("done anyway: %+v", it)
+	}
+
+	// Past where it can stop, it is not canceled.
+	q, s = setup(false, false)
+	if q.Cancel(idOf(q, "run")) || states(q)["run"].CanCancel() {
+		t.Error("canceled where it cannot stop")
+	}
+	close(s.release)
+	wait(t, q)
+	if it := states(q)["run"]; it.State != Succeeded || !it.Reboot {
+		t.Errorf("ran: %+v", it)
 	}
 }

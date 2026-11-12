@@ -65,6 +65,10 @@ type UpdateItem struct {
 	// not.
 	CanAuto  bool   `json:"canAuto"`
 	AutoNote string `json:"autoNote,omitempty"`
+	// AutoAt is when it is updated on its own, set to and able to, once
+	// its version has been found long enough (UpdateSettings.AutoDelay);
+	// zero when it is not to wait.
+	AutoAt time.Time `json:"autoAt,omitzero"`
 	// Running means a program of it runs: updating may close it.
 	Running bool `json:"running,omitempty"`
 	// Pending means it waits or runs in the tasks.
@@ -151,6 +155,10 @@ var checkIntervals = map[CheckInterval]time.Duration{
 // UpdateSettings are the user's choices for updates.
 type UpdateSettings struct {
 	CheckEvery CheckInterval `json:"checkEvery"`
+	// AutoDelay is how many days a new version must have been found, from
+	// the check that first found it, before it is updated to on its own:
+	// 0, 1, 3, 7 or 14. The user can still update at once.
+	AutoDelay int `json:"autoDelay"`
 	// Notify shows a system notification when a check finds updates, or
 	// updates ran on their own, while the window is not in front.
 	Notify bool `json:"notify"`

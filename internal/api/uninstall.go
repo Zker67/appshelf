@@ -152,12 +152,19 @@ func (s *Installed) StartUninstall(ctx context.Context, keys []string) (int, err
 	return n, nil
 }
 
-// interactiveRetry reports a removal that can run again with its
-// uninstaller's window: by winget, or by an uninstall command that ran
-// quietly.
-func interactiveRetry(it queue.Item) bool {
-	if it.Action != queue.Uninstall || it.Target == nil || it.Interactive {
+// interactiveRetry reports a task that can run again with a window: a
+// removal by winget, or by an uninstall command that ran quietly, with its
+// uninstaller's; an update that ran, of a source that can show its
+// installer's, with that.
+func (a *App) interactiveRetry(it queue.Item) bool {
+	if it.Interactive {
 		return false
 	}
-	return uninstall.PlanFor(*it.Target, false, uninstall.Options{}).Interactive
+	switch it.Action {
+	case queue.Upgrade:
+		return it.LogPath != "" && a.core.CanUpgradeInteractive(it.App.Source.Type)
+	case queue.Uninstall:
+		return it.Target != nil && uninstall.PlanFor(*it.Target, false, uninstall.Options{}).Interactive
+	}
+	return false
 }

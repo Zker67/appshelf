@@ -13,6 +13,9 @@ var ErrElevationCanceled = errors.New("已取消管理员授权")
 
 func hideConsole(*exec.Cmd) {}
 
+// endTree leaves ending a command to exec: other systems end its process.
+func endTree(*exec.Cmd) {}
+
 // ShellRun starts Windows installers, which other systems do not run.
 func ShellRun(file, params, dir string) (uint32, error) {
 	return 0, errors.ErrUnsupported

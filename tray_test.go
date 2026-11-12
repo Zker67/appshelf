@@ -56,6 +56,10 @@ func TestTrayTexts(t *testing.T) {
 	if got := trayToolTip(api.TrayStatus{Checking: true, Updates: 3, Active: 1}); got != "AppShelf 软件图书馆\n正在检查更新…\n1 项任务等待中" {
 		t.Errorf("checking tooltip %q", got)
 	}
+	if got := trayToolTip(api.TrayStatus{Reboot: 2}); got != "AppShelf 软件图书馆\n2 个软件需要重启电脑后生效" {
+		t.Errorf("reboot tooltip %q", got)
+	}
+	busy.Reboot = 50
 	if n := len([]rune(trayToolTip(busy))); n > 127 {
 		t.Errorf("tooltip of %d characters", n)
 	}

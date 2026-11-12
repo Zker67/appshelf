@@ -39,6 +39,9 @@ winget 和 scoop 另有 `Uninstall`，不在接口里：由 [internal/uninstall]
 | `Search` | `Find-WinGetPackage -Query <q> -Source winget -Count 50`，只读 ID 和名称，在常驻的 PowerShell（`runner.Worker`）里执行；不读版本，版本由 `SearchVersions` 补 |
 | `Install` | 在 `Start-Job` 里 `Install-WinGetPackage -Id <id> -MatchOption EqualsCaseInsensitive -Source winget -Mode Default`（winget COM 接口）；先 `Get-WinGetPackage` 查到已装就返回“已安装”，不安装。模块无法加载时退回 `winget install --id <id> --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity --no-upgrade` |
 | `Upgrade` | `Update-WinGetPackage`，参数同上；退回命令行时动词换成 `upgrade`，没有 `--no-upgrade` |
+| `UpgradeSilent` | 同 `Upgrade`，但 `-Mode Silent`、命令行加 `--silent`（`source.SilentUpgrader`）；只用于 AppShelf 自动排队的更新，避免 Default 模式弹出安装程序的进度窗口 |
+| 取消 | 下载阶段报告 `Progress.Cancelable`。走 COM 时脚本每 300 毫秒看一次取消文件，出现就 `Stop-Job` 停止 cmdlet（由它取消 winget 的操作，不直接结束进程，否则 winget 服务会继续），30 秒内没停才结束进程；命令行结束整个进程树。scoop 先下载再移除旧版本和安装，下载阶段同样可取消；GitHub 下载完、启动安装程序前再看一次 |
+| `UpgradeInteractive` | 同 `Upgrade`，但 `-Mode Interactive`、命令行加 `--interactive`（`source.InteractiveUpgrader`）；只用于用户对失败的更新点“打开安装程序重试” |
 | `Uninstall` | `Uninstall-WinGetPackage -Source <winget 或 msstore> -Mode Silent`，用卸载程序窗口重试时 `-Mode Interactive`；先查不到包就视为已不在，由复查确认。退回命令行时 `winget uninstall --id <id> --exact --source <来源> --silent`（或 `--interactive`）`--accept-source-agreements --disable-interactivity`，找不到包（`0x8A150014`）同样视为已不在 |
 
 - 检测不区分大小写，宁可多认出已装、跳过安装；安装按完整 ID 匹配（COM 不区分大小写，winget 源里的 ID 不区分大小写也唯一；命令行用 `--exact`），并指定来源，不按名称模糊安装。
@@ -93,7 +96,7 @@ winget 和 scoop 另有 `Uninstall`，不在接口里：由 [internal/uninstall]
 - 选包（参考 GitHub Store）：只考虑 `.msi` 和 `.exe`，去掉 debug、symbols、pdb；有 `assetPattern` 时先按它筛选；`.msi` 优先于 `.exe`，再按本机架构（amd64、arm64、386）打分。最高分有两个以上并列时**拒绝安装**，提示填写 `assetPattern`。
 - 更新判断：AppShelf 记录的 tag 等于最新 tag 时为最新；否则比较注册表里的版本和最新 tag；版本无法比较但有记录时视为可更新；都没有时注明“无法比较版本”。
 - 启动安装程序用 `ShellExecuteExW`，需要管理员权限的安装程序会弹出 UAC。`.msi` 用 `msiexec /i "<文件>" /norestart` 加安装参数，没有填写参数时用 `/passive`；`.exe` 直接以安装参数为命令行，不填写时就是交互式安装。
-- 退出码：`0` 成功；`3010`、`1641` 成功但需要重启；`1602` 已取消；`1618` 另一个安装正在进行；其他记为失败。
+- 退出码：`0` 成功；`3010`、`1641` 成功但需要重启；`1602` 已取消；`1618` 另一个安装正在进行（返回 `source.ErrInstallerBusy`，由队列等它结束后重新执行一次）；其他记为失败。
 - token 来自设置里保存的（`api` 用 `internal/secret` 加密保存）或环境变量 `GH_TOKEN` / `GITHUB_TOKEN`，只放在请求头里。`UseToken` 先向 `/rate_limit` 验证（不占额度）再换用并记下新额度，401 返回 `ErrBadToken`、不换；`SetToken` 不经验证直接换用（启动时、清除时）。
 
 只用于展示：

@@ -78,7 +78,7 @@ func (p *progress) Write(b []byte) (int, error) {
 func (p *progress) lineDone(line string) {
 	if done, total, ok := aria2Readout(line); ok {
 		p.unwatch()
-		source.ReportProgress(p.log, source.Progress{Stage: "正在下载", Done: done, Total: total})
+		source.ReportProgress(p.log, source.Progress{Stage: "正在下载", Done: done, Total: total, Cancelable: true})
 		return
 	}
 	for _, s := range stages {
@@ -102,7 +102,9 @@ func (p *progress) lineDone(line string) {
 			total = size
 			p.watch(size)
 		}
-		source.ReportProgress(p.log, source.Progress{Stage: stage, Total: total})
+		// scoop downloads before it removes or installs anything: a
+		// download can stop.
+		source.ReportProgress(p.log, source.Progress{Stage: stage, Total: total, Cancelable: stage == "正在下载"})
 		return
 	}
 }
@@ -127,7 +129,7 @@ func (p *progress) watch(total int64) {
 			done := p.downloaded()
 			p.mu.Lock()
 			if p.stop == stop && done > 0 {
-				source.ReportProgress(p.log, source.Progress{Stage: "正在下载", Done: done, Total: max(p.total, done)})
+				source.ReportProgress(p.log, source.Progress{Stage: "正在下载", Done: done, Total: max(p.total, done), Cancelable: true})
 			}
 			p.mu.Unlock()
 		}

@@ -5,6 +5,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"appshelf/internal/catalog"
@@ -108,6 +109,10 @@ type Progress struct {
 	// Window means it has one to bring to the front.
 	Prompt string
 	Window bool
+	// Cancelable means the work can stop now without changing anything,
+	// as while it downloads or waits for another install: the user may
+	// cancel it.
+	Cancelable bool
 }
 
 // ProgressReporter is a log that also shows the progress of the work it
@@ -147,6 +152,26 @@ type Source interface {
 	Install(ctx context.Context, app catalog.App, log io.Writer) (Result, error)
 	Upgrade(ctx context.Context, app catalog.App, log io.Writer) (Result, error)
 }
+
+// SilentUpgrader is a source that can update an app with no window of its
+// installer at all, as the updates AppShelf starts itself must; Upgrade
+// leaves the installer its default, which may show its progress. A source
+// whose updates never show a window need not be one.
+type SilentUpgrader interface {
+	UpgradeSilent(ctx context.Context, app catalog.App, log io.Writer) (Result, error)
+}
+
+// InteractiveUpgrader is a source that can update an app with its
+// installer's window, for the user to finish it there, as a retry of an
+// update that failed quietly.
+type InteractiveUpgrader interface {
+	UpgradeInteractive(ctx context.Context, app catalog.App, log io.Writer) (Result, error)
+}
+
+// ErrInstallerBusy is what an install or update returns, wrapped, when it
+// did nothing because another install was under way, as Windows
+// Installer's 1618: it can run again once that one ends.
+var ErrInstallerBusy = errors.New("另一个安装正在进行，请稍后重试")
 
 // Searcher is a source that finds packages by a query.
 type Searcher interface {

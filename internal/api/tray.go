@@ -20,6 +20,8 @@ type TrayStatus struct {
 	Active  int
 	Running string
 	Action  TaskAction
+	// Reboot is how many tasks need Windows to restart to be done.
+	Reboot int
 }
 
 // TrayStatus returns what the notification area icon shows.
@@ -35,6 +37,7 @@ func (a *App) TrayStatus() TrayStatus {
 	if list.Self.Available != "" {
 		out.Updates++
 	}
+	out.Reboot = len(a.reboots())
 	for _, it := range a.core.Queue.Items() {
 		switch it.State {
 		case queue.Running:

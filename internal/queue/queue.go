@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -79,18 +80,29 @@ type Item struct {
 	Ended   time.Time
 	// From and To are the versions read before and after it ran, when known.
 	From, To string
+	// Latest is the version an update was to bring, read before it ran;
+	// StillOffered means its source still offered that version after it
+	// ran, as a source whose version numbers do not match the program's.
+	Latest       string
+	StillOffered bool
+	// Auto marks an update AppShelf queued itself, after a check.
+	Auto bool
 	// Stage is what a running item does now, and Progress how far its
 	// download has come, as far as the source reports it.
 	Stage    string
 	Progress source.Progress
-	// Target is the program a removal removes; Interactive asks for its
-	// uninstaller's window.
+	// Target is the program a removal removes; Interactive asks for the
+	// window of its uninstaller, or of an update's installer.
 	Target      *uninstall.Target
 	Interactive bool
 	// Control carries the user's commands to a removal while it runs.
 	Control <-chan uninstall.Command
-	// Canceled marks a failed removal the user canceled.
+	// Canceled marks a failed item the user canceled: a removal canceled
+	// in its uninstaller, or an item stopped before it changed anything.
 	Canceled bool
+	// Reboot marks a succeeded item that needs Windows to restart to be
+	// done.
+	Reboot bool
 
 	log *tasklog.Log
 	// retried is a removal queued again after it failed: its program gone
@@ -100,6 +112,10 @@ type Item struct {
 	// toWindow is a removal the user switched to its uninstaller's window:
 	// still there once it ends, it runs again so.
 	toWindow bool
+	// cancel ends the context of an install or update running; canceling
+	// marks one the user canceled.
+	cancel    context.CancelFunc
+	canceling bool
 }
 
 // Stages the queue itself sets; sources report the others.
@@ -134,6 +150,7 @@ type Queue struct {
 	progress throttle
 
 	mu       sync.Mutex
+	hold     func(ctx context.Context, it Item) string
 	items    []*Item
 	nextID   int
 	running  bool // the worker goroutine is running
@@ -158,10 +175,25 @@ const progressEvery = 250 * time.Millisecond
 // running item reports progress or writes output. Call it before Add.
 func (q *Queue) SetProgress(fn func()) { q.progress.fn = fn }
 
+// SetHold sets what tells, right before an update AppShelf queued itself
+// runs, why it must not run now, as its program the user opened while it
+// waited; "" lets it run. It runs on the queue's goroutine.
+func (q *Queue) SetHold(fn func(ctx context.Context, it Item) string) {
+	q.mu.Lock()
+	q.hold = fn
+	q.mu.Unlock()
+}
+
 // Add queues the apps with the action and starts the queue. An app that
 // already has an item waiting or running is not queued again. It returns
 // how many items it added.
-func (q *Queue) Add(apps []catalog.App, action Action) int {
+func (q *Queue) Add(apps []catalog.App, action Action) int { return q.add(apps, action, false) }
+
+// AddAuto queues updates AppShelf starts itself, as Add does: each is
+// held back, right before it runs, by what SetHold set.
+func (q *Queue) AddAuto(apps []catalog.App) int { return q.add(apps, Upgrade, true) }
+
+func (q *Queue) add(apps []catalog.App, action Action, auto bool) int {
 	q.mu.Lock()
 	added := 0
 	for _, a := range apps {
@@ -169,13 +201,25 @@ func (q *Queue) Add(apps []catalog.App, action Action) int {
 			continue
 		}
 		q.nextID++
-		q.items = append(q.items, &Item{ID: q.nextID, App: a.Clone(), Action: action, State: Waiting})
+		q.enqueueLocked(&Item{ID: q.nextID, App: a.Clone(), Action: action, State: Waiting, Auto: auto})
 		added++
 	}
 	q.startLocked()
 	q.mu.Unlock()
 	q.notify()
 	return added
+}
+
+// enqueueLocked adds a waiting item: one the user started goes before the
+// updates AppShelf queued itself that wait, which go last.
+func (q *Queue) enqueueLocked(it *Item) {
+	if !it.Auto {
+		if i := slices.IndexFunc(q.items, func(c *Item) bool { return c.State == Waiting && c.Auto }); i >= 0 {
+			q.items = slices.Insert(q.items, i, it)
+			return
+		}
+	}
+	q.items = append(q.items, it)
 }
 
 func (q *Queue) pendingLocked(appID string) bool {
@@ -222,11 +266,12 @@ func UninstallApp(t uninstall.Target) catalog.App {
 	return app
 }
 
-// Retry queues a failed item again, at the end, and starts the queue.
+// Retry queues a failed item again, at the end, and starts the queue. The
+// user retries it: an update AppShelf started itself is the user's then.
 func (q *Queue) Retry(id int) bool { return q.retry(id, false) }
 
-// RetryInteractive queues a failed removal again, with its uninstaller's
-// window.
+// RetryInteractive queues a failed removal or update again, with the
+// window of its uninstaller or installer.
 func (q *Queue) RetryInteractive(id int) bool { return q.retry(id, true) }
 
 func (q *Queue) retry(id int, interactive bool) bool {
@@ -236,7 +281,7 @@ func (q *Queue) retry(id int, interactive bool) bool {
 		q.mu.Unlock()
 		return false
 	}
-	if interactive && q.items[i].Action != Uninstall {
+	if interactive && q.items[i].Action == Install {
 		q.mu.Unlock()
 		return false
 	}
@@ -245,12 +290,13 @@ func (q *Queue) retry(id int, interactive bool) bool {
 		it.Interactive = true
 	}
 	it.retried = it.Action == Uninstall
+	it.Auto = false
 	q.items = slices.Delete(q.items, i, i+1)
 	it.State, it.Message, it.LogPath, it.Canceled = Waiting, "", "", false
-	it.From, it.To = "", ""
+	it.From, it.To, it.Latest, it.StillOffered = "", "", "", false
 	it.Stage, it.Progress, it.log = "", source.Progress{}, nil
-	it.Started, it.Ended = time.Time{}, time.Time{}
-	q.items = append(q.items, it)
+	it.Started, it.Ended, it.Reboot = time.Time{}, time.Time{}, false
+	q.enqueueLocked(it)
 	q.startLocked()
 	q.mu.Unlock()
 	q.notify()
@@ -278,6 +324,40 @@ func (q *Queue) Control(id int, c uninstall.Command) bool {
 		}
 	}
 	return false
+}
+
+// Cancel cancels an item the user no longer wants, and reports whether it
+// did: one waiting fails as canceled, without running; one running only
+// while its progress says it can stop without changing anything, as while
+// it downloads or waits for another install, its run then ending.
+func (q *Queue) Cancel(id int) bool {
+	q.mu.Lock()
+	done := false
+	for _, it := range q.items {
+		if it.ID != id {
+			continue
+		}
+		switch {
+		case it.State == Waiting:
+			it.State, it.Canceled, it.Message, it.Ended = Failed, true, "已取消，没有开始", time.Now()
+			done = true
+		case it.State == Running && it.cancel != nil && !it.canceling && it.log != nil && it.log.Progress().Cancelable:
+			it.canceling = true
+			it.cancel()
+			done = true
+		}
+	}
+	q.mu.Unlock()
+	if done {
+		q.notify()
+	}
+	return done
+}
+
+// CanCancel reports whether Cancel would cancel the item, as Items copies
+// it.
+func (it Item) CanCancel() bool {
+	return it.State == Waiting || it.State == Running && it.cancel != nil && !it.canceling && it.Progress.Cancelable
 }
 
 // Stop lets the item running finish and leaves the others waiting.
@@ -404,22 +484,28 @@ func (q *Queue) work() {
 			return
 		}
 		it.State, it.Started, it.Stage = Running, time.Now(), StageChecking
+		runCtx, cancel := context.WithCancel(q.ctx)
 		if it.Action == Uninstall {
 			it.ctl = make(chan uninstall.Command, 4)
 			it.Control = it.ctl
+		} else {
+			it.cancel = cancel
 		}
 		snapshot := *it
 		q.mu.Unlock()
 		q.notify()
 
-		state, msg, logPath := q.runItem(&snapshot, live{q, it})
+		state, msg, logPath := q.runItem(runCtx, &snapshot, live{q, it})
+		cancel()
 
 		q.mu.Lock()
 		it.State, it.Message, it.LogPath, it.Ended = state, msg, logPath, time.Now()
 		it.From, it.To, it.Canceled = snapshot.From, snapshot.To, snapshot.Canceled
+		it.Latest, it.StillOffered, it.Reboot = snapshot.Latest, snapshot.StillOffered, snapshot.Reboot
 		it.Stage, it.Progress = "", source.Progress{}
 		again := it.toWindow && state == Failed && !it.Interactive
 		it.ctl, it.Control, it.toWindow = nil, nil, false
+		it.cancel, it.canceling = nil, false
 		q.mu.Unlock()
 		q.notify()
 		if again {
@@ -442,23 +528,42 @@ func (l live) stage(s string) {
 	l.q.progress.poke()
 }
 
+// canceled reports whether the user canceled the item.
+func (l live) canceled() bool {
+	l.q.mu.Lock()
+	defer l.q.mu.Unlock()
+	return l.it.canceling
+}
+
 func (l live) attach(log *tasklog.Log) {
 	l.q.mu.Lock()
 	l.it.log = log
 	l.q.mu.Unlock()
 }
 
-// runItem does one item: check, run, check again.
-func (q *Queue) runItem(it *Item, live live) (ItemState, string, string) {
+// runItem does one item: check, run, check again. runCtx is the context of
+// its run, which Cancel ends; the checks go on.
+func (q *Queue) runItem(runCtx context.Context, it *Item, live live) (ItemState, string, string) {
 	ctx := q.ctx
 	before := q.exec.Status(ctx, *it)
 	it.From = before.Version
+	if it.Action == Upgrade {
+		it.Latest = before.Latest
+	}
 	if state, msg, skip := judgeBefore(*it, before); skip {
 		if state == Succeeded {
 			// A removal the earlier run did: report it as one that ran.
 			q.exec.Finished(*it, before, source.Result{})
 		}
 		return state, msg, ""
+	}
+	q.mu.Lock()
+	hold := q.hold
+	q.mu.Unlock()
+	if it.Auto && hold != nil {
+		if why := hold(ctx, *it); why != "" {
+			return Skipped, why, ""
+		}
 	}
 
 	file, logPath, err := q.exec.OpenLog(*it)
@@ -468,8 +573,12 @@ func (q *Queue) runItem(it *Item, live live) (ItemState, string, string) {
 	log := tasklog.New(file, q.progress.poke)
 	live.attach(log)
 	live.stage(StageStarting)
-	res, runErr := q.exec.Run(ctx, *it, log)
-	if runErr != nil {
+	res, runErr := q.exec.Run(runCtx, *it, log)
+	canceled := runErr != nil && live.canceled() && ctx.Err() == nil
+	switch {
+	case canceled:
+		fmt.Fprintf(log, "\n[AppShelf] 你取消了这个任务（%v）\n", runErr)
+	case runErr != nil:
 		fmt.Fprintf(log, "\n[AppShelf] %s失败：%v\n", it.Action, runErr)
 	}
 	log.ReportProgress(source.Progress{})
@@ -488,7 +597,20 @@ func (q *Queue) runItem(it *Item, live live) (ItemState, string, string) {
 	if it.Action == Uninstall {
 		state, msg, canceled := judgeRemoval(after, res, runErr)
 		it.Canceled = canceled
+		it.Reboot = state == Succeeded && res.RebootRequired
 		return state, msg, logPath
+	}
+	if canceled {
+		// Stopped while it could stop: what the check after it reads tells
+		// whether it got done all the same.
+		switch {
+		case it.Action == Install && after.IsInstalled():
+			return Succeeded, "取消时已经装好了", logPath
+		case it.Action == Upgrade && after.IsInstalled() && after.Version != before.Version:
+			return Succeeded, "取消时已经更新好了", logPath
+		}
+		it.Canceled = true
+		return Failed, "已取消", logPath
 	}
 	if runErr != nil {
 		return Failed, runErr.Error(), logPath
@@ -500,6 +622,12 @@ func (q *Queue) runItem(it *Item, live live) (ItemState, string, string) {
 	if res.RebootRequired {
 		note = "需要重启电脑才能完成"
 	}
+	if it.Action == Upgrade && after.State == source.UpdateAvailable && it.Latest != "" && strings.EqualFold(strings.TrimSpace(after.Latest), strings.TrimSpace(it.Latest)) {
+		it.StillOffered = true
+		if after.Version != before.Version {
+			note = joinNote(note, "来源仍提示可以更新到 "+it.Latest+"，可能是来源记录的版本号和程序的对不上")
+		}
+	}
 	switch {
 	case after.Blocked():
 		return Failed, "安装程序已结束，但无法确认结果：" + noteOr(after, "原因未知"), logPath
@@ -510,6 +638,7 @@ func (q *Queue) runItem(it *Item, live live) (ItemState, string, string) {
 	case it.Action == Upgrade && !after.IsInstalled():
 		return Failed, "更新后没有检测到这个软件", logPath
 	}
+	it.Reboot = res.RebootRequired
 	return Succeeded, note, logPath
 }
 
@@ -565,6 +694,13 @@ func judgeRemoval(after source.Status, res source.Result, runErr error) (state I
 		return Succeeded, "已卸载（卸载程序报告：" + runErr.Error() + "）", false
 	}
 	return Succeeded, "", false
+}
+
+func joinNote(a, b string) string {
+	if a == "" {
+		return b
+	}
+	return a + "；" + b
 }
 
 // withNote adds why a program may still be there.

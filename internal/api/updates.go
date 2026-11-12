@@ -308,7 +308,12 @@ func foldLess(a, b string) int { return strings.Compare(strings.ToLower(a), stri
 func (a *App) updateList() UpdateList {
 	ps := a.packages()
 	pol := a.core.Store().Policies()
+	store := a.core.Store()
+	hist := store.History()
 	now := time.Now()
+	a.mu.Lock()
+	delay := time.Duration(a.settings.Updates.AutoDelay) * 24 * time.Hour
+	a.mu.Unlock()
 	paths := a.upd.processes()
 	out := UpdateList{Items: []UpdateItem{}, Rules: []UpdateRule{}, Loaded: ps.loaded}
 	for _, key := range ps.order {
@@ -317,13 +322,23 @@ func (a *App) updateList() UpdateList {
 			continue
 		}
 		policy := pol[key]
-		block := autoBlock(p)
+		block := autoNote(p, policy, hist)
 		it := UpdateItem{
 			Key: key, Name: p.name, Icon: p.icon, Source: p.src, Version: p.version, Latest: p.latest,
 			Major: version.MajorUpgrade(p.version, p.latest), Mode: modeOf(policy.Mode),
 			Hold: holdOf(policy.Hold(p.latest, now)), Skip: policy.Skip, Until: future(policy.Until, now),
 			CanAuto: block == "", AutoNote: block, Running: running(p, paths), Pending: p.pending,
 			AppID: p.appID, Note: p.note,
+		}
+		if it.Mode == UpdateAuto && it.CanAuto && delay > 0 {
+			// Not found by a check yet, it waits from now.
+			since, ok := store.Offered(key, p.latest)
+			if !ok {
+				since = now
+			}
+			if at := since.Add(delay); at.After(now) {
+				it.AutoAt = at
+			}
 		}
 		out.Items = append(out.Items, it)
 		if it.Hold == HoldNone {
@@ -335,7 +350,7 @@ func (a *App) updateList() UpdateList {
 		p := ps.byKey[key]
 		r := UpdateRule{Key: key, Name: policy.Name, Mode: modeOf(policy.Mode), Skip: policy.Skip, Until: future(policy.Until, now)}
 		if p != nil {
-			block := autoBlock(p)
+			block := autoNote(p, policy, hist)
 			r.Name, r.Icon, r.Source, r.Installed, r.CanAuto, r.AutoNote = p.name, p.icon, p.src, true, block == "", block
 		} else {
 			r.Source, _ = parseKey(key)
@@ -418,10 +433,11 @@ func (a *App) startUpdates(ctx context.Context, keys []string, auto map[string]b
 	}
 	n := 0
 	enqueue := func(items []core.PreviewItem) {
-		n += a.core.Enqueue(items, queue.Upgrade)
 		if auto == nil {
+			n += a.core.Enqueue(items, queue.Upgrade)
 			return
 		}
+		n += a.core.EnqueueAuto(items)
 		for _, it := range items {
 			if it.Runnable {
 				key := it.App.Source.Key()
@@ -598,7 +614,7 @@ func (s *Updates) Settings() UpdateSettings {
 	c := a.settings.Updates
 	a.mu.Unlock()
 	h := a.hooks
-	out := UpdateSettings{CheckEvery: c.CheckEvery, Notify: !c.Quiet,
+	out := UpdateSettings{CheckEvery: c.CheckEvery, AutoDelay: c.AutoDelay, Notify: !c.Quiet,
 		CanBackground: h.SetBackground != nil && h.SetOpenAtLogin != nil && h.OpenAtLogin != nil}
 	if out.CanBackground {
 		out.Background = !c.ExitOnClose
@@ -628,6 +644,9 @@ func (s *Updates) SetSettings(choices UpdateSettings) error {
 	if !slices.Contains(selfIntervals, choices.SelfEvery) {
 		return errors.New("检查间隔只能是 1、6 或 24 小时")
 	}
+	if !slices.Contains(autoDelays, choices.AutoDelay) {
+		return errors.New("等待天数只能是 0、1、3、7 或 14 天")
+	}
 	if !cur.CanBackground && (choices.Background || choices.OpenAtLogin) {
 		return errors.New("这个版本不支持后台运行和开机启动")
 	}
@@ -640,7 +659,7 @@ func (s *Updates) SetSettings(choices UpdateSettings) error {
 	}
 	a.settings.Updates = updatesChoices{
 		CheckEvery: choices.CheckEvery, Quiet: !choices.Notify, ExitOnClose: exit,
-		SelfCheck: choices.SelfCheck, SelfEvery: choices.SelfEvery,
+		SelfCheck: choices.SelfCheck, SelfEvery: choices.SelfEvery, AutoDelay: choices.AutoDelay,
 	}
 	st := a.settings
 	a.mu.Unlock()
@@ -662,6 +681,10 @@ func (s *Updates) SetSettings(choices UpdateSettings) error {
 	}
 	a.upd.reschedule()
 	a.note.mark(ChangedUpdates)
+	if choices.AutoDelay < cur.AutoDelay {
+		// Updates that waited may be due now.
+		go a.upd.runAuto()
+	}
 	return errors.Join(errs...)
 }
 
@@ -674,3 +697,6 @@ func (a *App) CheckUpdates() {
 
 // ShowPage asks the page to show one of its pages, as "updates".
 func (a *App) ShowPage(page string) { Navigate.Broadcast(page) }
+
+// autoDelays are the days UpdateSettings.AutoDelay can be.
+var autoDelays = []int{0, 1, 3, 7, 14}

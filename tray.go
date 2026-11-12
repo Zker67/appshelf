@@ -280,6 +280,9 @@ func trayToolTip(st api.TrayStatus) string {
 	case st.Active > 0:
 		lines = append(lines, fmt.Sprintf("%d 项任务等待中", st.Active))
 	}
+	if st.Reboot > 0 {
+		lines = append(lines, fmt.Sprintf("%d 个软件需要重启电脑后生效", st.Reboot))
+	}
 	return strings.Join(lines, "\n")
 }
 

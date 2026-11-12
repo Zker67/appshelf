@@ -95,6 +95,10 @@ type UpdateRecord struct {
 	Message string    `json:"message,omitempty"`
 	Auto    bool      `json:"auto,omitempty"`
 	At      time.Time `json:"at"`
+	// Latest is the version the update was to bring; StillOffered means
+	// its source still offered it after the update ran.
+	Latest       string `json:"latest,omitempty"`
+	StillOffered bool   `json:"stillOffered,omitempty"`
 }
 
 type file struct {
@@ -103,6 +107,24 @@ type file struct {
 	Updates       map[string]UpdatePolicy `json:"updates,omitempty"`
 	// History is the updates done, newest first.
 	History []UpdateRecord `json:"history,omitempty"`
+	// Offered is when each update a check found was first found, by
+	// source key.
+	Offered map[string]Offer `json:"offered,omitempty"`
+	// Reboots are the tasks done that need Windows to restart, oldest
+	// first.
+	Reboots []RebootRecord `json:"reboots,omitempty"`
+}
+
+// Offer is an update found: its version, and when it was first found.
+type Offer struct {
+	Version string    `json:"version"`
+	Since   time.Time `json:"since"`
+}
+
+// RebootRecord is a task done that needs Windows to restart to be done.
+type RebootRecord struct {
+	Name string    `json:"name"`
+	At   time.Time `json:"at"`
 }
 
 // Store is the state file, safe for use from several goroutines. Each
@@ -254,6 +276,71 @@ func (s *Store) ClearHistory() error {
 }
 
 func (s *Store) save() error {
-	f := file{SchemaVersion: SchemaVersion, GitHub: maps.Clone(s.f.GitHub), Updates: maps.Clone(s.f.Updates), History: slices.Clone(s.f.History)}
+	f := file{SchemaVersion: SchemaVersion, GitHub: maps.Clone(s.f.GitHub), Updates: maps.Clone(s.f.Updates), History: slices.Clone(s.f.History),
+		Offered: maps.Clone(s.f.Offered), Reboots: slices.Clone(s.f.Reboots)}
 	return jsonfile.WriteAtomic(s.path, f)
+}
+
+// NoteOffered records the updates a check found, version by source key, at
+// now: one found before keeps when it was first found, another version
+// starts again, and one no longer found is forgotten.
+func (s *Store) NoteOffered(offers map[string]string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := make(map[string]Offer, len(offers))
+	for k, v := range offers {
+		k, v = normalKey(k), strings.TrimSpace(v)
+		if k == "" || v == "" {
+			continue
+		}
+		if o, ok := s.f.Offered[k]; ok && strings.EqualFold(o.Version, v) {
+			next[k] = o
+			continue
+		}
+		next[k] = Offer{Version: v, Since: now.UTC()}
+	}
+	if maps.Equal(next, s.f.Offered) || len(next) == 0 && len(s.f.Offered) == 0 {
+		return nil
+	}
+	s.f.Offered = next
+	return s.save()
+}
+
+// Offered returns when version of key was first found, false when it was
+// not recorded.
+func (s *Store) Offered(key, version string) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o, ok := s.f.Offered[normalKey(key)]
+	if !ok || !strings.EqualFold(o.Version, strings.TrimSpace(version)) {
+		return time.Time{}, false
+	}
+	return o.Since, true
+}
+
+// MaxReboots is how many tasks needing a restart are kept.
+const MaxReboots = 50
+
+// AddReboot records a task done that needs Windows to restart.
+func (s *Store) AddReboot(name string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.f.Reboots = append(s.f.Reboots, RebootRecord{Name: name, At: at.UTC()})
+	if n := len(s.f.Reboots); n > MaxReboots {
+		s.f.Reboots = slices.Clone(s.f.Reboots[n-MaxReboots:])
+	}
+	return s.save()
+}
+
+// Reboots returns the tasks that still need Windows to restart: those done
+// after it last started, at boot, oldest first. The others are forgotten.
+func (s *Store) Reboots(boot time.Time) []RebootRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keep := slices.DeleteFunc(slices.Clone(s.f.Reboots), func(r RebootRecord) bool { return !boot.IsZero() && !r.At.After(boot) })
+	if len(keep) != len(s.f.Reboots) {
+		s.f.Reboots = keep
+		_ = s.save() // forgetting them again next time does as well
+	}
+	return slices.Clone(keep)
 }

@@ -71,7 +71,7 @@ func (t *Tasks) List() TaskList {
 	<-a.ready
 	q := a.core.Queue
 	running, stopping := q.Running()
-	out := TaskList{Items: []TaskEntry{}, Running: running, Stopping: stopping}
+	out := TaskList{Items: []TaskEntry{}, Running: running, Stopping: stopping, Reboot: a.reboots()}
 	for _, it := range q.Items() {
 		icon := iconOf(it.App.Source)
 		if it.Target != nil {
@@ -83,14 +83,15 @@ func (t *Tasks) List() TaskList {
 			Action: actionOf(it.Action), State: taskStateOf(it.State), Message: it.Message,
 			HasLog: it.LogPath != "", Started: it.Started, Ended: it.Ended,
 			Stage: it.Stage, Done: it.Progress.Done, Total: it.Progress.Total, Percent: it.Progress.Percent, Speed: it.Progress.Speed,
-			Interactive: it.State == queue.Failed && interactiveRetry(it),
+			Interactive: it.State == queue.Failed && t.a.interactiveRetry(it),
 			Leftovers:   canFindLeftovers(it),
 			Canceled:    it.State == queue.Failed && it.Canceled,
+			Cancelable:  it.CanCancel(),
 		})
 		if it.State == queue.Running && it.Action == queue.Uninstall && it.Progress.Wait != "" {
 			e := &out.Items[len(out.Items)-1]
 			e.Wait, e.Prompt, e.Window = TaskWait(it.Progress.Wait), it.Progress.Prompt, it.Progress.Window
-			e.CanSwitch = canSwitch(it)
+			e.CanSwitch = a.canSwitch(it)
 		}
 	}
 	return out
@@ -141,14 +142,14 @@ func (t *Tasks) Retry(id int) error {
 	return nil
 }
 
-// RetryInteractive runs a failed removal again with its uninstaller's
-// window, for the user to finish it there.
+// RetryInteractive runs a failed removal or update again with the window
+// of its uninstaller or installer, for the user to finish it there.
 func (t *Tasks) RetryInteractive(id int) error {
 	a := t.a
 	<-a.ready
 	for _, it := range a.core.Queue.Items() {
-		if it.ID == id && !interactiveRetry(it) {
-			return errors.New("这个任务不能用卸载程序的窗口重试")
+		if it.ID == id && !a.interactiveRetry(it) {
+			return errors.New("这个任务不能打开窗口重试")
 		}
 	}
 	if !a.core.Queue.RetryInteractive(id) {
@@ -179,7 +180,7 @@ func (t *Tasks) Control(id int, c TaskControl) error {
 		switch {
 		case it.State != queue.Running || it.Action != queue.Uninstall || it.Progress.Wait == "":
 			return errors.New("这个任务现在没有在等待卸载程序")
-		case c == ControlSwitch && !canSwitch(it):
+		case c == ControlSwitch && !a.canSwitch(it):
 			return errors.New("这个任务不能改用卸载程序的窗口")
 		case !a.core.Queue.Control(id, cmd):
 			return errors.New("这个任务现在不能这样操作")
@@ -191,9 +192,19 @@ func (t *Tasks) Control(id int, c TaskControl) error {
 
 // canSwitch reports a quiet removal waiting for the user, or stuck, that
 // can run again with its uninstaller's window.
-func canSwitch(it queue.Item) bool {
+func (a *App) canSwitch(it queue.Item) bool {
 	w := it.Progress.Wait
-	return it.State == queue.Running && (w == uninstall.WaitUser || w == uninstall.WaitStalled) && interactiveRetry(it)
+	return it.State == queue.Running && it.Action == queue.Uninstall && (w == uninstall.WaitUser || w == uninstall.WaitStalled) && a.interactiveRetry(it)
+}
+
+// Cancel cancels a task: one waiting does not run; one running stops, when
+// it can without changing anything, as while it downloads.
+func (t *Tasks) Cancel(id int) error {
+	<-t.a.ready
+	if !t.a.core.Queue.Cancel(id) {
+		return errors.New("这个任务现在不能取消（可能已经开始安装）")
+	}
+	return nil
 }
 
 // ClearDone removes the finished tasks.

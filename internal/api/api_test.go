@@ -37,8 +37,10 @@ type coreSource struct {
 	// statusBlock, when set, makes reading the states of all wait for it,
 	// once they are read: what it returns is of before.
 	statusBlock chan struct{}
-	// upgradeBlock, when set, makes an update wait for it, or its context.
+	// upgradeBlock, when set, makes an update wait for it, or its context,
+	// downloading meanwhile; reboot makes an update need a restart.
 	upgradeBlock chan struct{}
+	reboot       bool
 	// fixErr is what Fix returns; Fix without an error makes the source
 	// available.
 	fixErr error
@@ -99,10 +101,25 @@ func (f *coreSource) Install(_ context.Context, a catalog.App, _ io.Writer) (sou
 	return source.Result{}, nil
 }
 func (f *coreSource) Upgrade(ctx context.Context, a catalog.App, log io.Writer) (source.Result, error) {
+	return f.upgrade(ctx, "upgrade:", a, log)
+}
+
+// UpgradeInteractive is what an update retried with a window runs.
+func (f *coreSource) UpgradeInteractive(ctx context.Context, a catalog.App, log io.Writer) (source.Result, error) {
+	return f.upgrade(ctx, "upgrade-interactive:", a, log)
+}
+
+// UpgradeSilent is what the updates AppShelf starts itself run.
+func (f *coreSource) UpgradeSilent(ctx context.Context, a catalog.App, log io.Writer) (source.Result, error) {
+	return f.upgrade(ctx, "upgrade-silent:", a, log)
+}
+
+func (f *coreSource) upgrade(ctx context.Context, verb string, a catalog.App, log io.Writer) (source.Result, error) {
 	f.mu.Lock()
 	block := f.upgradeBlock
 	f.mu.Unlock()
 	if block != nil {
+		source.ReportProgress(log, source.Progress{Stage: "正在下载", Cancelable: true})
 		select {
 		case <-block:
 		case <-ctx.Done():
@@ -111,7 +128,7 @@ func (f *coreSource) Upgrade(ctx context.Context, a catalog.App, log io.Writer) 
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.actions = append(f.actions, "upgrade:"+a.ID)
+	f.actions = append(f.actions, verb+a.ID)
 	if f.upgradeErrors > 0 {
 		f.upgradeErrors--
 		return source.Result{}, errors.New("temporary update failure")
@@ -119,7 +136,7 @@ func (f *coreSource) Upgrade(ctx context.Context, a catalog.App, log io.Writer) 
 	if st, ok := f.after[a.Source.Key()]; ok {
 		f.state[a.Source.Key()] = st
 	}
-	return source.Result{}, nil
+	return source.Result{RebootRequired: f.reboot}, nil
 }
 
 // fakeWinget is what the services use of winget.

@@ -109,8 +109,10 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 
 可省略的字段（按兼容规则不升级 `schemaVersion`，旧版本读取时忽略）：
 
+- `offered`：以来源 key 为键，每次检查后记下发现的更新 `{ "version": "<版本>", "since": "<第一次发现的时间>" }`；同一版本保留最早的时间，换了版本重新计时，不再提示的删除。用于“新版本等几天再自动更新”。
+- `reboots`：需要重启电脑才能完成的任务 `[{ "name": "<名称>", "at": "<完成时间>" }]`，最多 50 条；读取时丢掉早于这次开机的记录（电脑已经重启过）。
 - `updates`：以来源 key（`winget:<id>`、`scoop:<bucket>/<name>`、`github:<owner>/<repo>`，小写）为键的更新方式 `{ "mode": "auto" | "ignore", "skip": "<跳过的版本>", "until": "<暂缓到的时间>", "name": "<名称>" }`；`mode` 省略即“提醒我”，全为默认时删除该键。按来源而不是软件 ID 记录，未加入清单的本机软件也能设置；软件从清单删除时保留。
-- `history`：最近 200 条更新记录，新的在前：`{ key, name, from, to, result: "succeeded" | "skipped" | "failed", message, auto, at }`。
+- `history`：最近 200 条更新记录，新的在前：`{ key, name, from, to, result: "succeeded" | "skipped" | "failed", message, auto, at, latest, stillOffered }`；`latest` 是这次要更新到的版本，`stillOffered` 表示更新后来源仍提示这个版本；用户取消的记为 `skipped`。
 
 ## 前端接口
 
@@ -126,8 +128,9 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | | `SetNote` | 改一个软件的备注（Markdown），返回保存后的内容，空字符串即删除；不重新读取本机状态。`SaveApp` 编辑已有软件时保留原备注，只有新建时采用传入的备注 |
 | | `Export`、`ReadImport`、`ApplyImport` | 导出到用户选择的文件；导入先读文件返回合并预览和令牌，确认后再合并 |
 | `Tasks` | `Start` | 安装、更新不预览，界面点了就调用：先等正在读取的状态（如刚加入的软件，最多 2 分钟），再逐个核对，只把可执行的加入队列，没有可执行的返回错误。动作只接受 `install`、`upgrade`；`uninstall` 只能经 `Installed.StartUninstall` 加入 |
-| | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列。每项有动作（`install`、`upgrade`、`uninstall`）、状态、阶段 `stage`（如“正在下载”）、下载字节 `done` / `total`、来源只给百分比时的 `percent`（0–100）和下载速度 `speed`（字节/秒），未知时省略；`interactive` 表示这个失败的卸载可以用卸载程序窗口重试，`leftovers` 表示这个成功的卸载可以查找残留，`canceled` 表示这个失败的卸载是用户取消的（显示为“已取消”，不计入失败）。进行中的卸载在等卸载程序时有 `wait`（`working` 等它结束、`user` 等你操作、`stalled` 可能卡住、`installer` 等另一个安装结束）、卸载程序窗口的文字 `prompt`、有窗口时 `window`，可以改用窗口卸载时 `canSwitch` |
-| | `RetryInteractive(id)` | 失败的卸载改为打开卸载程序窗口再执行一次（winget 用 `--interactive`，注册表程序用不带静默参数的卸载命令） |
+| | `List`、`Stop`、`Resume`、`Retry`、`ClearDone`、`OpenLog` | 队列。每项有动作（`install`、`upgrade`、`uninstall`）、状态、阶段 `stage`（如“正在下载”）、下载字节 `done` / `total`、来源只给百分比时的 `percent`（0–100）和下载速度 `speed`（字节/秒），未知时省略；`interactive` 表示这个失败的卸载或 winget 更新可以打开卸载程序 / 安装程序的窗口重试，`leftovers` 表示这个成功的卸载可以查找残留，`canceled` 表示这个失败的任务是用户取消的（显示为“已取消”，不计入失败），`cancelable` 表示现在可以取消（见 `Cancel`）。列表另有 `reboot`：这次开机以来需要重启电脑才能完成的软件名称。队列一次执行一项；用户发起的任务（包括重试）排在等待中的自动更新前面，正在执行的不打断。进行中的卸载在等卸载程序时有 `wait`（`working` 等它结束、`user` 等你操作、`stalled` 可能卡住、`installer` 等另一个安装结束）、卸载程序窗口的文字 `prompt`、有窗口时 `window`，可以改用窗口卸载时 `canSwitch` |
+| | `RetryInteractive(id)` | 失败的卸载改为打开卸载程序窗口再执行一次（winget 用 `--interactive`，注册表程序用不带静默参数的卸载命令）；失败的 winget 更新（已经运行过的）改用 `Update-WinGetPackage -Mode Interactive`（命令行 `--interactive`）。重试的任务都算用户发起的，不再按自动更新处理 |
+| | `Cancel(id)` | 取消任务：等待中的直接记为“已取消，没有开始”；正在执行的只在来源报告可以安全停下时（`source.Progress.Cancelable`：下载中、等另一个安装结束、等你关闭软件）取消，此后复查：其实已经装好或更新好就算成功，否则记为“已取消”。不能取消时返回错误。winget 走 COM 时由脚本 `Stop-Job` 停止 cmdlet（不直接结束进程，30 秒内不停才结束），命令行和 scoop 结束整个进程树，GitHub 下载完后、启动安装程序前再看一次是否已取消。已取消的更新在更新记录里记为“跳过”，不计入连续失败 |
 | | `Control(id, c)` | 正在等卸载程序的卸载：`stopWaiting` 停止等待并立即复查（不结束卸载程序）、`showWindow` 把卸载程序窗口提到前面、`end` 结束卸载程序、`switchToWindow` 结束静默卸载并改用窗口重新执行（只在 `canSwitch` 时）。进入“等你操作”时，窗口不在前台发系统通知（点击打开任务），在前台由页面提示 |
 | | `Log(id, from)` | 应用内日志：从第 `from` 行起的整理后的行 `lines`、实际起点 `start`（更早的行已丢弃时大于 `from`）、下次的游标 `next`、还在刷新的当前行 `live`、任务是否结束 `done`。内存里每个任务最多保留最后 2000 行，完整内容用 `OpenLog` 打开日志文件 |
 | | `FindLeftovers(id)` | 为卸载成功的任务查找残留（目录、`HKCU\Software` 下的设置、快捷方式、开机启动项），返回令牌和每一项的 ID、类型、路径、分数、等级（`high` / `medium` / `low`）、理由和是否默认勾选；只读 |
@@ -147,7 +150,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 | `Updates` | `List`、`Check` | 清单软件和本机 winget / scoop 软件按来源 key 合并的更新（含被搁置的，`count` 只数提供的）、更新方式不是默认的软件（`rules`）、检查时间和 AppShelf 自身的新版本；`Check` 立即检查 |
 | | `Start` | 按来源 key 开始更新：清单里已读到状态的走 `Tasks` 的路径，其余走 `Installed` 的路径；前端只传 key，Go 重新解析来源 |
 | | `SetMode`、`Skip`、`Snooze`、`Restore` | 设为提醒 / 自动更新 / 忽略（不能自动更新时返回原因；开启时有更新立即排队）；跳过当前最新版本；暂缓 1–90 天；恢复提醒 |
-| | `History`、`ClearHistory`、`Settings`、`SetSettings` | 更新记录；检查间隔、通知、关闭窗口后留在托盘（默认开）、开机启动；AppShelf 自身何时检查新版本 `selfCheck`（`off` 不自动检查、`launch` 启动时检查（默认）、`interval` 启动时检查后每隔 `selfEvery` 小时：1、6 或 24，默认 24），省略时保持原样 |
+| | `History`、`ClearHistory`、`Settings`、`SetSettings` | 更新记录；检查间隔、新版本等几天再自动更新 `autoDelay`（0、1、3、7、14 天，默认 0）、通知、关闭窗口后留在托盘（默认开）、开机启动；AppShelf 自身何时检查新版本 `selfCheck`（`off` 不自动检查、`launch` 启动时检查（默认）、`interval` 启动时检查后每隔 `selfEvery` 小时：1、6 或 24，默认 24），省略时保持原样 |
 | `About` | `Info`、`OpenLogs`、`OpenDataDir`、`OpenURL`、`SetTheme` | 版本、目录、用默认浏览器打开链接（只允许 http/https）、外观 |
 | | `SelfUpdate`、`CheckForUpdates`、`InstallUpdate` | AppShelf 自身的更新，没有单独的更新窗口：状态 `SelfState`（运行的版本 `version`、能否自更新 `enabled`、阶段 `phase`：`idle` / `checking` / `available` / `downloading` / `restarting` / `failed`、找到的版本 `available`、下载进度 `progress`（0–1）、失败原因 `error`、上次检查成功的时间 `checkedAt`）；`CheckForUpdates` 立即检查并返回状态，失败时返回说明原因的错误；`InstallUpdate` 立即返回，在后台下载、校验签名并替换，完成后自动重新打开，过程由 `selfUpdate` 事件告知 |
 
@@ -176,7 +179,7 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 
 | 接口/模块 | 职责 | 说明 |
 |---|---|---|
-| `source.Source`（`internal/source`） | 一种安装来源 | `Type`、`Check`（可用性）、`Statuses`（批量读状态）、`Recheck`（单项复查）、`Install`、`Upgrade`；能搜索的来源再实现 `source.Searcher` |
+| `source.Source`（`internal/source`） | 一种安装来源 | `Type`、`Check`（可用性）、`Statuses`（批量读状态）、`Recheck`（单项复查）、`Install`、`Upgrade`；能搜索的来源再实现 `source.Searcher`；能完全不弹安装程序窗口更新的来源再实现 `source.SilentUpgrader`（winget），供自动更新使用 |
 | `source.Status` | 一个软件在本机的状态 | `Unknown`（未知）、`NotInstalled`、`Installed`、`UpdateAvailable`、`Unavailable`（来源不可用）；`Blocked()` 为真时不允许安装或更新；`External` 表示由检测规则认出、不是从该来源装的 |
 | `queue.Executor`（`internal/queue`） | 队列执行一项所需的能力 | `Status(ctx, item)`（执行前后复查；卸载项由 `queue` 换算成“还在 / 已不在”）、`Run(ctx, item, log)`（输出写进 `tasklog.Log`）、`OpenLog`、`Finished`；由 `internal/core` 实现 |
 | `source.Progress`、`source.ReportProgress` | 任务的阶段、下载字节和百分比 | 来源报告给任务日志，`queue` 每 250 毫秒最多通知一次 |
@@ -192,8 +195,11 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 
 1. 状态读取失败、来源不可用、结果无法解析时，状态记为“未知”或“不可用”，不允许安装。
 2. 预览只用于展示；队列执行到某一项时再复查一次：已安装就跳过，状态不确定就记为失败、不执行。
-3. 执行后再复查：安装程序报告成功、但仍检测不到软件时，记为失败。
-4. winget 安装使用精确 ID 并指定 `winget` 源；scoop 按软件名匹配所有 bucket（scoop 同名软件只能装一个）；GitHub 安装包无法唯一确定时拒绝安装，下载后校验大小和 SHA-256。
+3. 执行后再复查：安装程序报告成功、但仍检测不到软件时，记为失败。复查前先等这次安装或更新新启动、仍在运行的安装进程结束（`procs.Installers`：临时目录里运行的、`.tmp` 程序、WiX 的 `.cr` / `.be` 目录、`SquirrelTemp`；不按父子关系认，以免等到安装程序最后打开的软件本身）；它们 2 分钟没有动静或总共 30 分钟后停止等待并写进日志。
+4. 更新后来源仍提示可以更新到原本要更新到的版本时，任务记下 `StillOffered`：版本变了就算成功并在说明里提示，版本没变照旧记为失败。
+5. 用户发起的更新执行前先关闭这个软件（`App.closeForUpdate`，经 `Core.SetBeforeUpgrade` 注册，用 `procs.Closer`）：只处理从它自己的安装目录（`installDir`）运行的进程，AppShelf 自己除外；先向可见窗口发 `WM_CLOSE`（等 10 秒），之后没有窗口的进程直接结束（一开始就没有窗口的不等）；窗口还开着（多半在问是否保存）就不结束，把它提到前面、发任务通知，等用户 2 分钟，仍未关闭则这次更新失败、不运行安装程序。没有权限结束的（以管理员身份运行）写进日志，交给安装程序处理；读不到安装目录的不关闭。自动更新不关闭任何程序（`autoHold` 已确认程序没在运行）。
+6. 安装和更新开始前，Windows Installer 正在处理别的程序（`_MSIExecute` 互斥量，`Config.InstallerBusy`）就等它结束，最多 30 分钟；scoop 不等。来源报告 `source.ErrInstallerBusy`（winget `0x8A150102`、安装程序退出码 1618，GitHub 安装包 1618）时，等它结束后重新执行一次，再次碰到就记为失败。
+7. winget 安装使用精确 ID 并指定 `winget` 源；scoop 按软件名匹配所有 bucket（scoop 同名软件只能装一个）；GitHub 安装包无法唯一确定时拒绝安装，下载后校验大小和 SHA-256。
 
 ### 防误删流程
 
@@ -219,7 +225,10 @@ winget 和 scoop 软件的安装状态、版本和更新每次都从来源实时
 
 ### 自动更新
 
-- 只对更新方式为“自动更新”的软件，在一次检查结束后（或刚开启时）排队，走与手动更新相同的预览、`Upgrade` 和执行前后复查。
+- 只对更新方式为“自动更新”的软件，在一次检查结束后（或刚开启时）以 `Queue.AddAuto` 排队（任务带 `Auto`），走与手动更新相同的预览和执行前后复查；来源实现了 `source.SilentUpgrader` 时改用它（winget 为 `-Mode Silent`，命令行 `--silent`），手动更新仍用安装程序默认模式。
+- 轮到它执行时（复查确认仍有更新之后、开始之前）由 `Queue.SetHold` 设置的 `App.autoHold` 再判断一次：`autoBlock` 的条件和程序是否在运行重新读取，在运行或无法确认就记为“跳过”并写进更新记录，下次检查再排队。
 - 能自动更新的条件（`autoBlock`）：来源是 winget 或 scoop；不是来源外安装；本机列表里找得到；安装范围是当前用户（注册表 HKCU；scoop 非 `--global`），同一软件同时有机器和用户两份时视为不确定；版本已知；能确定安装目录（`InstallLocation`，否则 `DisplayIcon` 所在目录，排除 Program Files、系统目录等共享目录；scoop 为 `<SCOOP>\apps\<name>`）。
-- 安装目录下有进程在运行时不排队，等下次检查。手动更新不弹预览，正在运行的软件可能在更新时被关闭。
+- 安装目录下有进程在运行时不排队，等下次检查。手动更新不弹预览，执行前先关闭正在运行的软件（见“防误装流程”第 5 条）。
 - 被忽略、跳过或暂缓的更新不自动执行、不发通知；同一版本只通知一次；窗口在前台或关闭了通知时不发系统通知。
+- 设了 `autoDelay` 时，新版本从第一次被检查发现（`state.json` 的 `offered`）起满这么多天才自动更新：之前列表项的 `autoAt` 是到期时间，不排队、不单独发“可以更新”的通知，手动更新不受影响；到期由每分钟一次的定时器排队（不必等下次检查）。拿不到发布时间（winget、scoop 不一定提供），所以按 AppShelf 发现的时间算。
+- 更新记录（`state.UpdateRecord`）记下目标版本 `latest` 和 `stillOffered`。对设为自动更新的软件，`autoStuck` 按记录从新到旧看同一来源 key、同一目标版本：有一次更新后来源仍提示这个版本，或连续失败 3 次（跳过的不算，中间成功或目标版本不同就重新计数），就不再自动更新到这个版本：`canAuto` 为假，`autoNote` 说明原因，更新方式仍是自动更新，用户可以手动更新或跳过；出了新版本自动恢复。旧记录没有 `latest`，不计入。

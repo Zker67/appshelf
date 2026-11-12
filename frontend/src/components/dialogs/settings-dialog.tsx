@@ -53,6 +53,7 @@ import {
   ExternalLinkIcon,
   FolderOpenIcon,
   GaugeIcon,
+  HourglassIcon,
   InfoIcon,
   LoaderCircleIcon,
   MonitorDownIcon,
@@ -305,6 +306,15 @@ const intervals: Array<{ value: CheckInterval; label: string }> = [
   { value: "off", label: "只在启动时" },
 ];
 
+/** The days a new version waits to be updated to on its own. */
+const autoDelays: Array<{ value: number; label: string }> = [
+  { value: 0, label: "不等待" },
+  { value: 1, label: "1 天" },
+  { value: 3, label: "3 天" },
+  { value: 7, label: "7 天" },
+  { value: 14, label: "14 天" },
+];
+
 /** useSaveUpdateSettings saves a change of the update settings, shown at once. */
 function useSaveUpdateSettings() {
   const { data } = useUpdateSettings();
@@ -347,6 +357,27 @@ function UpdatesTab() {
                 {intervals.map((i) => (
                   <SelectItem key={i.value} value={i.value}>
                     {i.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+          <SettingRow
+            icon={HourglassIcon}
+            label="新版本等几天再自动更新"
+            hint="从软件图书馆第一次发现这个新版本算起，避开刚发布就出问题的版本。只影响自动更新：等待期间不单独提醒，你随时可以手动更新"
+          >
+            <Select
+              value={String(data.autoDelay)}
+              onValueChange={(v) => void save({ autoDelay: Number(v) })}
+            >
+              <SelectTrigger size="sm" className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {autoDelays.map((d) => (
+                  <SelectItem key={d.value} value={String(d.value)}>
+                    {d.label}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -140,3 +140,77 @@ func TestOldFileOpens(t *testing.T) {
 		t.Error("saving a policy lost something")
 	}
 }
+
+func TestOffered(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day1 := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	day3 := day1.Add(48 * time.Hour)
+	if err := s.NoteOffered(map[string]string{"winget:a.a": "2.0", " WINGET:B.B ": "1.5", "winget:c.c": ""}, day1); err != nil {
+		t.Fatal(err)
+	}
+	// Found again, it keeps when it was first found; a newer version
+	// starts again; one no longer found is forgotten.
+	if err := s.NoteOffered(map[string]string{"winget:a.a": "2.0", "winget:b.b": "1.6"}, day3); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if at, ok := again.Offered("WINGET:A.A", " 2.0"); !ok || !at.Equal(day1) {
+		t.Errorf("a: %v %v", at, ok)
+	}
+	if at, ok := again.Offered("winget:b.b", "1.6"); !ok || !at.Equal(day3) {
+		t.Errorf("b: %v %v", at, ok)
+	}
+	if _, ok := again.Offered("winget:b.b", "1.5"); ok {
+		t.Error("an older version is still recorded")
+	}
+	if err := again.NoteOffered(map[string]string{}, day3); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := again.Offered("winget:a.a", "2.0"); ok {
+		t.Error("an update no longer found is still recorded")
+	}
+}
+
+func TestReboots(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boot := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+	for i, name := range []string{"Old", "Git", "7-Zip"} {
+		at := boot.Add(time.Duration(i-1)*time.Hour + 30*time.Minute) // Old was before the boot
+		if err := s.AddReboot(name, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := s.Reboots(time.Time{}); len(got) != 3 {
+		t.Errorf("boot unknown: %+v", got)
+	}
+	again, _ := Open(path)
+	got := again.Reboots(boot)
+	if len(got) != 2 || got[0].Name != "Git" || got[1].Name != "7-Zip" {
+		t.Errorf("after the boot: %+v", got)
+	}
+	// Restarted since: all are done, and forgotten.
+	if got := again.Reboots(boot.Add(3 * time.Hour)); len(got) != 0 {
+		t.Errorf("restarted: %+v", got)
+	}
+	third, _ := Open(path)
+	if got := third.Reboots(time.Time{}); len(got) != 0 {
+		t.Errorf("forgotten: %+v", got)
+	}
+	for i := range MaxReboots + 5 {
+		_ = third.AddReboot("x", boot.Add(time.Duration(i+10)*time.Hour))
+	}
+	if got := third.Reboots(boot); len(got) != MaxReboots {
+		t.Errorf("kept %d", len(got))
+	}
+}

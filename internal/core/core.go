@@ -22,6 +22,7 @@ import (
 	"appshelf/internal/catalog"
 	"appshelf/internal/detect"
 	"appshelf/internal/jsonfile"
+	"appshelf/internal/procs"
 	"appshelf/internal/queue"
 	"appshelf/internal/source"
 	"appshelf/internal/source/github"
@@ -48,6 +49,14 @@ type Config struct {
 	Progress func()
 	// Uninstaller removes programs; nil when this build cannot.
 	Uninstaller Uninstaller
+	// Installers watches, from before an install or update runs, the
+	// installer processes it starts, for the check after it to wait for
+	// those it leaves running; nil waits for none.
+	Installers func() *procs.Installers
+	// InstallerBusy reports whether Windows Installer works on another
+	// program (runner.InstallerBusy), for an install or update to wait for
+	// it; nil never waits.
+	InstallerBusy func() bool
 }
 
 // Core is the application.
@@ -60,6 +69,12 @@ type Core struct {
 	sources map[catalog.SourceType]source.Source
 
 	uninstaller Uninstaller
+	installers  func() *procs.Installers
+	// installerBusy, and how often and how long it is waited for.
+	installerBusy     func() bool
+	busyPoll, busyMax time.Duration
+	hooksMu           sync.Mutex
+	before            func(ctx context.Context, it queue.Item, log io.Writer) error
 
 	statuses    map[string]source.Status
 	refreshing  bool
@@ -95,6 +110,11 @@ func Open(ctx context.Context, cfg Config) (*Core, error) {
 		avail:    map[catalog.SourceType]source.Availability{},
 
 		uninstaller: cfg.Uninstaller,
+		installers:  cfg.Installers,
+
+		installerBusy: cfg.InstallerBusy,
+		busyPoll:      time.Second,
+		busyMax:       30 * time.Minute,
 	}
 	cat, err := catalog.Load(cfg.Paths.Catalog)
 	if err != nil {
@@ -831,6 +851,22 @@ func (c *Core) Enqueue(items []PreviewItem, action queue.Action) int {
 	return c.Queue.Add(apps, action)
 }
 
+// EnqueueAuto queues the runnable items of a preview as updates AppShelf
+// starts itself, and returns how many: they run with no installer window,
+// and the queue's hold can still keep them back.
+func (c *Core) EnqueueAuto(items []PreviewItem) int {
+	var apps []catalog.App
+	for _, it := range items {
+		if it.Runnable {
+			apps = append(apps, it.App)
+		}
+	}
+	if len(apps) == 0 {
+		return 0
+	}
+	return c.Queue.AddAuto(apps)
+}
+
 // executor does the queue's work, on its goroutine.
 type executor struct{ c *Core }
 
@@ -851,10 +887,119 @@ func (e executor) Run(ctx context.Context, it queue.Item, log io.Writer) (source
 		return source.Result{}, errors.New("不支持的来源")
 	}
 	fmt.Fprintf(log, "AppShelf %s「%s」\n来源：%s %s\n开始：%s\n\n", action, a.Name, a.Source.Type, a.Source.Display(), time.Now().Format(time.DateTime))
-	if action == queue.Upgrade {
-		return src.Upgrade(ctx, a, log)
+	if before := e.c.beforeUpgrade(); action == queue.Upgrade && before != nil {
+		if err := before(ctx, it, log); err != nil {
+			return source.Result{}, err
+		}
 	}
-	return src.Install(ctx, a, log)
+	for again := false; ; again = true {
+		if err := e.c.waitInstaller(ctx, a, log); err != nil {
+			return source.Result{}, err
+		}
+		var w *procs.Installers
+		if e.c.installers != nil {
+			w = e.c.installers()
+		}
+		res, err := runSource(ctx, src, it, log)
+		if err == nil && !res.AlreadyInstalled && w != nil {
+			settle(ctx, w, log)
+		}
+		if errors.Is(err, source.ErrInstallerBusy) && !again {
+			// Nothing ran: run it again once the other install ends.
+			fmt.Fprintln(log, "\n[AppShelf] 另一个安装或卸载正在进行，没有开始；等它结束后重新开始")
+			continue
+		}
+		return res, err
+	}
+}
+
+// runSource does an install or update with its source: an update the user
+// retries with its installer's window, or one AppShelf started itself with
+// none, when the source can.
+func runSource(ctx context.Context, src source.Source, it queue.Item, log io.Writer) (source.Result, error) {
+	if it.Action != queue.Upgrade {
+		return src.Install(ctx, it.App, log)
+	}
+	if s, ok := src.(source.InteractiveUpgrader); ok && it.Interactive {
+		return s.UpgradeInteractive(ctx, it.App, log)
+	}
+	if s, ok := src.(source.SilentUpgrader); ok && it.Auto {
+		return s.UpgradeSilent(ctx, it.App, log)
+	}
+	return src.Upgrade(ctx, it.App, log)
+}
+
+// SetBeforeUpgrade sets what runs right before an update runs its source,
+// as closing the program it replaces; an error it returns fails the update
+// without running it. It runs on the queue's goroutine.
+func (c *Core) SetBeforeUpgrade(fn func(ctx context.Context, it queue.Item, log io.Writer) error) {
+	c.hooksMu.Lock()
+	c.before = fn
+	c.hooksMu.Unlock()
+}
+
+func (c *Core) beforeUpgrade() func(ctx context.Context, it queue.Item, log io.Writer) error {
+	c.hooksMu.Lock()
+	defer c.hooksMu.Unlock()
+	return c.before
+}
+
+// CanUpgradeInteractive reports whether the updates of the source can run
+// with their installer's window.
+func (c *Core) CanUpgradeInteractive(t catalog.SourceType) bool {
+	_, ok := c.sources[t].(source.InteractiveUpgrader)
+	return ok
+}
+
+// waitInstaller waits, before an install or update, while Windows
+// Installer works on another program: an installer started meanwhile
+// would give up with 1618. scoop's do not use it.
+func (c *Core) waitInstaller(ctx context.Context, a catalog.App, log io.Writer) error {
+	if c.installerBusy == nil || a.Source.Type == catalog.Scoop || !c.installerBusy() {
+		return nil
+	}
+	fmt.Fprintln(log, "[AppShelf] Windows Installer 正在进行另一个安装或卸载，等它结束")
+	source.ReportProgress(log, source.Progress{Stage: "等待另一个安装或卸载结束", Cancelable: true})
+	deadline := time.Now().Add(c.busyMax)
+	for c.installerBusy() {
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("另一个安装或卸载 %s 还没有结束，没有开始", span(c.busyMax))
+		}
+		t := time.NewTimer(c.busyPoll)
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+			t.Stop()
+			return ctx.Err()
+		}
+	}
+	fmt.Fprintln(log, "[AppShelf] 另一个安装或卸载已结束，开始")
+	return nil
+}
+
+// settle waits for the installers an install or update left running, as
+// one that starts a copy of itself and exits, for the check after it not
+// to read the state of before.
+func settle(ctx context.Context, w *procs.Installers, log io.Writer) {
+	end := w.Wait(ctx, func(alive []procs.Proc) {
+		names := procs.Names(alive)
+		fmt.Fprintf(log, "\n[AppShelf] 等待安装程序结束：%s\n", names)
+		source.ReportProgress(log, source.Progress{Stage: "正在等待安装程序结束（" + names + "）"})
+	})
+	switch end {
+	case procs.WaitIdle:
+		fmt.Fprintf(log, "[AppShelf] 安装程序 %s 没有动静，停止等待（它可能还在运行）\n", span(w.Times.Idle))
+	case procs.WaitTimeout:
+		fmt.Fprintf(log, "[AppShelf] 安装程序 %s 还没有结束，停止等待（它可能还在运行）\n", span(w.Times.Max))
+	}
+}
+
+// span says a duration for the user, as "2 分钟".
+func span(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%d 秒", int(d.Round(time.Second)/time.Second))
+	}
+	return fmt.Sprintf("%d 分钟", int(d.Round(time.Minute)/time.Minute))
 }
 
 func (e executor) OpenLog(it queue.Item) (io.WriteCloser, string, error) {

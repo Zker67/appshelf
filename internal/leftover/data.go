@@ -127,6 +127,14 @@ func FindData(ctx context.Context, cfg Config, p DataProgram, others []Other) []
 			}
 		}
 	}
+	for _, dir := range dataContainers(ctx, cfg, p, others) {
+		children, _ := os.ReadDir(dir)
+		for _, child := range children {
+			if dataDirectoryName(child.Name()) {
+				add(filepath.Join(dir, child.Name()), "安装目录所在应用容器内的并列数据目录", Medium)
+			}
+		}
+	}
 	if safeComponent(p.Family) {
 		// PackageFamily is supplied by the installed package identity.
 		if root := os.Getenv("LOCALAPPDATA"); filepath.IsAbs(root) {

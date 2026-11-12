@@ -47,6 +47,7 @@ plans/
 
 | 计划 | 状态 | 说明 |
 |---|---|---|
+| [应用容器内并列数据目录识别](./2026-11-12-data-containers/00-overview.md) | `[in-progress]` | 基于安装布局和目录角色通用识别并列数据目录，保留共享、链接、其他安装及保护路径边界 |
 | [2026-11-07 基本实现](./2026-11-07-basic-implementation/00-overview.md) | `[partial]` | 清单、分类和标签、本机检测与防误装、批量安装、检查更新、导入导出、自更新；来源为 winget、scoop、GitHub Releases。已发布 v0.1.0；用户试用后认为界面简陋、加软件不便，界面部分由下一个计划替代；scoop 未实测，见 [实施报告](./2026-11-07-basic-implementation/09-implementation-report.md) |
 | [2026-11-07 Web 前端、本机已装与发现软件](./2026-11-07-web-ui-and-discovery/00-overview.md) | `[partial]` | 0.2.0 已实现并通过自动检查；Web 前端、“本机已装”、发现、详情和图标已交付。用户验收、真实安装与更新、scoop 和跨版本自更新待实测，见 [实施报告](./2026-11-07-web-ui-and-discovery/09-implementation-report.md) |
 | [本机已装图标优化](./2026-11-07-installed-icons/00-overview.md) | `[partial]` | 本机优先、并发去重、持久缓存、软件包 Logo 回退与有限重试；技术改动已进入 v0.2.1 检查点标签（未发布），后续缓存修复与新功能见软件图书馆计划 |

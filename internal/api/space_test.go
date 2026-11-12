@@ -169,6 +169,42 @@ func TestSpaceMeasureMissingAndCanceled(t *testing.T) {
 	}
 }
 
+func TestSpaceMeasuresSiblingDataOnce(t *testing.T) {
+	e := newEnv(t)
+	root, err := os.MkdirTemp(os.Getenv("LOCALAPPDATA"), "AppShelfTest-SiblingSpace-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+	install := filepath.Join(root, "Apps", "1.2.0")
+	data := filepath.Join(root, "User Data")
+	for path, size := range map[string]int{filepath.Join(install, "app.exe"): 3000, filepath.Join(data, "Cache", "blob"): 500, filepath.Join(root, "0.9.0", "old.exe"): 1000} {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, make([]byte, size), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.mu.Lock()
+	e.registry = []detect.Entry{{DisplayName: "本地化测试软件", DisplayVersion: "1", Name: "SiblingSpace", Scope: "User", Arch: "X64", Key: `HKCU\SiblingSpace`, InstallLocation: install}}
+	e.mu.Unlock()
+	e.listARP(`ARP\User\X64\SiblingSpace`, "本地化测试软件")
+	e.installed.Refresh()
+	key := `arp:user\x64\siblingspace`
+	e.until(func() bool { _, _, err := e.app.entry(key); return err == nil })
+	sp, err := e.installed.Space(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sp.Measured || sp.Program != 3000 || sp.DataSize != 500 || len(sp.Data) != 1 || !strings.EqualFold(sp.Data[0].Path, data) {
+		t.Fatalf("program and data must each count once, without old binaries: %+v", sp)
+	}
+	if err := e.installed.OpenLocation(key, sp.Data[0].ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Opt-in, read-only smoke check of installed program metadata and data paths.
 func TestSpaceLocalReadOnly(t *testing.T) {
 	if os.Getenv("APPSHELF_SPACE_TEST") != "1" {
@@ -184,10 +220,13 @@ func TestSpaceLocalReadOnly(t *testing.T) {
 		others = append(others, leftover.Other{Name: e.Name, Location: e.Location})
 	}
 	cfg := leftover.DataConfig()
+	filter := os.Getenv("APPSHELF_SPACE_TEST_NAME")
+	matched := 0
 	for _, e := range entries {
-		if !strings.Contains(strings.ToLower(e.Name), "docker desktop") && !strings.EqualFold(e.Name, "Bitwarden") {
+		if filter != "" && !strings.EqualFold(e.Name, filter) || filter == "" && !strings.Contains(strings.ToLower(e.Name), "docker desktop") && !strings.EqualFold(e.Name, "Bitwarden") {
 			continue
 		}
+		matched++
 		p := leftover.DataProgram{Program: leftover.Program{Name: e.Name, Publisher: e.Publisher, Location: e.Location}, Aliases: []string{filepath.Base(e.Location)}}
 		// Exclude this program, as Installed.Space does.
 		var rest []leftover.Other
@@ -204,6 +243,12 @@ func TestSpaceLocalReadOnly(t *testing.T) {
 		if len(dirs) == 0 {
 			t.Errorf("no data found for %s", e.Name)
 		}
+	}
+	if filter != "" {
+		if matched == 0 {
+			t.Fatalf("installed program not found: %s", filter)
+		}
+		return
 	}
 	families, _ := filepath.Glob(filepath.Join(os.Getenv("LOCALAPPDATA"), "Packages", "TheBrowserCompany.Dia_*"))
 	for _, family := range families {

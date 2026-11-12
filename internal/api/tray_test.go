@@ -46,6 +46,17 @@ func TestTrayStatusAndUpdateAll(t *testing.T) {
 	if n, err := e.app.UpdateAll(ctx); err == nil || n != 0 {
 		t.Errorf("queued twice: %d %v", n, err)
 	}
+	// winget lists the new version once it is updated: the list read
+	// again after the tasks end must not bring the update back.
+	e.wapi.mu.Lock()
+	e.wapi.pkgs[0].Version, e.wapi.pkgs[0].Update = "1.9", ""
+	e.wapi.mu.Unlock()
 	close(block)
-	e.until(func() bool { s := e.app.TrayStatus(); return s.Active == 0 && s.Updates == 0 })
+	e.until(func() bool {
+		s := e.app.TrayStatus()
+		return s.Active == 0 && s.Updates == 0 && !e.installed.List().Loading
+	})
+	if s := e.app.TrayStatus(); s.Updates != 0 || s.Runnable != 0 {
+		t.Errorf("after the list is read again: %+v", s)
+	}
 }

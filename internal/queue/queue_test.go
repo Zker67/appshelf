@@ -804,3 +804,94 @@ func TestCancel(t *testing.T) {
 		t.Errorf("ran: %+v", it)
 	}
 }
+
+// An update its installer cannot do in place is marked so; removing its
+// program and installing it again runs the install right after the
+// removal, before the items waiting, and only once the program is gone.
+func TestReinstall(t *testing.T) {
+	f := newFake()
+	app := catalog.App{ID: "app", Name: "App", Source: catalog.Source{Type: catalog.Winget, ID: "Vendor.App"}}
+	f.before["app"] = source.Status{State: source.UpdateAvailable, Version: "1", Latest: "2"}
+	f.after["app"] = source.Status{State: source.UpdateAvailable, Version: "1", Latest: "2"}
+	f.runErr["app"] = fmt.Errorf("%w（winget 退出码 0x8A150114）", source.ErrNoDirectUpgrade)
+	f.before["plain"] = source.Status{State: source.UpdateAvailable, Version: "1", Latest: "2"}
+	f.after["plain"] = source.Status{State: source.UpdateAvailable, Version: "1", Latest: "2"}
+	f.runErr["plain"] = errors.New("安装程序出错")
+	q := New(context.Background(), f, nil)
+	q.Add([]catalog.App{app, appOf("plain")}, Upgrade)
+	wait(t, q)
+	if it := states(q)["app"]; it.State != Failed || !it.NoDirectUpgrade {
+		t.Fatalf("update = %s %q, NoDirectUpgrade %v", it.State, it.Message, it.NoDirectUpgrade)
+	}
+	if it := states(q)["plain"]; it.NoDirectUpgrade {
+		t.Fatal("an update failed otherwise marked as not done in place")
+	}
+
+	target := uninstall.Target{Key: "winget:vendor.app", Name: "App", Method: uninstall.ByWinget, WingetID: "Vendor.App"}
+	rm := UninstallApp(target).ID
+	f.mu.Lock()
+	f.before[rm] = source.Status{State: source.Installed}
+	f.after[rm] = source.Status{State: source.NotInstalled}
+	delete(f.ran, "app")
+	delete(f.runErr, "app")
+	f.before["app"] = source.Status{State: source.NotInstalled}
+	f.after["app"] = source.Status{State: source.Installed, Version: "2"}
+	f.before["other"] = source.Status{State: source.NotInstalled}
+	f.after["other"] = source.Status{State: source.Installed}
+	f.gate = make(chan struct{})
+	f.mu.Unlock()
+	failed := states(q)["app"].ID
+	if q.AddReinstall(states(q)["plain"].ID, target) {
+		t.Fatal("an update failed otherwise reinstalled")
+	}
+	if !q.AddReinstall(failed, target) {
+		t.Fatal("AddReinstall refused")
+	}
+	if q.AddReinstall(failed, target) {
+		t.Fatal("the same update reinstalled twice")
+	}
+	q.Add([]catalog.App{appOf("other")}, Install)
+	close(f.gate)
+	wait(t, q)
+	if want := []string{"app", "plain", rm, "app", "other"}; !slices.Equal(f.runs, want) {
+		t.Fatalf("runs = %q, want %q", f.runs, want)
+	}
+	var removal, install Item
+	for _, it := range q.Items() {
+		switch {
+		case it.Action == Uninstall:
+			removal = it
+		case it.Action == Install && it.App.ID == "app":
+			install = it
+		}
+	}
+	if removal.State != Succeeded || !strings.Contains(removal.Message, "接着重新安装") {
+		t.Errorf("removal = %s %q", removal.State, removal.Message)
+	}
+	if install.State != Succeeded || install.App.Source != app.Source {
+		t.Errorf("install = %+v", install)
+	}
+
+	// A removal that needs a restart is not followed by the install.
+	f.mu.Lock()
+	f.gate = nil
+	delete(f.ran, rm)
+	delete(f.ran, "app")
+	f.result[rm] = source.Result{RebootRequired: true}
+	f.mu.Unlock()
+	q.ClearDone()
+	f.runErr["app"] = fmt.Errorf("%w", source.ErrNoDirectUpgrade)
+	f.before["app"] = source.Status{State: source.UpdateAvailable, Version: "1", Latest: "2"}
+	q.Add([]catalog.App{app}, Upgrade)
+	wait(t, q)
+	failed = states(q)["app"].ID
+	delete(f.runErr, "app")
+	if !q.AddReinstall(failed, target) {
+		t.Fatal("AddReinstall refused after the first was done")
+	}
+	wait(t, q)
+	items := q.Items()[1:]
+	if len(items) != 1 || items[0].State != Succeeded || !items[0].Reboot || !strings.Contains(items[0].Message, "重启电脑后再安装它") {
+		t.Fatalf("after a removal that needs a restart: %+v", items)
+	}
+}

@@ -34,6 +34,11 @@ interface Actions {
   update: (keys: string[]) => void;
   /** previewUninstall shows what removing programs would do, by key of the installed list. */
   previewUninstall: (keys: string[]) => void;
+  /**
+   * reinstall previews removing the program of a failed update its
+   * installer could not do in place, to install it again after, by task.
+   */
+  reinstall: (taskId: number) => void;
   /** findLeftovers looks for what a removal left behind. */
   findLeftovers: (taskId: number, name: string) => void;
   /** add adds packages to the catalog with a category and tags. */
@@ -125,6 +130,7 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
           () => setTasks(true),
         ),
       previewUninstall: (keys) => setUninstall({ keys, seq: next(), open: true }),
+      reinstall: (taskId) => setUninstall({ keys: [], reinstall: taskId, seq: next(), open: true }),
       findLeftovers: (taskId, name) => setLeftovers({ taskId, name, seq: next(), open: true }),
       add: (items, opts) =>
         setAdd({

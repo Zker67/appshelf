@@ -1,5 +1,7 @@
 // What removing programs would do, program by program, before it starts:
-// how each is removed, the command, and what to know first.
+// how each is removed, the command, and what to know first. It also
+// confirms removing the program of an update its installer could not do in
+// place, to install it again after.
 
 import { AppIcon } from "@/components/app-icon";
 import { SourceBadge } from "@/components/source-badge";
@@ -18,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { errorText } from "@/lib/api";
 import { formatBytes } from "@/lib/text";
 import { cn } from "@/lib/utils";
-import { Installed, type UninstallPreview } from "@/mygo";
+import { Installed, Tasks, type UninstallPreview } from "@/mygo";
 import { useQuery } from "@tanstack/react-query";
 import {
   BanIcon,
@@ -38,6 +40,11 @@ import { toast } from "sonner";
 export interface UninstallRequest {
   /** keys are of the installed list. */
   keys: string[];
+  /**
+   * reinstall is the failed update whose program Go finds and removes, to
+   * install the same package again once it is gone; keys is then empty.
+   */
+  reinstall?: number;
   seq: number;
   open: boolean;
 }
@@ -52,9 +59,13 @@ export function UninstallDialog({
   onStarted: () => void;
 }) {
   const open = request?.open ?? false;
+  const reinstall = request?.reinstall;
   const preview = useQuery({
     queryKey: ["installed", "uninstall", request?.seq ?? 0],
-    queryFn: () => Installed.previewUninstall(request?.keys ?? []),
+    queryFn: () =>
+      reinstall !== undefined
+        ? Tasks.previewReinstall(reinstall)
+        : Installed.previewUninstall(request?.keys ?? []),
     enabled: open && !!request,
     // The installed list changes while it is open: keep what was read.
     staleTime: Infinity,
@@ -70,12 +81,21 @@ export function UninstallDialog({
     if (!request) return;
     setBusy(true);
     try {
-      const n = await Installed.startUninstall(run.map((e) => e.key));
-      toast.success(`已开始卸载 ${n} 个软件`);
+      if (reinstall !== undefined) {
+        const [first] = run;
+        if (!first) return;
+        await Tasks.startReinstall(reinstall, first.key);
+        toast.success("已开始卸载，卸载完成后重新安装");
+      } else {
+        const n = await Installed.startUninstall(run.map((e) => e.key));
+        toast.success(`已开始卸载 ${n} 个软件`);
+      }
       onClose();
       onStarted();
     } catch (err) {
-      toast.error("无法开始卸载", { description: errorText(err) });
+      toast.error(reinstall !== undefined ? "无法开始卸载后重新安装" : "无法开始卸载", {
+        description: errorText(err),
+      });
     } finally {
       setBusy(false);
     }
@@ -87,7 +107,7 @@ export function UninstallDialog({
         <DialogHeader className="border-b px-5 pt-5 pb-4">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <PackageXIcon className="size-5 text-destructive" />
-            卸载预览
+            {reinstall !== undefined ? "卸载后重新安装" : "卸载预览"}
           </DialogTitle>
           <DialogDescription className="flex flex-wrap items-center gap-1.5 pt-1">
             {preview.isPending ? (
@@ -104,7 +124,11 @@ export function UninstallDialog({
                     不能卸载 {skipped.length}
                   </Pill>
                 )}
-                <span className="text-xs">卸载后软件仍留在清单里</span>
+                <span className="text-xs">
+                  {reinstall !== undefined
+                    ? "它的安装程序不支持直接更新：卸载完成后，用同一个 winget 软件包重新安装最新版本"
+                    : "卸载后软件仍留在清单里"}
+                </span>
               </>
             )}
           </DialogDescription>
@@ -116,7 +140,7 @@ export function UninstallDialog({
           <div className="flex flex-col gap-4 px-3 py-3">
             {preview.isPending ? (
               <div className="flex flex-col gap-1 px-2">
-                {Array.from({ length: Math.min(request?.keys.length ?? 2, 5) }, (_, i) => (
+                {Array.from({ length: Math.min(request?.keys.length || 1, 5) }, (_, i) => (
                   <div key={i} className="flex items-center gap-3 py-2.5">
                     <Skeleton className="size-9 rounded-[26%]" />
                     <div className="flex flex-1 flex-col gap-1.5">
@@ -140,17 +164,25 @@ export function UninstallDialog({
         </ScrollArea>
         <DialogFooter className="mx-0 mb-0 items-center rounded-b-xl px-5 py-3.5">
           <span className="mr-auto text-xs text-muted-foreground">
-            {windows > 0
-              ? `${windows} 个会打开卸载程序的窗口，需要你在窗口里操作`
-              : "逐个执行，每个卸载后都会复查是否已移除"}
+            {reinstall !== undefined
+              ? "确认已移除后才会安装；安装失败时它不在本机，可在任务里重试安装"
+              : windows > 0
+                ? `${windows} 个会打开卸载程序的窗口，需要你在窗口里操作`
+                : "逐个执行，每个卸载后都会复查是否已移除"}
           </span>
           <Button variant="outline" onClick={onClose}>
             取消
           </Button>
           <Button variant="destructive" onClick={start} disabled={busy || run.length === 0}>
             {busy ? <LoaderCircleIcon className="animate-spin" /> : <PackageXIcon />}
-            开始卸载
-            {run.length > 0 && <span className="tabular-nums">（{run.length}）</span>}
+            {reinstall !== undefined ? (
+              "卸载并重新安装"
+            ) : (
+              <>
+                开始卸载
+                {run.length > 0 && <span className="tabular-nums">（{run.length}）</span>}
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

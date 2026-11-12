@@ -108,6 +108,11 @@ func TestInterpretCOM(t *testing.T) {
 	fails(comResult{Status: "NoApplicableUpgrade"}, "upgrade", "没有适用的更新")
 	fails(comResult{Status: "DownloadError"}, "install", "下载安装程序失败")
 	fails(comResult{Status: "Weird"}, "install", "Weird")
+	// An installer that cannot update in place: removing it and installing
+	// it again is offered.
+	if _, err := interpretCOM(comResult{Status: "InstallError", Code: hr(codeUpgradeNotSupported), InstallerCode: 1}, "upgrade"); !errors.Is(err, source.ErrNoDirectUpgrade) {
+		t.Errorf("upgrade not supported: %v", err)
+	}
 }
 
 // TestCOMOfThisMachine goes through the module's cmdlets for packages that

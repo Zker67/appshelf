@@ -173,6 +173,11 @@ type InteractiveUpgrader interface {
 // Installer's 1618: it can run again once that one ends.
 var ErrInstallerBusy = errors.New("另一个安装正在进行，请稍后重试")
 
+// ErrNoDirectUpgrade is what an update returns, wrapped, when the app's
+// installer cannot update it in place, as winget's 0x8A150114: removing
+// it and installing it again may, which the user must confirm.
+var ErrNoDirectUpgrade = errors.New("这个软件的安装程序不支持直接更新，请卸载后重新安装")
+
 // Searcher is a source that finds packages by a query.
 type Searcher interface {
 	Search(ctx context.Context, query string) ([]SearchResult, error)

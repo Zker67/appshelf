@@ -34,6 +34,8 @@ type coreSource struct {
 	after         map[string]source.Status
 	actions       []string
 	upgradeErrors int
+	// upgradeErr is what the failing updates return, when set.
+	upgradeErr error
 	// statusBlock, when set, makes reading the states of all wait for it,
 	// once they are read: what it returns is of before.
 	statusBlock chan struct{}
@@ -131,6 +133,9 @@ func (f *coreSource) upgrade(ctx context.Context, verb string, a catalog.App, lo
 	f.actions = append(f.actions, verb+a.ID)
 	if f.upgradeErrors > 0 {
 		f.upgradeErrors--
+		if f.upgradeErr != nil {
+			return source.Result{}, f.upgradeErr
+		}
 		return source.Result{}, errors.New("temporary update failure")
 	}
 	if st, ok := f.after[a.Source.Key()]; ok {

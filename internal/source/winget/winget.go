@@ -405,6 +405,7 @@ const (
 	codeInstallInProgress   = 0x8A150102
 	codeRebootToFinish      = 0x8A150109
 	codeCanceledByUser      = 0x8A15010C
+	codeUpgradeNotSupported = 0x8A150114
 )
 
 // codeTexts say in plain words why an install or update failed, for the
@@ -429,7 +430,6 @@ var codeTexts = map[uint32]string{
 	0x8A150111: "软件正被其他程序使用，请关闭后重试",
 	0x8A150112: "安装参数无效",
 	0x8A150113: "这台电脑的系统不支持这个软件",
-	0x8A150114: "这个软件的安装程序不支持直接更新，请卸载后重新安装",
 	0x8A150115: "安装程序报告了自定义错误，请查看日志",
 }
 
@@ -580,6 +580,8 @@ func interpretCode(code uint32, detail string) (source.Result, error) {
 		return source.Result{}, source.ErrInstallerBusy
 	case codeCanceledByUser:
 		return source.Result{}, errors.New("安装被取消")
+	case codeUpgradeNotSupported:
+		return source.Result{}, fmt.Errorf("%w（winget 退出码 0x%08X）", source.ErrNoDirectUpgrade, code)
 	}
 	if text, ok := codeTexts[code]; ok {
 		return source.Result{}, fmt.Errorf("%s（winget 退出码 0x%08X）", text, code)

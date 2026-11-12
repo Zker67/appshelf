@@ -562,6 +562,11 @@ export interface TaskEntry {
    * where it can stop without changing anything, as while it downloads.
    */
   cancelable?: boolean;
+  /**
+   * Reinstall means a failed update its installer could not do in place
+   * can be done by removing the program and installing it again.
+   */
+  reinstall?: boolean;
 }
 
 /** TaskList is the queue. */
@@ -949,6 +954,14 @@ export const Tasks = {
   openLog(id: number): Promise<void> {
     return call("Tasks.OpenLog", id);
   },
+  /**
+   * PreviewReinstall says what removing the program of a failed update its
+   * installer could not do would do, before it is installed again. Nothing
+   * runs.
+   */
+  previewReinstall(id: number): Promise<UninstallPreview[]> {
+    return call("Tasks.PreviewReinstall", id);
+  },
   /** Resume starts the waiting tasks again. */
   resume(): Promise<void> {
     return call("Tasks.Resume");
@@ -971,6 +984,14 @@ export const Tasks = {
    */
   start(ids: string[], action: TaskAction): Promise<number> {
     return call("Tasks.Start", ids, action);
+  },
+  /**
+   * StartReinstall queues the removal of the program key, as the preview
+   * showed it, then the install of the failed update's package once it is
+   * gone. key must still be the one program of that package.
+   */
+  startReinstall(id: number, key: string): Promise<void> {
+    return call("Tasks.StartReinstall", id, key);
   },
   /** Stop lets the task running finish and leaves the others waiting. */
   stop(): Promise<void> {

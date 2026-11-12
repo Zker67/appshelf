@@ -239,6 +239,9 @@ type TaskEntry struct {
 	// Cancelable means the task can be canceled now: it waits, or it runs
 	// where it can stop without changing anything, as while it downloads.
 	Cancelable bool `json:"cancelable,omitempty"`
+	// Reinstall means a failed update its installer could not do in place
+	// can be done by removing the program and installing it again.
+	Reinstall bool `json:"reinstall,omitempty"`
 }
 
 // TaskWait is how a removal waits for its uninstaller.

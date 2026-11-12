@@ -103,6 +103,12 @@ type Item struct {
 	// Reboot marks a succeeded item that needs Windows to restart to be
 	// done.
 	Reboot bool
+	// NoDirectUpgrade marks a failed update whose installer cannot update
+	// the app in place: removing it and installing it again may.
+	NoDirectUpgrade bool
+	// Reinstall is the app a removal installs again once it succeeds, as
+	// the user confirmed for an update its installer could not do.
+	Reinstall *catalog.App
 
 	log *tasklog.Log
 	// retried is a removal queued again after it failed: its program gone
@@ -252,6 +258,31 @@ func (q *Queue) AddUninstall(targets []uninstall.Target) int {
 	return added
 }
 
+// AddReinstall does the failed update from, which its installer could not
+// do in place, again: it queues the removal of its program t, then, once
+// it is gone, the install of the update's app, and starts the queue. It
+// reports whether it queued it: not when from is not such an update, or
+// the program or the package is already waiting or running. from then no
+// longer offers it.
+func (q *Queue) AddReinstall(from int, t uninstall.Target) bool {
+	q.mu.Lock()
+	i := slices.IndexFunc(q.items, func(it *Item) bool { return it.ID == from })
+	rm := UninstallApp(t)
+	if i < 0 || q.items[i].State != Failed || !q.items[i].NoDirectUpgrade ||
+		q.pendingLocked(rm.ID) || q.pendingSourceLocked(rm.Source) || q.pendingLocked(q.items[i].App.ID) || q.pendingSourceLocked(q.items[i].App.Source) {
+		q.mu.Unlock()
+		return false
+	}
+	q.items[i].NoDirectUpgrade = false
+	q.nextID++
+	re := q.items[i].App.Clone()
+	q.enqueueLocked(&Item{ID: q.nextID, App: rm, Action: Uninstall, State: Waiting, Target: &t, Reinstall: &re})
+	q.startLocked()
+	q.mu.Unlock()
+	q.notify()
+	return true
+}
+
 // UninstallApp is the app a removal stands for in the queue: its ID is the
 // program's key, its source the package a source knows it by, so that it
 // does not run beside an install or update of the same package.
@@ -295,7 +326,7 @@ func (q *Queue) retry(id int, interactive bool) bool {
 	it.State, it.Message, it.LogPath, it.Canceled = Waiting, "", "", false
 	it.From, it.To, it.Latest, it.StillOffered = "", "", "", false
 	it.Stage, it.Progress, it.log = "", source.Progress{}, nil
-	it.Started, it.Ended, it.Reboot = time.Time{}, time.Time{}, false
+	it.Started, it.Ended, it.Reboot, it.NoDirectUpgrade = time.Time{}, time.Time{}, false, false
 	q.enqueueLocked(it)
 	q.startLocked()
 	q.mu.Unlock()
@@ -502,7 +533,9 @@ func (q *Queue) work() {
 		it.State, it.Message, it.LogPath, it.Ended = state, msg, logPath, time.Now()
 		it.From, it.To, it.Canceled = snapshot.From, snapshot.To, snapshot.Canceled
 		it.Latest, it.StillOffered, it.Reboot = snapshot.Latest, snapshot.StillOffered, snapshot.Reboot
+		it.NoDirectUpgrade = snapshot.NoDirectUpgrade
 		it.Stage, it.Progress = "", source.Progress{}
+		q.reinstallLocked(it)
 		again := it.toWindow && state == Failed && !it.Interactive
 		it.ctl, it.Control, it.toWindow = nil, nil, false
 		it.cancel, it.canceling = nil, false
@@ -511,6 +544,32 @@ func (q *Queue) work() {
 		if again {
 			q.retry(it.ID, true)
 		}
+	}
+}
+
+// reinstallLocked queues, right after a removal that succeeded, the
+// install it was to be followed by: first of the items waiting. A removal
+// that needs a restart to be done is not followed by it.
+func (q *Queue) reinstallLocked(it *Item) {
+	if it.Action != Uninstall || it.State != Succeeded || it.Reinstall == nil {
+		return
+	}
+	if it.Reboot {
+		it.Message = joinNote(it.Message, "重启电脑后再安装它，没有接着重新安装")
+		return
+	}
+	app := it.Reinstall.Clone()
+	if q.pendingLocked(app.ID) || q.pendingSourceLocked(app.Source) {
+		it.Message = joinNote(it.Message, "它已在别的任务中，没有接着重新安装")
+		return
+	}
+	it.Message = joinNote(it.Message, "接着重新安装")
+	q.nextID++
+	next := &Item{ID: q.nextID, App: app, Action: Install, State: Waiting}
+	if i := slices.IndexFunc(q.items, func(c *Item) bool { return c.State == Waiting }); i >= 0 {
+		q.items = slices.Insert(q.items, i, next)
+	} else {
+		q.items = append(q.items, next)
 	}
 }
 
@@ -613,6 +672,7 @@ func (q *Queue) runItem(runCtx context.Context, it *Item, live live) (ItemState,
 		return Failed, "已取消", logPath
 	}
 	if runErr != nil {
+		it.NoDirectUpgrade = it.Action == Upgrade && errors.Is(runErr, source.ErrNoDirectUpgrade)
 		return Failed, runErr.Error(), logPath
 	}
 	if res.AlreadyInstalled {

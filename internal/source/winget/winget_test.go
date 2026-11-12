@@ -2,6 +2,7 @@ package winget
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -222,7 +223,7 @@ func TestInterpretSaysWhy(t *testing.T) {
 		t.Errorf("disk full: %v", err)
 	}
 	_, err = interpret(runner.Result{ExitCode: int(uint32(0x8A150114))})
-	if err == nil || !strings.Contains(err.Error(), "不支持直接更新") {
+	if !errors.Is(err, source.ErrNoDirectUpgrade) || !strings.Contains(err.Error(), "0x8A150114") {
 		t.Errorf("upgrade not supported: %v", err)
 	}
 }

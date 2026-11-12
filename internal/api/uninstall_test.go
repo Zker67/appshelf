@@ -28,6 +28,8 @@ type fakeUninstaller struct {
 	runs []string        // key and "i" or "q"
 	// hold, when set, keeps a quiet run waiting for the user until closed.
 	hold chan struct{}
+	// then, when set, is called with the key of a program removed.
+	then func(key string)
 }
 
 func (f *fakeUninstaller) Inspect(_ context.Context, targets []uninstall.Target) []uninstall.Inspection {
@@ -65,6 +67,9 @@ func (f *fakeUninstaller) Run(_ context.Context, t uninstall.Target, interactive
 		return source.Result{}, fmt.Errorf("卸载程序以退出码 2 结束")
 	}
 	f.gone[t.Key] = true
+	if f.then != nil {
+		f.then(t.Key)
+	}
 	return source.Result{}, nil
 }
 

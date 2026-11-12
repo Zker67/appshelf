@@ -42,6 +42,7 @@ winget 和 scoop 另有 `Uninstall`，不在接口里：由 [internal/uninstall]
 | `UpgradeSilent` | 同 `Upgrade`，但 `-Mode Silent`、命令行加 `--silent`（`source.SilentUpgrader`）；只用于 AppShelf 自动排队的更新，避免 Default 模式弹出安装程序的进度窗口 |
 | 取消 | 下载阶段报告 `Progress.Cancelable`。走 COM 时脚本每 300 毫秒看一次取消文件，出现就 `Stop-Job` 停止 cmdlet（由它取消 winget 的操作，不直接结束进程，否则 winget 服务会继续），30 秒内没停才结束进程；命令行结束整个进程树。scoop 先下载再移除旧版本和安装，下载阶段同样可取消；GitHub 下载完、启动安装程序前再看一次 |
 | `UpgradeInteractive` | 同 `Upgrade`，但 `-Mode Interactive`、命令行加 `--interactive`（`source.InteractiveUpgrader`）；只用于用户对失败的更新点“打开安装程序重试” |
+| 不支持直接更新 | 安装程序不支持原地更新（`0x8A150114`，COM 的 `ExtendedErrorCode` 或命令行退出码）时返回包装的 `source.ErrNoDirectUpgrade`；队列把这次更新标为 `NoDirectUpgrade`，任务面板提供“卸载后重新安装”，由用户确认卸载 |
 | `Uninstall` | `Uninstall-WinGetPackage -Source <winget 或 msstore> -Mode Silent`，用卸载程序窗口重试时 `-Mode Interactive`；先查不到包就视为已不在，由复查确认。退回命令行时 `winget uninstall --id <id> --exact --source <来源> --silent`（或 `--interactive`）`--accept-source-agreements --disable-interactivity`，找不到包（`0x8A150014`）同样视为已不在 |
 
 - 检测不区分大小写，宁可多认出已装、跳过安装；安装按完整 ID 匹配（COM 不区分大小写，winget 源里的 ID 不区分大小写也唯一；命令行用 `--exact`），并指定来源，不按名称模糊安装。

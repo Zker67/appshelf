@@ -1,6 +1,6 @@
 # 升级流程优化（对照 UniGetUI）
 
-状态：`[in-progress]`：P1 四项、P2 三项、P3 四项已实现并通过自动检查，等待用户真实更新验收。
+状态：`[in-progress]`：P1 四项、P2 三项、P3 四项和第 8 项已实现并通过自动检查，等待用户真实更新验收。
 
 ## 背景
 
@@ -10,7 +10,7 @@
 
 - 更新成败仍只由执行后的复查决定；等待、`StillOffered` 只影响等待多久和提示文字。
 - 自动更新只对用户逐个开启、用户范围、版本已知、程序没在运行的 winget / scoop 软件；绝不在后台弹出 UAC 或安装程序窗口。
-- 不退化为安装，不按名称模糊匹配，不改 scope / 架构参数重试。
+- 不退化为安装，不按名称模糊匹配，不改 scope / 架构参数重试。唯一的例外是第 8 项：用户确认卸载后才按同一个精确的软件包安装，从不自动这样做。
 
 ## P1（本次实施）
 
@@ -71,7 +71,19 @@
   4. 装一个需要重启的软件后，任务面板顶部和托盘提示需要重启；重启电脑后提示消失。
 - 未验证的风险：winget COM 的 `Stop-Job` 能否真正取消 winget 的下载，需要真实更新验证；不能取消时 winget 会装完，复查后如实记为成功（“取消时已经更新好了”）。
 
-另外，0x8A150114“不支持直接更新”只提供“卸载后重新安装”入口、卸载照常确认（原分析第 8 项，用户未表态，未做）。
+## 第 8 项：卸载后重新安装（本次实施）
+
+| 做法 | 位置 |
+|---|---|
+| winget 的 `0x8A150114`（安装程序不支持原地更新，COM 和命令行同样识别）返回包装的 `source.ErrNoDirectUpgrade`；队列把这次失败的更新记为 `NoDirectUpgrade` | `internal/source`、`internal/source/winget`、`internal/queue` |
+| 任务面板对这种任务显示“卸载后重新安装”（`TaskEntry.reinstall`；同一软件包已在任务中时不显示）。点了打开平常的卸载预览，标题为“卸载后重新安装”；要卸载的程序由 Go 按精确 winget ID 在重新读取的本机列表里找，找不到或不止一个就报错、不猜 | `internal/api/reinstall.go`、`uninstall-dialog.tsx`、`tasks-sheet.tsx`、`state/actions.tsx` |
+| 确认后 `Queue.AddReinstall` 排入卸载，原来的更新任务不再提供入口；卸载复查确认已移除后，把同一个软件包（更新任务的 `App`，未在清单的也一样，不加入清单）的安装排在等待任务的最前面。卸载需要重启才能完成时不接着安装，说明里写明；卸载失败照常重试，成功后同样接着安装 | `internal/queue` |
+
+### 第 8 项验收
+
+- 新测试：`winget`（`TestInterpretSaysWhy`、`TestInterpretCOM` 识别 `ErrNoDirectUpgrade`）、`queue`（`TestReinstall`：标记、顺序、重复、需要重启时不安装）、`api`（`TestReinstallAfterAnUpdateNotDoneInPlace`、`TestNoReinstallForOtherFailures`）。
+- 用户真实验收（会真实卸载并安装，需用户选测试软件；这类软件不好找，碰到时再测）：winget 更新报“不支持直接更新”后，任务里出现“卸载后重新安装”；点了是卸载预览，确认后先卸载，任务面板随后出现同一个软件的安装任务并成功，本机已装页显示新版本。
+- 风险：重新安装失败时软件就不在本机了（对话框底部写明，可在任务里重试安装）；重装不指定 scope，可能装到和原来不同的范围。
 
 ## 不照搬
 

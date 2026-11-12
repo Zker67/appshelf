@@ -38,6 +38,7 @@ import {
   LoaderCircleIcon,
   PowerIcon,
   MonitorUpIcon,
+  RefreshCwIcon,
   PauseIcon,
   PlayIcon,
   RotateCcwIcon,
@@ -457,6 +458,24 @@ function TaskRow({ task: t }: { task: TaskEntry }) {
                     {t.action === "upgrade"
                       ? "不再静默更新，打开它自己的安装程序窗口，由你在窗口里完成"
                       : "不再静默执行，打开它自己的卸载窗口，由你在窗口里完成"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {t.state === "failed" && t.reinstall && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="text-primary"
+                      onClick={() => actions.reinstall(t.id)}
+                    >
+                      <RefreshCwIcon />
+                      卸载后重新安装
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-72">
+                    它的安装程序不支持直接更新：先确认卸载，卸载完成后再重新安装最新版本
                   </TooltipContent>
                 </Tooltip>
               )}

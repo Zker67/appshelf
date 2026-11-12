@@ -87,6 +87,7 @@ func (t *Tasks) List() TaskList {
 			Leftovers:   canFindLeftovers(it),
 			Canceled:    it.State == queue.Failed && it.Canceled,
 			Cancelable:  it.CanCancel(),
+			Reinstall:   a.canReinstall(it),
 		})
 		if it.State == queue.Running && it.Action == queue.Uninstall && it.Progress.Wait != "" {
 			e := &out.Items[len(out.Items)-1]

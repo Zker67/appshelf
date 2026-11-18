@@ -109,7 +109,7 @@ func main() {
 			}
 			return &api.SelfRelease{Version: up.Version, Install: up.Install}, nil
 		},
-		Relaunch: app.Relaunch,
+		Relaunch: func() { app.Relaunch() },
 		SetTheme: func(t api.ThemeSource) { mygo.Theme.SetSource(mygo.ThemeSource(t)) },
 		Notify: func(title, body string) {
 			// One notification of updates at a time: a newer one replaces it.

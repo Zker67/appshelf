@@ -46,7 +46,7 @@ AppShelf 是个人软件图书馆：在一份可导入导出的软件清单里�
 
 | 层级 | 技术 | 说明 |
 |---|---|---|
-| 桌面框架 | [MyGo](https://mygo.egoist.dev/)（`github.com/egoist/mygo`）v0.8.1 Web 页面窗口 | Go 绑定服务给页面调用，Windows 上用 WebView2 显示；版本由 `go.mod` 锁定 |
+| 桌面框架 | [MyGo](https://mygo.egoist.dev/)（`github.com/egoist/mygo`）v0.10.0 Web 页面窗口 | Go 绑定服务给页面调用，Windows 上用 WebView2 显示；版本由 `go.mod` 锁定 |
 | 后端 | Go | 版本见 `go.mod`；另外依赖 `golang.org/x/sys`（读写注册表、提权启动安装程序、监听变化、移到回收站）和 `go.yaml.in/yaml/v3`（读 winget 清单文件） |
 | 前端 | React 19 + TypeScript 7 + Tailwind CSS 4 + shadcn/ui | 在 `frontend/`，Vite+ 构建，Bun 管理依赖；只做展示，读写都通过 Go 服务 |
 | 安装来源 | winget / scoop / GitHub Releases | 调用各自的官方能力，不自己写安装逻辑；winget 状态通过 PowerShell 模块 `Microsoft.WinGet.Client` 读取 |

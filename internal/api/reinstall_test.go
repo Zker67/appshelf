@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"appshelf/internal/catalog"
 	"appshelf/internal/source"
@@ -94,10 +95,14 @@ func TestNoReinstallForOtherFailures(t *testing.T) {
 	e.winget.mu.Lock()
 	e.winget.upgradeErrors = 1
 	e.winget.mu.Unlock()
+	started := time.Now()
 	if _, err := e.installed.StartUpdates(ctx, []string{installedObsidian}); err != nil {
 		t.Fatal(err)
 	}
 	e.until(func() bool { l := e.tasks.List(); return len(l.Items) == 1 && l.Items[0].State == TaskFailed })
+	// The installed list is read again once the tasks end, and saved in
+	// the test's directory: the test ends after that.
+	e.until(func() bool { l := e.installed.List(); return !l.Loading && l.At.After(started) })
 	failed := e.tasks.List().Items[0]
 	if failed.Reinstall {
 		t.Fatalf("failed update = %+v", failed)

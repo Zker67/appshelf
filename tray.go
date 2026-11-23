@@ -139,7 +139,9 @@ func (t *tray) setStay(on bool) { t.stay.Store(on) }
 func (t *tray) start() {
 	t.plain = trayIcon()
 	t.badged = trayBadge(t.plain)
-	icon, err := mygo.NewTray(mygo.TrayOptions{ID: "appshelf", Icon: t.plain, ToolTip: trayToolTip(api.TrayStatus{})})
+	// No ID: MyGo numbers an ID'd icon with the high bit set, which
+	// MyDockFinder's top bar draws blank. The only icon gets number 1.
+	icon, err := mygo.NewTray(mygo.TrayOptions{Icon: t.plain, ToolTip: trayToolTip(api.TrayStatus{})})
 	if err != nil {
 		log.Println("tray:", err)
 		return

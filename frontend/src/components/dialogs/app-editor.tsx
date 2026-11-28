@@ -557,6 +557,7 @@ function Picker({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
             if (e.key === "Enter" && repo) onPick(pickedRepo(repo));
           }}
           placeholder={

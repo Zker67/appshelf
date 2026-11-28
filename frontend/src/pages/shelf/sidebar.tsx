@@ -279,6 +279,7 @@ function NameInput({
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => finish(true)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
           if (e.key === "Enter") finish(true);
           if (e.key === "Escape") {
             e.stopPropagation();

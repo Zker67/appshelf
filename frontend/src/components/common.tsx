@@ -188,6 +188,7 @@ export function SearchBox({
         autoComplete="off"
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
           if (e.key === "Enter") onEnter?.();
           if (e.key === "Escape" && value) {
             e.stopPropagation();

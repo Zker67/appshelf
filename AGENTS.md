@@ -59,6 +59,7 @@ AppShelf：Windows 个人软件图书馆，桌面应用；自更新使用公开�
 - 改代码后按风险运行定向测试、类型检查、lint 或构建。
 - 不提交真实凭据、机器路径、运行态数据、缓存或个人笔记。
 - 默认不新增依赖；确需新增时说明原因、影响面和验证方式。
+- 浏览器兼容：界面只在 WebView2 Evergreen 里运行，按 Chromium ≥ 138 写；这个范围内已支持的 Web 特性（如 anchor positioning、`sibling-index()`）直接使用，不写回退或 polyfill。
 
 ## 文档维护
 

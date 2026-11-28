@@ -24,7 +24,7 @@ import { useNav, type Page } from "@/state/nav";
 import { queueProgress } from "@/lib/tasks";
 import { useWaitToasts } from "@/lib/use-wait-toasts";
 import { ListChecksIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
+import type { ComponentType, SVGProps } from "react";
 import { toast } from "sonner";
 
 const pages: Array<{ page: Page; label: string; icon: ComponentType<SVGProps<SVGSVGElement>> }> = [
@@ -69,28 +69,14 @@ function NavTabs() {
   const { data: list } = useUpdates();
   // What the badge counts: the updates offered, AppShelf's own among them.
   const updates = (list?.count ?? 0) + (list?.self.available ? 1 : 0);
-  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
-  useLayoutEffect(() => {
-    const el = refs.current[nav.page];
-    if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
-  }, [nav.page, updates]);
   return (
-    <nav className="seg-track app-no-drag relative flex items-center gap-0.5 rounded-xl p-[3px]">
-      {pill && (
-        <div
-          className="nav-pill absolute top-[3px] bottom-[3px] rounded-[9px]"
-          style={{ left: pill.left, width: pill.width }}
-        />
-      )}
+    <nav className="seg-track seg-anchored app-no-drag relative flex items-center gap-0.5 rounded-xl p-[3px]">
+      <div className="nav-pill seg-pill rounded-[9px]" />
       {pages.map(({ page, label, icon: Icon }) => {
         const active = nav.page === page;
         return (
           <button
             key={page}
-            ref={(el) => {
-              refs.current[page] = el;
-            }}
             type="button"
             data-active={active}
             onClick={() => nav.go(page)}

@@ -14,7 +14,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -176,22 +175,6 @@ export function DetailTabs({ tabs, pending = 0 }: { tabs: DetailTab[]; pending?:
   const value = tabs.some((t) => t.value === chosen) ? chosen : (tabs[0]?.value ?? "");
   const bar = tabs.length + pending > 1;
 
-  const list = useRef<HTMLDivElement>(null);
-  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
-  const keys = tabs.map((t) => t.value).join("|");
-  useLayoutEffect(() => {
-    const el = list.current;
-    if (!el) return;
-    const measure = () => {
-      const tab = el.querySelector<HTMLElement>(`[data-tab="${CSS.escape(value)}"]`);
-      setPill(tab ? { left: tab.offsetLeft, width: tab.offsetWidth } : null);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [value, keys, pending]);
-
   const change = (v: string) => {
     const from = tabs.findIndex((t) => t.value === value);
     const to = tabs.findIndex((t) => t.value === v);
@@ -215,21 +198,16 @@ export function DetailTabs({ tabs, pending = 0 }: { tabs: DetailTab[]; pending?:
         <div className="min-h-0 overflow-hidden">
           <div className="px-5 pt-3 pb-1">
             <TabsPrimitive.List
-              ref={list}
               aria-label="详情"
-              className="seg-track relative flex rounded-xl p-[3px]"
+              className="seg-track seg-anchored relative flex rounded-xl p-[3px]"
             >
-              {pill && (
-                <div
-                  className="seg-thumb absolute top-[3px] bottom-[3px] rounded-[9px] transition-[left,width] duration-400 ease-spring"
-                  style={{ left: pill.left, width: pill.width }}
-                />
+              {tabs.length > 0 && (
+                <div className="seg-thumb seg-pill rounded-[9px] transition-[left,right] duration-400 ease-spring" />
               )}
               {tabs.map(({ value: v, label, icon: Icon }) => (
                 <TabsPrimitive.Trigger
                   key={v}
                   value={v}
-                  data-tab={v}
                   className="group/tab relative flex h-7 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[9px] px-2 text-[13px] font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=active]:text-foreground"
                 >
                   <Icon className="size-3.5 shrink-0 transition-[color,transform] duration-300 group-hover/tab:scale-110 group-data-[state=active]/tab:text-primary" />
